@@ -307,6 +307,8 @@ def _safe_csv_bytes(data: list[dict]) -> bytes:
 
 
 def _save_curated_dataset(db, svc, pl, source: dict, data: list[dict], ctx, multi_source: bool, table_name: str | None = None) -> dict:
+    from app.models.v2.curated import CuratedDataset
+
     stem = Path(source["filename"]).stem
     name_parts = [pl.name]
     if multi_source:
@@ -316,6 +318,13 @@ def _save_curated_dataset(db, svc, pl, source: dict, data: list[dict], ctx, mult
     name_parts.append("curated")
     ds_name = " ".join(name_parts)
     curated_ds = svc.create_dataset(name=ds_name, kind="curated")
+    db.add(CuratedDataset(
+        id=curated_ds.id,
+        pipeline_id=pl.id,
+        name=ds_name,
+        status="pending_review",
+    ))
+    db.commit()
     svc.create_version(curated_ds.id, _safe_csv_bytes(data), rowcount=len(data))
 
     if data:

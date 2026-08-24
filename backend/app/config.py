@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "ontoprompt123"
 
+    # Industrial demonstrator graph backend. The platform-side Compose stack
+    # exposes FalkorDB on the host; Dockerized Nano reaches it through
+    # host.docker.internal on macOS/Windows.
+    falkordb_host: str = "host.docker.internal"
+    falkordb_port: int = 6379
+
     # v2 — MinIO
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"

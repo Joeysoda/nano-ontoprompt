@@ -34,21 +34,37 @@ def test_graph_quality_reports_isolated_and_duplicate_nodes(db):
     assert result["quality_score"] < 1
 
 
-def test_integration_status_reports_neo4j_and_chroma():
-    fake_neo = MagicMock()
-    fake_neo.available = True
+def test_integration_status_reports_falkordb_and_chroma():
+    fake_falkor = MagicMock()
+    fake_falkor.available = True
+    fake_falkor.host = "host.docker.internal"
+    fake_falkor.port = 6379
     fake_chroma = MagicMock()
     fake_chroma.available = True
     fake_chroma.count.return_value = 42
 
-    with patch.object(graph_router, "get_neo4j", return_value=fake_neo), \
+    with patch.object(graph_router, "get_falkordb", return_value=fake_falkor), \
          patch("app.services.v2.vector.chroma_service.ChromaService", return_value=fake_chroma):
         result = graph_router.integration_status("ont-1")
 
-    assert result["neo4j"]["available"] is True
+    assert result["falkordb"]["available"] is True
     assert result["chroma"]["available"] is True
     assert result["chroma"]["entity_count"] == 42
-    fake_neo.close.assert_called_once()
+
+
+def test_instance_graph_uses_falkordb_filters():
+    fake = MagicMock()
+    fake.available = True
+    fake.get_graph_data.return_value = {
+        "nodes": [{"id": "EQ001", "labels": ["Equipment"], "properties": {}, "event_seq": None}],
+        "edges": [], "graph_backend": "falkordb", "available": True,
+    }
+    with patch.object(graph_router, "get_falkordb", return_value=fake):
+        result = graph_router.get_graph("ont-1", view="instances", entity_type="Equipment", seq_from=2, seq_to=8, relation_state="current")
+    assert result["graph_backend"] == "falkordb"
+    fake.get_graph_data.assert_called_once_with(
+        "ont-1", limit=200, entity_type="Equipment", seq_from=2, seq_to=8, relation_state="current"
+    )
 
 
 def test_sqlite_graph_fallback_returns_nodes_and_edges(db):

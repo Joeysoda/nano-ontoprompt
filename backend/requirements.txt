@@ -27,6 +27,7 @@ json-repair>=0.30
 slowapi==0.1.9
 # v2 dependencies
 neo4j==5.26.0
+falkordb>=1.1.2,<2.0.0
 chromadb==0.5.20
 duckdb==1.2.0
 minio==7.2.12

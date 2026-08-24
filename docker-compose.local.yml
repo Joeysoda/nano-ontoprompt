@@ -1,0 +1,24 @@
+services:
+  db:
+    ports: !override
+      - "15432:5432"
+  redis:
+    ports: !override
+      - "16379:6379"
+  neo4j:
+    ports: !override
+      - "17474:7474"
+      - "17687:7687"
+  minio:
+    ports: !override
+      - "19000:9000"
+      - "19001:9001"
+  chromadb:
+    ports: !override
+      - "18001:8000"
+  backend:
+    ports: !override
+      - "18080:8000"
+  frontend:
+    ports: !override
+      - "15173:5173"

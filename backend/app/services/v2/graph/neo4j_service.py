@@ -131,6 +131,14 @@ class Neo4jService:
         """批量 MERGE — 每批 1000 条"""
         if not self._available or not entities:
             return 0
+        import json
+
+        def _neo_value(value):
+            if isinstance(value, dict):
+                return json.dumps(value, ensure_ascii=False, sort_keys=True)
+            if isinstance(value, list) and any(isinstance(item, (dict, list)) for item in value):
+                return json.dumps(value, ensure_ascii=False)
+            return value
         query = f"""
         UNWIND $batch AS e
         MERGE (n:{label} {{{key_field}: e.key}})
@@ -141,7 +149,7 @@ class Neo4jService:
         with self._driver.session() as session:
             for i in range(0, len(entities), chunk_size):
                 chunk = entities[i:i + chunk_size]
-                batch = [{"key": e.get(key_field), "props": e} for e in chunk]
+                batch = [{"key": e.get(key_field), "props": {k: _neo_value(v) for k, v in e.items()}} for e in chunk]
                 session.run(query, batch=batch)
                 count += len(chunk)
         return count

@@ -42,9 +42,10 @@ SYSTEM_PROMPT = """你是一个本体质量审查专家。你的任务是通过�
 
 审查策略：
 1. 先调用 get_ontology_summary 了解整体规模
-2. 依次调用各检查工具发现问题
-3. 对发现的问题进行追查（如孤立实体 → find_missing_relations）
-4. 收集足够信息后，调用 submit_findings 提交结论
+2. 必须调用 list_isolated_entities 和 check_relation_refs，不能只依据摘要直接提交结论
+3. 依次调用其余检查工具发现问题
+4. 对发现的问题进行追查（如孤立实体 → find_missing_relations）
+5. 收集足够信息后，调用 submit_findings 提交结论
 
 findings 中每条问题的格式：
 {
@@ -335,14 +336,20 @@ def _call_openai_with_tools(api_key: str, api_base: str | None, model_name: str,
         else:
             messages.append({"role": turn["role"], "content": turn["content"]})
 
-    resp = client.chat.completions.create(
-        model=model_name,
-        messages=messages,
-        tools=_tools_for_openai(),
-        tool_choice="auto",
-        max_tokens=4096,
-        timeout=120,
-    )
+    create_kwargs = {
+        "model": model_name,
+        "messages": messages,
+        "tools": _tools_for_openai(),
+        "tool_choice": "auto",
+        "max_tokens": 2048,
+        "timeout": 120,
+        "extra_body": {"reasoning_effort": "none"},
+    }
+    try:
+        resp = client.chat.completions.create(**create_kwargs)
+    except Exception:
+        create_kwargs.pop("extra_body", None)
+        resp = client.chat.completions.create(**create_kwargs)
 
     choice = resp.choices[0]
 

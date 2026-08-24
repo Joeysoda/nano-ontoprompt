@@ -119,15 +119,19 @@ def _call_llm(provider: str, api_key: str, api_base: str | None, model: str, mes
         if api_base:
             kwargs["base_url"] = api_base
         client = openai.OpenAI(**kwargs)
-        create_kwargs: dict = {"model": model, "messages": messages, "timeout": 300, "max_tokens": 65536,
+        create_kwargs: dict = {"model": model, "messages": messages, "timeout": 120, "max_tokens": 2048,
                                "temperature": 0, "seed": _seed}
+        if provider == "compatible":
+            create_kwargs["extra_body"] = {"reasoning_effort": "none"}
         if json_mode:
             create_kwargs["response_format"] = {"type": "json_object"}
         try:
             resp = client.chat.completions.create(**create_kwargs)
         except Exception:
-            # seed not supported by all providers — retry without it
+            # seed/extra_body are not supported by all providers — retry with
+            # the portable OpenAI-compatible subset
             create_kwargs.pop("seed", None)
+            create_kwargs.pop("extra_body", None)
             resp = client.chat.completions.create(**create_kwargs)
         return resp.choices[0].message.content or ""
 

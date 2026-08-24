@@ -1,6 +1,6 @@
-"""v2 Graph API — 基于 Neo4j"""
+"""v2 Graph API — Nano schema compatibility plus FalkorDB instances"""
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from app.deps import get_current_user
 from app.database import SessionLocal
@@ -11,6 +11,11 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 def get_neo4j():
     from app.services.v2.graph.neo4j_service import Neo4jService
     return Neo4jService()
+
+
+def get_falkordb():
+    from app.services.v2.graph.falkordb_service import FalkorDBService
+    return FalkorDBService()
 
 
 def get_db():
@@ -27,22 +32,67 @@ class CypherRequest(BaseModel):
 
 
 @router.get("/{ontology_id}/graph")
-def get_graph(ontology_id: str, limit: int = 200, label_filter: str | None = None):
-    """返回本体图谱数据 (Neovis.js 兼容格式)"""
+def get_graph(
+    ontology_id: str,
+    # Keep a plain default so direct service-level callers/tests do not receive
+    # FastAPI's ``Query`` object; clamp explicitly for both HTTP and Python use.
+    limit: int = 200,
+    label_filter: str | None = None,
+    view: str = Query("schema", pattern="^(schema|instances)$"),
+    entity_type: str | None = None,
+    seq_from: int | None = Query(None, ge=0),
+    seq_to: int | None = Query(None, ge=0),
+    relation_state: str = Query("all", pattern="^(all|current)$"),
+):
+    """Return either the persisted Nano schema graph or industrial instances.
+
+    ``view=instances`` is the teacher-facing path and is served exclusively
+    from the per-ontology FalkorDB graph. The default schema view preserves
+    existing Nano behavior for older ontologies.
+    """
+    limit = max(1, min(int(limit), 1000))
+    if view == "instances":
+        svc = get_falkordb()
+        if not svc.available:
+            return {
+                "nodes": [], "edges": [], "graph_backend": "falkordb",
+                "available": False, "error": "FalkorDB unavailable",
+            }
+        try:
+            return svc.get_graph_data(
+                ontology_id,
+                limit=limit,
+                entity_type=entity_type or label_filter,
+                seq_from=seq_from,
+                seq_to=seq_to,
+                relation_state=relation_state,
+            )
+        except Exception as exc:
+            return {
+                "nodes": [], "edges": [], "graph_backend": "falkordb",
+                "available": False, "error": str(exc),
+            }
     svc = get_neo4j()
     if not svc.available:
-        return _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data = _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data["graph_backend"] = "sqlite-schema"
+        return data
     try:
         data = svc.get_graph_data(ontology_id, limit=limit, label_filter=label_filter)
     except Exception:
         # 共享 driver 缓存期间 Neo4j 宕机 → 回退 SQLite 而非 500
         svc.close()
-        return _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data = _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data["graph_backend"] = "sqlite-schema"
+        return data
     svc.close()
     # Neo4j 可用但该 ontology 无数据（如简易 LLM 路线未同步写入）→ 回退 SQLite
     if not data.get("nodes"):
-        return _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data = _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data["graph_backend"] = "sqlite-schema"
+        return data
     data["neo4j_available"] = True
+    data["graph_backend"] = "neo4j-legacy"
     return data
 
 
@@ -100,7 +150,9 @@ def _sqlite_graph_data(ontology_id: str, limit: int = 200, label_filter: str | N
 
 
 @router.get("/{ontology_id}/graph/quality")
-def graph_quality(ontology_id: str):
+def graph_quality(ontology_id: str, source: str = Query("schema", pattern="^(schema|instances)$")):
+    if source == "instances":
+        return get_falkordb().quality(ontology_id)
     from app.models.entity import Entity
     from app.models.relation import Relation
     from collections import Counter
@@ -131,6 +183,8 @@ def graph_quality(ontology_id: str):
             quality_score -= min(0.25, len(orphan_relations) / edge_count * 0.25)
         return {
             "ontology_id": ontology_id,
+            "graph_backend": "sqlite-schema",
+            "available": True,
             "node_count": node_count,
             "edge_count": edge_count,
             "isolated_node_count": len(isolated),
@@ -152,17 +206,20 @@ def graph_quality(ontology_id: str):
 
 @router.get("/{ontology_id}/integrations/status")
 def integration_status(ontology_id: str):
-    neo = get_neo4j()
-    neo_available = neo.available
-    if neo_available:
-        neo.close()
+    falkor = get_falkordb()
     from app.services.v2.vector.chroma_service import ChromaService
     chroma = ChromaService()
     return {
         "ontology_id": ontology_id,
-        "neo4j": {"available": neo_available},
+        "falkordb": {"available": falkor.available, "host": falkor.host, "port": falkor.port},
         "chroma": {"available": chroma.available, "entity_count": chroma.count(ontology_id)},
     }
+
+
+@router.get("/{ontology_id}/graph/temporal/coverage")
+def temporal_coverage(ontology_id: str, production_line_id: str):
+    """Return current and historical COVERS edges for one production line."""
+    return get_falkordb().coverage(ontology_id, production_line_id)
 
 
 @router.post("/{ontology_id}/graph/cypher")
