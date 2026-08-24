@@ -50,6 +50,121 @@ class FalkorDBService:
         return self._db.select_graph(graph_name_for_ontology(ontology_id))
 
     @staticmethod
+    def _safe_relation_type(value: str) -> str:
+        relation = re.sub(r"[^A-Za-z0-9_]", "_", str(value or "RELATED")).upper()
+        return relation if relation and relation[0].isalpha() else f"R_{relation}"
+
+    def upsert_instances(self, ontology_id: str, instances: list[dict[str, Any]]) -> int:
+        """Idempotently write ontology instances into the per-ontology graph."""
+        if not self.available or not instances:
+            return 0
+        graph = self._graph(ontology_id)
+        rows = []
+        for item in instances:
+            instance_id = str(item.get("id") or item.get("_instance_id") or "")
+            if not instance_id:
+                continue
+            props = dict(item.get("properties") or {})
+            props.update({"_instance_id": instance_id, "_type": item.get("entity_type") or item.get("type") or "Entity", "_ontology_id": ontology_id})
+            rows.append({"id": instance_id, "props": props})
+        if not rows:
+            return 0
+        graph.query(
+            "UNWIND $rows AS row "
+            "MERGE (n {_instance_id: row.id}) "
+            "SET n += row.props",
+            params={"rows": rows},
+        )
+        return len(rows)
+
+    def upsert_relations(self, ontology_id: str, relations: list[dict[str, Any]]) -> int:
+        """Write relationship instances with stable source/type/target identity."""
+        if not self.available or not relations:
+            return 0
+        graph = self._graph(ontology_id)
+        written = 0
+        for relation in relations:
+            source = str(relation.get("source") or "")
+            target = str(relation.get("target") or "")
+            if not source or not target:
+                continue
+            rel_type = self._safe_relation_type(relation.get("type") or "RELATED")
+            props = dict(relation.get("properties") or {})
+            props.setdefault("_ontology_id", ontology_id)
+            graph.query(
+                f"MATCH (a {{_instance_id: $source}}), (b {{_instance_id: $target}}) "
+                f"MERGE (a)-[r:{rel_type}]->(b) SET r += $props",
+                params={"source": source, "target": target, "props": props},
+            )
+            written += 1
+        return written
+
+    def get_temporal_relations(
+        self,
+        ontology_id: str,
+        relation_type: str | None = None,
+        subject_id: str | None = None,
+        object_id: str | None = None,
+        event_seq: int | None = None,
+        relation_state: str = "all",
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Return bounded, parameterized relationship assertions.
+
+        Relationship labels are sanitized before being interpolated because
+        FalkorDB/Cypher does not support parameters in a type position. All
+        user values remain query parameters, and every node is constrained to
+        the per-ontology graph selected by :meth:`_graph`.
+        """
+        if not self.available:
+            return {"available": False, "graph_backend": "falkordb", "relations": []}
+        graph = self._graph(ontology_id)
+        limit = max(1, min(int(limit), 1000))
+        rel_pattern = f"[r:{self._safe_relation_type(relation_type)}]" if relation_type else "[r]"
+        clauses = ["a._instance_id IS NOT NULL", "b._instance_id IS NOT NULL"]
+        params: dict[str, Any] = {"limit": limit}
+        if subject_id:
+            clauses.append("a._instance_id = $subject_id")
+            params["subject_id"] = subject_id
+        if object_id:
+            clauses.append("b._instance_id = $object_id")
+            params["object_id"] = object_id
+        if event_seq is not None:
+            clauses.append("r.event_seq = $event_seq")
+            params["event_seq"] = int(event_seq)
+        if relation_state == "current":
+            clauses.append("r.valid_to IS NULL")
+        result = graph.query(
+            f"MATCH (a)-{rel_pattern}->(b) WHERE {' AND '.join(clauses)} "
+            "RETURN a._instance_id, b._instance_id, type(r), r LIMIT $limit",
+            params=params,
+        )
+        relations: list[dict[str, Any]] = []
+        for source_id, target_id, rel_name, rel in result.result_set:
+            props = dict(getattr(rel, "properties", {}) or {})
+            relations.append({
+                "id": f"{source_id}:{rel_name}:{target_id}:{props.get('valid_from', '')}",
+                "source": source_id,
+                "target": target_id,
+                "type": rel_name,
+                "properties": props,
+                "event_seq": props.get("event_seq"),
+                "event_time": props.get("event_time"),
+                "valid_from": props.get("valid_from"),
+                "valid_to": props.get("valid_to"),
+            })
+        return {
+            "available": True,
+            "graph_backend": "falkordb",
+            "ontology_id": ontology_id,
+            "relation_type": relation_type,
+            "relation_state": relation_state,
+            "relations": relations,
+            "count": len(relations),
+            "sample_limit": limit,
+        }
+
+    @staticmethod
     def _node(node: Any) -> dict[str, Any]:
         props = dict(getattr(node, "properties", {}) or {})
         instance_id = props.get("_instance_id")

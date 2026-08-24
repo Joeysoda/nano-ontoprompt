@@ -5,7 +5,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard, Network, Cpu, Settings, LogOut,
-  Database, ChevronLeft, ChevronRight, GitBranch, Table2,
+  Database, ChevronLeft, ChevronRight, GitBranch, Table2, FlaskConical,
 } from 'lucide-react'
 
 interface SubItem {
@@ -42,6 +42,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     },
     { to: '/ontologies', icon: Network, label: t('nav.ontologies') },
     { to: '/models', icon: Cpu, label: t('nav.models') },
+    { to: '/benchmarks', icon: FlaskConical, label: '评测实验' },
     { to: '/settings', icon: Settings, label: t('nav.settings') },
   ]
 

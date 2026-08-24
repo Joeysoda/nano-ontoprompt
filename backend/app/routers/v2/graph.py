@@ -31,6 +31,21 @@ class CypherRequest(BaseModel):
     params: dict = {}
 
 
+class TemporalImportRequest(BaseModel):
+    rows: list[dict] = []
+    adapter: str | None = None
+    construction_run_id: str | None = None
+    time_kind: str = "ordinal"
+    sequence_column: str | None = "event_seq"
+    event_time_column: str | None = None
+    valid_from_column: str | None = None
+    valid_to_column: str | None = None
+    entity_id_column: str = "unit_id"
+    entity_type: str = "Equipment"
+    observation_type: str = "SensorReading"
+    reading_id_prefix: str = "reading"
+
+
 @router.get("/{ontology_id}/graph")
 def get_graph(
     ontology_id: str,
@@ -220,6 +235,98 @@ def integration_status(ontology_id: str):
 def temporal_coverage(ontology_id: str, production_line_id: str):
     """Return current and historical COVERS edges for one production line."""
     return get_falkordb().coverage(ontology_id, production_line_id)
+
+
+@router.post("/{ontology_id}/graph/temporal/import")
+def import_temporal_rows(ontology_id: str, body: TemporalImportRequest):
+    """Normalize and import a bounded temporal row batch into FalkorDB.
+
+    This is intentionally an explicit, deterministic API: the server never
+    invents timestamps or entity identities when a row is malformed.
+    """
+    from app.services.v2.temporal_service import (
+        TemporalConfig,
+        build_observation_instances,
+        normalize_temporal_rows,
+    )
+
+    falkor = get_falkordb()
+    if not falkor.available:
+        return {"available": False, "graph_backend": "falkordb", "error": "FalkorDB unavailable"}
+    rows = body.rows
+    time_kind = body.time_kind
+    if body.adapter:
+        from app.services.v2.datasets.temporal_adapters import get_adapter
+        adapter = get_adapter(body.adapter)
+        rows = adapter.normalize(rows)
+        time_kind = adapter.time_kind
+    config = TemporalConfig(
+        time_kind=time_kind,
+        sequence_column=body.sequence_column,
+        event_time_column=body.event_time_column,
+        valid_from_column=body.valid_from_column,
+        valid_to_column=body.valid_to_column,
+    )
+    normalized, issues = normalize_temporal_rows(rows, config)
+    nodes, edges = build_observation_instances(
+        normalized,
+        entity_id_column=body.entity_id_column,
+        entity_type=body.entity_type,
+        observation_type=body.observation_type,
+        reading_id_prefix=body.reading_id_prefix,
+    )
+    node_count = falkor.upsert_instances(ontology_id, nodes)
+    edge_count = falkor.upsert_relations(ontology_id, edges)
+    evidence_count = 0
+    if body.construction_run_id:
+        from app.models.v2.construction import ConstructionRun
+        from app.services.v2.construction_service import add_evidence, update_run
+        db = SessionLocal()
+        try:
+            run = db.query(ConstructionRun).filter(
+                ConstructionRun.id == body.construction_run_id,
+                ConstructionRun.ontology_id == ontology_id,
+            ).first()
+            if not run:
+                raise HTTPException(404, "Construction run not found")
+            update_run(db, run, status="completed", progress={"completed": len(normalized), "total": len(rows)}, metrics={"nodes_upserted": node_count, "edges_upserted": edge_count, "temporal_issues": len(issues)})
+            for index, row in enumerate(normalized):
+                add_evidence(db, run=run, assertion_id=f"row:{index}", assertion_kind="mapping", extractor="rule", source_row=index, source_dataset_version="input", confidence=1.0, confidence_method="deterministic_temporal_normalization", evidence_text=str({k: row.get(k) for k in ("event_seq", "event_time", "valid_from", "valid_to")}))
+                evidence_count += 1
+        finally:
+            db.close()
+    return {
+        "available": True,
+        "graph_backend": "falkordb",
+        "time_kind": time_kind,
+        "nodes_upserted": node_count,
+        "edges_upserted": edge_count,
+        "evidence_refs": evidence_count,
+        "row_count": len(rows),
+        "issues": issues,
+    }
+
+
+@router.get("/{ontology_id}/graph/temporal/relations")
+def temporal_relations(
+    ontology_id: str,
+    relation_type: str | None = None,
+    subject_id: str | None = None,
+    object_id: str | None = None,
+    event_seq: int | None = Query(None, ge=0),
+    relation_state: str = Query("all", pattern="^(all|current)$"),
+    limit: int = 200,
+):
+    """Query temporal relations without exposing arbitrary write Cypher."""
+    return get_falkordb().get_temporal_relations(
+        ontology_id,
+        relation_type=relation_type,
+        subject_id=subject_id,
+        object_id=object_id,
+        event_seq=event_seq,
+        relation_state=relation_state,
+        limit=max(1, min(int(limit), 1000)),
+    )
 
 
 @router.post("/{ontology_id}/graph/cypher")

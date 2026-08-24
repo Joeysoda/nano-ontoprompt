@@ -30,6 +30,9 @@ from app.routers.v2 import curated as curated_v2
 from app.routers.v2 import mappings as mappings_v2
 from app.routers.v2 import incremental as incremental_v2
 from app.routers.v2 import logic_actions as logic_actions_v2
+from app.routers.v2 import construction_runs as construction_runs_v2
+from app.routers.v2 import benchmarks as benchmarks_v2
+from app.routers.v2 import multimodal as multimodal_v2
 
 def _run_schema_migration():
     """统一 schema 迁移入口。
@@ -75,6 +78,8 @@ def _seed_db():
         from app.models.v2.action import OntologyActionType, OntologyActionRun  # noqa: F401
         from app.models.v2.curated import CuratedDataset, CuratedReview, CuratedRowEdit  # noqa: F401
         from app.models.v2.mapping import OntologyMapping, OntologyLinkMapping  # noqa: F401
+        from app.models.v2.construction import ConstructionRun, EvidenceRef  # noqa: F401
+        from app.models.v2.multimodal import ExtractedFragment  # noqa: F401
         _run_schema_migration()
 
         seed_admin(db)
@@ -175,6 +180,11 @@ app.include_router(curated_v2.router, prefix="/api/v2/curated", tags=["v2-curate
 app.include_router(mappings_v2.router, prefix="/api/v2/ontologies", tags=["v2-mappings"])
 app.include_router(incremental_v2.router, prefix="/api/v2/incremental", tags=["v2-incremental"])
 app.include_router(logic_actions_v2.router, prefix="/api/v2/ontologies", tags=["v2-logic-actions"])
+app.include_router(construction_runs_v2.router, prefix="/api/v2/ontologies", tags=["v2-construction-runs"])
+app.include_router(construction_runs_v2.construction_root_router, prefix="/api/v2", tags=["v2-construction-runs"])
+app.include_router(construction_runs_v2.assertions_router, prefix="/api/v2", tags=["v2-provenance"])
+app.include_router(benchmarks_v2.router, prefix="/api/v2", tags=["v2-benchmarks"])
+app.include_router(multimodal_v2.router, prefix="/api/v2", tags=["v2-multimodal"])
 
 def get_db():
     db = SessionLocal()
@@ -190,6 +200,7 @@ def health(db: Session = Depends(get_db)):
         "status": "ok",
         "db": "unknown",
         "neo4j": "unknown",
+        "falkordb": "unknown",
         "minio": "unknown",
         "chroma": "unknown",
     }
@@ -213,6 +224,13 @@ def health(db: Session = Depends(get_db)):
         checks["neo4j"] = "ok"
     except Exception:
         checks["neo4j"] = "unavailable"
+
+    # FalkorDB is the authoritative backend for new instance/temporal builds.
+    try:
+        from app.services.v2.graph.falkordb_service import FalkorDBService
+        checks["falkordb"] = "ok" if FalkorDBService().available else "unavailable"
+    except Exception:
+        checks["falkordb"] = "unavailable"
 
     # MinIO check
     try:
