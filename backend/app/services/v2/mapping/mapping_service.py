@@ -48,9 +48,9 @@ class MappingService:
         concept_id = str(_uuid.UUID(
             _hl.md5(f"{mapping.ontology_id}:{mapping.entity_class}:concept".encode()).hexdigest()
         ))
+        name_cn = re.sub(r'(?<=[a-z0-9])(?=[A-Z])', ' ', mapping.entity_class).replace('_', ' ').title()
         existing = self._db.query(Entity).filter(Entity.id == concept_id).first()
         if not existing:
-            name_cn = re.sub(r'(?<=[a-z0-9])(?=[A-Z])', ' ', mapping.entity_class).replace('_', ' ').title()
             self._db.add(Entity(
                 id=concept_id, ontology_id=mapping.ontology_id,
                 name_cn=name_cn, name_en=mapping.entity_class,
@@ -61,9 +61,13 @@ class MappingService:
             self._db.flush()
         # 写入实例数据（EntityInstance 表）
         instances = self._rows_to_instances(mapping, concept_id, data)
+        # New construction path: keep the legacy Neo4j concept write for
+        # compatibility, but publish row instances and provenance to FalkorDB.
+        self._write_falkor_instances(mapping, concept_id, instances)
         # 写入 Neo4j（概念节点）
+        concept_name = getattr(existing, "name_cn", None) if isinstance(existing, Entity) else None
         concept_dict = {"id": concept_id, "type": mapping.entity_class,
-                        "name_cn": existing.name_cn if existing else name_cn,
+                        "name_cn": concept_name or name_cn,
                         "confidence": mapping.confidence or 0.85, "version": "v0.1",
                         "ontology_id": mapping.ontology_id}
         self._write_neo4j(mapping.entity_class, [concept_dict])
@@ -128,6 +132,7 @@ class MappingService:
 
             concept_id = concept_by_mapping[m.id]
             instances = self._rows_to_instances(m, concept_id, rows)
+            self._write_falkor_instances(m, concept_id, instances)
 
             pk_col = (m.field_mapping or {}).get("__primary_key__") or self._choose_pk_col(rows)
             # entity_id_map: 所有实例行指向同一个概念实体 ID
@@ -1424,6 +1429,39 @@ class MappingService:
         except Exception as e:
             logger.error(f"Neo4j 写入失败: {e}")
         return 0
+
+    def _write_falkor_instances(self, mapping: OntologyMapping, concept_id: str, instances: list) -> int:
+        """Publish mapped rows to the ontology-isolated FalkorDB graph.
+
+        IDs come from the existing stable row identity, so rerunning a
+        mapping uses MERGE and cannot grow duplicate nodes.  A construction
+        run is intentionally not created here: callers that need a full run
+        lifecycle create one through the public Construction Run API.
+        """
+        try:
+            from app.services.v2.graph.falkordb_service import FalkorDBService
+            svc = FalkorDBService()
+            if not svc.available:
+                return 0
+            nodes = [{
+                "id": concept_id,
+                "entity_type": mapping.entity_class,
+                "properties": {"is_concept": True, "ontology_id": mapping.ontology_id},
+            }]
+            edges = []
+            for inst in instances:
+                instance_id = str(inst.id)
+                row_data = dict(inst.row_data or {})
+                row_data.setdefault("row_identity", inst.row_identity)
+                row_data.setdefault("entity_id", concept_id)
+                nodes.append({"id": instance_id, "entity_type": mapping.entity_class, "properties": row_data})
+                edges.append({"source": instance_id, "target": concept_id, "type": "INSTANCE_OF", "properties": {"ontology_id": mapping.ontology_id, "source": "mapping"}})
+            svc.upsert_instances(mapping.ontology_id, nodes)
+            svc.upsert_relations(mapping.ontology_id, edges)
+            return len(instances) + 1
+        except Exception as exc:
+            logger.warning("FalkorDB instance write skipped (non-fatal): %s", exc)
+            return 0
 
     def _write_neo4j_relations(self, ontology_id: str, src_class: str, tgt_class: str, rel_type: str) -> None:
         from app.models.relation import Relation
