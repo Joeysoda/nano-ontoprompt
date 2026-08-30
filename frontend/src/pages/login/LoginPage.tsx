@@ -21,7 +21,9 @@ export default function LoginPage() {
       localStorage.setItem('token', res.access_token)
       const profile = await authApi.profile() as any
       setAuth(profile, res.access_token)
-      navigate('/')
+      // `/` is intentionally the unauthenticated entry and redirects to the
+      // login form. After a successful login go straight to the workbench.
+      navigate('/overview')
     } catch (e: any) {
       localStorage.removeItem('token')
       console.error('login failed:', e)
