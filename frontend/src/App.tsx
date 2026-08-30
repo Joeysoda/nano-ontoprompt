@@ -40,7 +40,10 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/" element={<Navigate to="/overview" replace />} />
+          {/* Product entry point: work starts after authentication. The old
+              public C-MAPSS showcase is intentionally not a product page. */}
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/demo" element={<Navigate to="/login" replace />} />
           <Route path="/overview" element={<ProtectedRoute><OverviewPage /></ProtectedRoute>} />
 
           {/* ── 数据管理 ── */}
