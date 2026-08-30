@@ -7,7 +7,9 @@ services:
       POSTGRES_PASSWORD: ontoprompt
     ports: ["5432:5432"]
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Keep the established project database volume; changing this name
+      # would silently boot an empty database after a container recreation.
+      - pg_data:/var/lib/postgresql/data
       - ./docker/postgres/init-litellm-db.sql:/docker-entrypoint-initdb.d/02-litellm-db.sql
 
   redis:
@@ -99,7 +101,9 @@ services:
       - ./uploads:/uploads
 
 volumes:
-  postgres_data:
+  pg_data:
+    external: true
+    name: nano-ontoprompt_pg_data
   neo4j_data:
   minio_data:
   chroma_data:
