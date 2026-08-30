@@ -33,6 +33,7 @@ from app.routers.v2 import logic_actions as logic_actions_v2
 from app.routers.v2 import construction_runs as construction_runs_v2
 from app.routers.v2 import benchmarks as benchmarks_v2
 from app.routers.v2 import multimodal as multimodal_v2
+from app.routers.v2 import temporal as temporal_v2
 
 def _run_schema_migration():
     """统一 schema 迁移入口。
@@ -185,6 +186,8 @@ app.include_router(construction_runs_v2.construction_root_router, prefix="/api/v
 app.include_router(construction_runs_v2.assertions_router, prefix="/api/v2", tags=["v2-provenance"])
 app.include_router(benchmarks_v2.router, prefix="/api/v2", tags=["v2-benchmarks"])
 app.include_router(multimodal_v2.router, prefix="/api/v2", tags=["v2-multimodal"])
+app.include_router(temporal_v2.router, prefix="/api/v2", tags=["v2-temporal"])
+app.include_router(temporal_v2.ontology_router, prefix="/api/v2/ontologies", tags=["v2-temporal"])
 
 def get_db():
     db = SessionLocal()

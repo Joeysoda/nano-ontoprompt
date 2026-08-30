@@ -49,6 +49,20 @@ class FalkorDBService:
             raise RuntimeError("FalkorDB unavailable")
         return self._db.select_graph(graph_name_for_ontology(ontology_id))
 
+    def _ensure_instance_index(self, ontology_id: str) -> None:
+        """Create the Falkor range index used by idempotent MERGE writes.
+
+        FalkorDB versions before 1.8 use ``CREATE INDEX ON :Label(prop)`` and
+        reject ``IF NOT EXISTS``.  Index creation is therefore intentionally
+        best-effort and safe to repeat for every construction run.
+        """
+        if not self.available:
+            return
+        try:
+            self._graph(ontology_id).query("CREATE INDEX ON :Instance(_instance_id)")
+        except Exception:
+            pass
+
     @staticmethod
     def _safe_relation_type(value: str) -> str:
         relation = re.sub(r"[^A-Za-z0-9_]", "_", str(value or "RELATED")).upper()
@@ -59,6 +73,14 @@ class FalkorDBService:
         if not self.available or not instances:
             return 0
         graph = self._graph(ontology_id)
+        self._ensure_instance_index(ontology_id)
+        # Older demo runs predate the Instance label.  Label them once before
+        # the indexed MERGE so a retry does not create duplicates and later
+        # writes use the range index instead of scanning every node.
+        try:
+            graph.query("MATCH (n) WHERE n._instance_id IS NOT NULL SET n:Instance")
+        except Exception:
+            pass
         rows = []
         for item in instances:
             instance_id = str(item.get("id") or item.get("_instance_id") or "")
@@ -71,8 +93,8 @@ class FalkorDBService:
             return 0
         graph.query(
             "UNWIND $rows AS row "
-            "MERGE (n {_instance_id: row.id}) "
-            "SET n += row.props",
+            "MERGE (n:Instance {_instance_id: row.id}) "
+            "SET n:Instance, n += row.props",
             params={"rows": rows},
         )
         return len(rows)
@@ -82,7 +104,7 @@ class FalkorDBService:
         if not self.available or not relations:
             return 0
         graph = self._graph(ontology_id)
-        written = 0
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for relation in relations:
             source = str(relation.get("source") or "")
             target = str(relation.get("target") or "")
@@ -91,12 +113,16 @@ class FalkorDBService:
             rel_type = self._safe_relation_type(relation.get("type") or "RELATED")
             props = dict(relation.get("properties") or {})
             props.setdefault("_ontology_id", ontology_id)
+            grouped.setdefault(rel_type, []).append({"source": source, "target": target, "props": props})
+        written = 0
+        for rel_type, rows in grouped.items():
             graph.query(
-                f"MATCH (a {{_instance_id: $source}}), (b {{_instance_id: $target}}) "
-                f"MERGE (a)-[r:{rel_type}]->(b) SET r += $props",
-                params={"source": source, "target": target, "props": props},
+                "UNWIND $rows AS row "
+                "MATCH (a:Instance {_instance_id: row.source}), (b:Instance {_instance_id: row.target}) "
+                f"MERGE (a)-[r:{rel_type}]->(b) SET r += row.props",
+                params={"rows": rows},
             )
-            written += 1
+            written += len(rows)
         return written
 
     def get_temporal_relations(
@@ -277,6 +303,104 @@ class FalkorDBService:
             "quality_score": round(max(0.0, score), 4),
             "samples": {"isolated_node_ids": isolated[:10]},
         }
+
+    def _event_nodes(self, ontology_id: str, at: str | None = None, limit: int = 1000) -> list[dict[str, Any]]:
+        """Read a bounded temporal snapshot from the ontology-isolated graph."""
+        if not self.available:
+            return []
+        graph = self._graph(ontology_id)
+        bounded = max(1, min(int(limit), 1000))
+        # Static ontology nodes (Building/Point) are always part of a
+        # snapshot. Fill the remaining budget with the newest observations so
+        # an early and a late snapshot visibly differ even when the dataset
+        # contains tens of thousands of events.
+        static_result = graph.query(
+            "MATCH (n) WHERE n._instance_id IS NOT NULL AND n.event_time IS NULL RETURN n",
+        )
+        static_nodes = [self._node(row[0]) for row in static_result.result_set if self._node(row[0]).get("id")]
+        event_limit = max(0, bounded - len(static_nodes))
+        if event_limit == 0:
+            return static_nodes[:bounded]
+        clauses = ["n._instance_id IS NOT NULL", "n.event_time IS NOT NULL"]
+        params: dict[str, Any] = {"limit": event_limit}
+        if at:
+            clauses.append("n.event_time <= $at")
+            params["at"] = at
+        result = graph.query(f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n ORDER BY n.event_time DESC LIMIT $limit", params=params)
+        event_nodes = [self._node(row[0]) for row in result.result_set if self._node(row[0]).get("id")]
+        return static_nodes[:bounded] + event_nodes
+
+    def temporal_snapshot(self, ontology_id: str, at: str | None = None, limit: int = 300) -> dict[str, Any]:
+        nodes = self._event_nodes(ontology_id, at=at, limit=limit)
+        ids = [n["id"] for n in nodes]
+        edges: list[dict[str, Any]] = []
+        if ids and self.available:
+            graph = self._graph(ontology_id)
+            clauses = ["a._instance_id IN $ids", "b._instance_id IN $ids"]
+            params: dict[str, Any] = {"ids": ids}
+            if at:
+                clauses.append("(r.valid_from IS NULL OR r.valid_from <= $at)")
+                params["at"] = at
+            result = graph.query(f"MATCH (a)-[r]->(b) WHERE {' AND '.join(clauses)} RETURN a._instance_id, b._instance_id, type(r), r", params=params)
+            for source, target, rel_type, rel in result.result_set:
+                props = dict(getattr(rel, "properties", {}) or {})
+                if at and props.get("valid_to") and props["valid_to"] < at:
+                    continue
+                edges.append({"id": f"{source}:{rel_type}:{target}:{props.get('valid_from', '')}", "source": source, "target": target, "type": rel_type, "properties": props, "valid_from": props.get("valid_from"), "valid_to": props.get("valid_to")})
+        total_nodes = len(nodes)
+        total_edges = len(edges)
+        if self.available:
+            graph = self._graph(ontology_id)
+            node_clauses = ["n._instance_id IS NOT NULL"]
+            node_params: dict[str, Any] = {}
+            if at:
+                node_clauses.append("(n.event_time IS NULL OR n.event_time <= $at)")
+                node_params["at"] = at
+            count_nodes = graph.query(f"MATCH (n) WHERE {' AND '.join(node_clauses)} RETURN count(n)", params=node_params)
+            total_nodes = int(count_nodes.result_set[0][0]) if count_nodes.result_set else total_nodes
+            edge_clauses = ["a._instance_id IS NOT NULL", "b._instance_id IS NOT NULL"]
+            edge_params: dict[str, Any] = {}
+            if at:
+                edge_clauses.extend(["(r.valid_from IS NULL OR r.valid_from <= $at)", "(r.valid_to IS NULL OR r.valid_to >= $at)"])
+                edge_params["at"] = at
+            count_edges = graph.query(f"MATCH (a)-[r]->(b) WHERE {' AND '.join(edge_clauses)} RETURN count(r)", params=edge_params)
+            total_edges = int(count_edges.result_set[0][0]) if count_edges.result_set else total_edges
+        return {"available": self.available, "graph_backend": "falkordb", "ontology_id": ontology_id, "at": at, "nodes": nodes, "edges": edges, "total_nodes": len(nodes), "total_edges": len(edges), "total_available_nodes": total_nodes, "total_available_edges": total_edges, "sample_limit": max(1, min(int(limit), 1000))}
+
+    def temporal_timeline(self, ontology_id: str, entity_id: str | None = None, limit: int = 200) -> dict[str, Any]:
+        if not self.available:
+            return {"available": False, "graph_backend": "falkordb", "events": []}
+        graph = self._graph(ontology_id)
+        clauses = ["n.event_time IS NOT NULL"]
+        params: dict[str, Any] = {"limit": max(1, min(int(limit), 1000))}
+        if entity_id:
+            clauses.append("(n._instance_id = $entity_id OR n.stream_id = $entity_id)")
+            params["entity_id"] = entity_id
+        result = graph.query(f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n ORDER BY n.event_time LIMIT $limit", params=params)
+        events = []
+        for row in result.result_set:
+            node = self._node(row[0]); props = node.get("properties") or {}
+            events.append({"id": node["id"], "timestamp": node.get("event_time"), "label": props.get("point_name") or props.get("name") or node.get("entity_type"), "entity_type": node.get("entity_type"), "value": props.get("value"), "stream_id": props.get("stream_id")})
+        return {"available": True, "graph_backend": "falkordb", "ontology_id": ontology_id, "events": events, "count": len(events), "sample_limit": params["limit"]}
+
+    def temporal_diff(self, ontology_id: str, from_at: str, to_at: str, limit: int = 1000) -> dict[str, Any]:
+        before = self.temporal_snapshot(ontology_id, at=from_at, limit=limit)
+        after = self.temporal_snapshot(ontology_id, at=to_at, limit=limit)
+        bnodes = {n["id"]: n for n in before["nodes"]}; anodes = {n["id"]: n for n in after["nodes"]}
+        bedges = {e["id"]: e for e in before["edges"]}; aedges = {e["id"]: e for e in after["edges"]}
+        return {"available": self.available, "graph_backend": "falkordb", "ontology_id": ontology_id, "from": from_at, "to": to_at, "added_nodes": [anodes[k] for k in sorted(anodes.keys()-bnodes)][:limit], "removed_nodes": [bnodes[k] for k in sorted(bnodes.keys()-anodes)][:limit], "added_edges": [aedges[k] for k in sorted(aedges.keys()-bedges)][:limit], "removed_edges": [bedges[k] for k in sorted(bedges.keys()-aedges)][:limit], "before_counts": {"nodes": len(bnodes), "edges": len(bedges)}, "after_counts": {"nodes": len(anodes), "edges": len(aedges)}}
+
+    def temporal_growth(self, ontology_id: str, limit: int = 1000) -> dict[str, Any]:
+        if not self.available:
+            return {"available": False, "graph_backend": "falkordb", "points": []}
+        graph = self._graph(ontology_id)
+        result = graph.query("MATCH (n) WHERE n.event_time IS NOT NULL RETURN n.event_time, count(n) ORDER BY n.event_time LIMIT $limit", params={"limit": max(1, min(int(limit), 1000))})
+        points = [{"timestamp": str(row[0]), "observations": int(row[1])} for row in result.result_set]
+        running = 0
+        for point in points:
+            running += point["observations"]
+            point["cumulative_nodes"] = running
+        return {"available": True, "graph_backend": "falkordb", "ontology_id": ontology_id, "points": points}
 
     def coverage(self, ontology_id: str, production_line_id: str) -> dict[str, Any]:
         if not self.available:

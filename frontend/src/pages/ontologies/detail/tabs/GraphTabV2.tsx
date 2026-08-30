@@ -65,6 +65,7 @@ const TYPE_COLORS: Record<string, string> = {
   Equipment: '#2563eb', SensorReading: '#059669', AnomalyEvent: '#dc2626',
   ProductionLine: '#7c3aed', Supplier: '#2563eb', Product: '#059669',
   Material: '#d97706', Organization: '#7c3aed', Order: '#dc2626',
+  Building: '#1d4ed8', Zone: '#7c3aed', Point: '#0891b2', Observation: '#059669',
 }
 const FALLBACK_COLORS = ['#2563eb', '#059669', '#dc2626', '#7c3aed', '#d97706', '#0891b2', '#db2777']
 

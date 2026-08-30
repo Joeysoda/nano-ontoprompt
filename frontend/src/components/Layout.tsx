@@ -5,7 +5,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard, Network, Cpu, Settings, LogOut,
-  Database, ChevronLeft, ChevronRight, GitBranch, Table2, FlaskConical,
+  Database, ChevronLeft, ChevronRight, GitBranch, Table2, FlaskConical, Activity, Images,
 } from 'lucide-react'
 
 interface SubItem {
@@ -36,8 +36,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       icon: Database,
       label: t('nav.data_management'),
       subItems: [
-        { to: '/data/pipelines', icon: GitBranch, label: t('nav.data_pipelines') },
-        { to: '/data/structured', icon: Table2, label: t('nav.structured_data') },
+        { to: '/data/temporal', icon: Activity, label: t('nav.temporal_data') },
+        { to: '/data/regular', icon: Table2, label: t('nav.regular_data') },
+        { to: '/data/multimodal', icon: Images, label: t('nav.multimodal_data') },
       ],
     },
     { to: '/ontologies', icon: Network, label: t('nav.ontologies') },

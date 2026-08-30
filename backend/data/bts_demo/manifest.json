@@ -1,0 +1,9 @@
+{
+  "source": "BTS Building TimeSeries Dataset, Site B",
+  "source_url": "https://github.com/cruiseresearchgroup/DIEF_BTS",
+  "raw_streams": 49,
+  "rows_after_downsample": 27972,
+  "sampling": "at most 600 evenly spaced observations per stream",
+  "brick_metadata": "Site_B.ttl",
+  "note": "Downsampled for interactive prototype; original raw zip retained."
+}

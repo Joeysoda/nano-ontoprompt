@@ -22,6 +22,9 @@ import TransformsTab from '@/pages/pipelines/transforms/TransformsTab'
 import CuratedTab from '@/pages/pipelines/curated/CuratedTab'
 import DataManagementPage from '@/pages/data-management/DataManagementPage'
 import StructuredDataPage from '@/pages/data-management/structured/StructuredDataPage'
+import RegularDataPage from '@/pages/data-management/regular/RegularDataPage'
+import MultimodalDataPage from '@/pages/data-management/multimodal/MultimodalDataPage'
+import TemporalConstructionPage from '@/pages/data-management/temporal/TemporalConstructionPage'
 import BenchmarksPage from '@/pages/benchmarks/BenchmarksPage'
 
 const qc = new QueryClient({
@@ -48,6 +51,9 @@ export default function App() {
 
           {/* ── 数据管理 ── */}
           <Route path="/data" element={<ProtectedRoute><DataManagementPage /></ProtectedRoute>} />
+          <Route path="/data/temporal" element={<ProtectedRoute><TemporalConstructionPage /></ProtectedRoute>} />
+          <Route path="/data/regular" element={<ProtectedRoute><RegularDataPage /></ProtectedRoute>} />
+          <Route path="/data/multimodal" element={<ProtectedRoute><MultimodalDataPage /></ProtectedRoute>} />
           <Route path="/data/structured" element={<ProtectedRoute><StructuredDataPage /></ProtectedRoute>} />
           <Route path="/data/pipelines" element={<ProtectedRoute><PipelinesLayout /></ProtectedRoute>}>
             <Route index element={<PipelineListPage />} />

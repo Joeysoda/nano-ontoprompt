@@ -1,4 +1,4 @@
-from app.services.v2.temporal_service import TemporalConfig, build_observation_instances, normalize_temporal_rows
+from app.services.v2.temporal_service import TemporalConfig, build_bts_instances, build_observation_instances, normalize_temporal_rows, summarize_temporal_rows
 from app.services.v2.benchmark_service import evaluate
 from app.services.v2.datasets.temporal_adapters import get_adapter
 
@@ -32,6 +32,27 @@ def test_observation_instances_have_stable_relation_semantics():
     assert {n["entity_type"] for n in nodes} == {"Equipment", "SensorReading"}
     assert edges[0]["type"] == "OBSERVED_ON"
     assert edges[0]["properties"]["event_seq"] == 1
+
+
+def test_bts_instances_keep_brick_stream_identity_and_time():
+    nodes, edges = build_bts_instances([
+        {"stream_id": "s1", "point_name": "温度", "brick_class": "Temperature_Sensor", "event_time": "2024-01-01T00:00:00+00:00", "value": "21.5", "site_id": "Site_B"},
+        {"stream_id": "s1", "point_name": "温度", "brick_class": "Temperature_Sensor", "event_time": "2024-01-01T01:00:00+00:00", "value": "21.8", "site_id": "Site_B"},
+    ])
+    assert len(nodes) == 4  # building + point + two observations
+    assert {n["entity_type"] for n in nodes} == {"Building", "Temperature_Sensor", "Observation"}
+    assert {e["type"] for e in edges} == {"LOCATED_IN", "OBSERVED_ON"}
+    assert sum(e["type"] == "OBSERVED_ON" for e in edges) == 2
+
+
+def test_temporal_summary_is_json_safe_and_stable():
+    summary = summarize_temporal_rows([
+        {"stream_id": "b", "event_time": "2024-01-02T00:00:00+00:00", "value": 2},
+        {"stream_id": "a", "event_time": "2024-01-01T00:00:00+00:00", "value": 1},
+    ])
+    assert summary["streams"] == 2
+    assert summary["time_from"] < summary["time_to"]
+    assert summary["time_kind"] == "instant"
 
 
 def test_gold_metrics_separate_hallucination_and_schema_violation():
