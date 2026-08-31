@@ -361,7 +361,17 @@ class FalkorDBService:
             edge_clauses = ["a._instance_id IS NOT NULL", "b._instance_id IS NOT NULL"]
             edge_params: dict[str, Any] = {}
             if at:
-                edge_clauses.extend(["(r.valid_from IS NULL OR r.valid_from <= $at)", "(r.valid_to IS NULL OR r.valid_to >= $at)"])
+                # A snapshot contains a relationship only when both endpoint
+                # events have occurred by ``at``.  Observation edges do not
+                # carry valid_from/valid_to themselves, so checking interval
+                # properties alone would incorrectly report the full graph
+                # edge count even for the first timestamp.
+                edge_clauses.extend([
+                    "(a.event_time IS NULL OR a.event_time <= $at)",
+                    "(b.event_time IS NULL OR b.event_time <= $at)",
+                    "(r.valid_from IS NULL OR r.valid_from <= $at)",
+                    "(r.valid_to IS NULL OR r.valid_to >= $at)",
+                ])
                 edge_params["at"] = at
             count_edges = graph.query(f"MATCH (a)-[r]->(b) WHERE {' AND '.join(edge_clauses)} RETURN count(r)", params=edge_params)
             total_edges = int(count_edges.result_set[0][0]) if count_edges.result_set else total_edges
