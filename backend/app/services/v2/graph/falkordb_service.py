@@ -66,6 +66,10 @@ class FalkorDBService:
                 if connection is None:
                     raise RuntimeError("FalkorDB client has no graph deletion API")
                 connection.execute_command("GRAPH.DELETE", name)
+                # Some FalkorDB releases leave the empty graph and telemetry
+                # keys visible to GRAPH.LIST after GRAPH.DELETE. Remove only
+                # the exact per-graph keys so the demo inventory is clean.
+                connection.delete(name, f"telemetry{{{name}}}")
             return True
         except Exception:
             return False

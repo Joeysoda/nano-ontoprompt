@@ -142,6 +142,7 @@ def apply_plan(db, plan: dict) -> dict:
                     connection = getattr(graph_service._db, "connection", None)
                     if connection:
                         connection.execute_command("GRAPH.DELETE", name)
+                        connection.delete(name, f"telemetry{{{name}}}")
                 deleted_graphs.append(name)
             except Exception:
                 pass

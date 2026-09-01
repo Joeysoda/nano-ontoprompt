@@ -2,6 +2,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from app.deps import get_current_user
 from app.database import SessionLocal
 
@@ -58,6 +59,7 @@ def get_graph(
     seq_from: int | None = Query(None, ge=0),
     seq_to: int | None = Query(None, ge=0),
     relation_state: str = Query("all", pattern="^(all|current)$"),
+    db: Session = Depends(get_db),
 ):
     """Return either the persisted Nano schema graph or industrial instances.
 
@@ -67,6 +69,11 @@ def get_graph(
     """
     limit = max(1, min(int(limit), 1000))
     if view == "instances":
+        from app.models.ontology import OntologyProject
+        if not db.query(OntologyProject.id).filter(OntologyProject.id == ontology_id).first():
+            # Do not let a stale browser tab create an empty FalkorDB graph
+            # for a deleted ontology merely by reading the instances view.
+            raise HTTPException(404, "Ontology not found")
         svc = get_falkordb()
         if not svc.available:
             return {
