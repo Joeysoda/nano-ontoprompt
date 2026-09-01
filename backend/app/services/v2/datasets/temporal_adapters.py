@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .icews_adapter import normalize_icews_rows
+
 
 @dataclass(frozen=True)
 class TemporalAdapter:
@@ -41,10 +43,23 @@ def _scania(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
+def _icews(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compatibility adapter used by callers that only need valid rows.
+
+    The full worker also keeps the issue list returned by
+    :func:`normalize_icews_rows`; this callable follows the historical adapter
+    contract and returns only normalized rows.
+    """
+    normalized, _issues = normalize_icews_rows(rows)
+    return normalized
+
+
 ADAPTERS = {
     "cmapss": TemporalAdapter("cmapss", "ordinal", "NASA C-MAPSS cycle is sequence time; no calendar date is inferred.", _cmapss),
     "c-mapss": TemporalAdapter("cmapss", "ordinal", "NASA C-MAPSS cycle is sequence time; no calendar date is inferred.", _cmapss),
     "scania": TemporalAdapter("scania", "instant", "SCANIA component records use source timestamps normalized by the temporal service.", _scania),
+    "icews": TemporalAdapter("icews", "instant", "ICEWS event dates are day-precision Instant values; no time-of-day is invented.", _icews),
+    "icews_2023_demo": TemporalAdapter("icews", "instant", "ICEWS event dates are day-precision Instant values; no time-of-day is invented.", _icews),
 }
 
 

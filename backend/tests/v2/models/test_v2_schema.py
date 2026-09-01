@@ -73,6 +73,9 @@ def test_all_v2_tables_registered():
         "v2_ontology_action_runs",
         "v2_ontology_mappings",
         "v2_ontology_link_mappings",
+        "v2_construction_runs",
+        "v2_evidence_refs",
+        "v2_extracted_fragments",
     }
 
 

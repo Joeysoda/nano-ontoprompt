@@ -25,6 +25,8 @@ import StructuredDataPage from '@/pages/data-management/structured/StructuredDat
 import RegularDataPage from '@/pages/data-management/regular/RegularDataPage'
 import MultimodalDataPage from '@/pages/data-management/multimodal/MultimodalDataPage'
 import TemporalConstructionPage from '@/pages/data-management/temporal/TemporalConstructionPage'
+import TemporalConstructionWizard from '@/pages/data-management/temporal/TemporalConstructionWizard'
+import TemporalWorkbenchPage from '@/pages/data-management/temporal/TemporalWorkbenchPage'
 import BenchmarksPage from '@/pages/benchmarks/BenchmarksPage'
 
 const qc = new QueryClient({
@@ -52,6 +54,8 @@ export default function App() {
           {/* ── 数据管理 ── */}
           <Route path="/data" element={<ProtectedRoute><DataManagementPage /></ProtectedRoute>} />
           <Route path="/data/temporal" element={<ProtectedRoute><TemporalConstructionPage /></ProtectedRoute>} />
+          <Route path="/data/temporal/new" element={<ProtectedRoute><TemporalConstructionWizard /></ProtectedRoute>} />
+          <Route path="/data/temporal/runs/:runId" element={<ProtectedRoute><TemporalWorkbenchPage /></ProtectedRoute>} />
           <Route path="/data/regular" element={<ProtectedRoute><RegularDataPage /></ProtectedRoute>} />
           <Route path="/data/multimodal" element={<ProtectedRoute><MultimodalDataPage /></ProtectedRoute>} />
           <Route path="/data/structured" element={<ProtectedRoute><StructuredDataPage /></ProtectedRoute>} />

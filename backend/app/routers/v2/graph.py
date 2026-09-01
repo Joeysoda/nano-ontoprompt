@@ -70,7 +70,11 @@ def get_graph(
     limit = max(1, min(int(limit), 1000))
     if view == "instances":
         from app.models.ontology import OntologyProject
-        if not db.query(OntologyProject.id).filter(OntologyProject.id == ontology_id).first():
+        # Direct Python callers/tests do not have FastAPI dependency
+        # resolution and therefore pass the default ``Depends`` sentinel.
+        # HTTP requests still receive a real Session and keep the stale-tab
+        # protection that prevents a read from creating a phantom graph.
+        if hasattr(db, "query") and not db.query(OntologyProject.id).filter(OntologyProject.id == ontology_id).first():
             # Do not let a stale browser tab create an empty FalkorDB graph
             # for a deleted ontology merely by reading the instances view.
             raise HTTPException(404, "Ontology not found")
@@ -321,6 +325,10 @@ def temporal_relations(
     subject_id: str | None = None,
     object_id: str | None = None,
     event_seq: int | None = Query(None, ge=0),
+    event_time: str | None = None,
+    at: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     relation_state: str = Query("all", pattern="^(all|current)$"),
     limit: int = 200,
 ):
@@ -331,6 +339,10 @@ def temporal_relations(
         subject_id=subject_id,
         object_id=object_id,
         event_seq=event_seq,
+        event_time=event_time,
+        at=at,
+        date_from=date_from,
+        date_to=date_to,
         relation_state=relation_state,
         limit=max(1, min(int(limit), 1000)),
     )

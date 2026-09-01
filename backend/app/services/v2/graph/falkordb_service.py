@@ -162,6 +162,10 @@ class FalkorDBService:
         subject_id: str | None = None,
         object_id: str | None = None,
         event_seq: int | None = None,
+        event_time: str | None = None,
+        at: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         relation_state: str = "all",
         limit: int = 200,
     ) -> dict[str, Any]:
@@ -188,6 +192,20 @@ class FalkorDBService:
         if event_seq is not None:
             clauses.append("r.event_seq = $event_seq")
             params["event_seq"] = int(event_seq)
+        if event_time:
+            clauses.append("r.event_time = $event_time")
+            params["event_time"] = event_time
+        if date_from:
+            clauses.append("r.event_time >= $date_from")
+            params["date_from"] = date_from
+        if date_to:
+            clauses.append("r.event_time <= $date_to")
+            params["date_to"] = date_to
+        if at:
+            clauses.append("(r.event_time IS NULL OR r.event_time <= $at)")
+            clauses.append("(r.valid_from IS NULL OR r.valid_from <= $at)")
+            clauses.append("(r.valid_to IS NULL OR r.valid_to >= $at)")
+            params["at"] = at
         if relation_state == "current":
             clauses.append("r.valid_to IS NULL")
         result = graph.query(
@@ -334,47 +352,148 @@ class FalkorDBService:
             "samples": {"isolated_node_ids": isolated[:10]},
         }
 
-    def _event_nodes(self, ontology_id: str, at: str | None = None, limit: int = 1000) -> list[dict[str, Any]]:
-        """Read a bounded temporal snapshot from the ontology-isolated graph."""
+    def _event_nodes(
+        self,
+        ontology_id: str,
+        at: str | None = None,
+        mode: str = "cumulative",
+        date_from: str | None = None,
+        date_to: str | None = None,
+        country: str | None = None,
+        event_type: str | None = None,
+        category: str | None = None,
+        intensity_min: float | None = None,
+        intensity_max: float | None = None,
+        participant: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Read a bounded ICEWS/temporal snapshot from one ontology graph."""
         if not self.available:
             return []
         graph = self._graph(ontology_id)
         bounded = max(1, min(int(limit), 1000))
-        # Static ontology nodes (Building/Point) are always part of a
-        # snapshot. Fill the remaining budget with the newest observations so
-        # an early and a late snapshot visibly differ even when the dataset
-        # contains tens of thousands of events.
-        static_result = graph.query(
-            "MATCH (n) WHERE n._instance_id IS NOT NULL AND n.event_time IS NULL RETURN n",
-        )
-        static_nodes = [self._node(row[0]) for row in static_result.result_set if self._node(row[0]).get("id")]
-        event_limit = max(0, bounded - len(static_nodes))
-        if event_limit == 0:
-            return static_nodes[:bounded]
+        mode = mode if mode in {"window", "cumulative"} else "cumulative"
+        # Reserve most of the canvas for dated events, then add their direct
+        # Actor/Category/Country/Location context.  Sampling static nodes first
+        # would make a dense ICEWS graph appear to contain no relationships.
+        event_limit = max(1, int(bounded * 0.65))
         clauses = ["n._instance_id IS NOT NULL", "n.event_time IS NOT NULL"]
         params: dict[str, Any] = {"limit": event_limit}
-        if at:
+        if mode == "cumulative" and at:
             clauses.append("n.event_time <= $at")
             params["at"] = at
-        result = graph.query(f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n ORDER BY n.event_time DESC LIMIT $limit", params=params)
+        if date_from:
+            clauses.append("n.event_time >= $date_from")
+            params["date_from"] = date_from
+        if date_to:
+            clauses.append("n.event_time <= $date_to")
+            params["date_to"] = date_to
+        if mode == "window" and at and not date_from and not date_to:
+            clauses.append("n.event_time = $at")
+            params["at"] = at
+        if country:
+            clauses.append("(toLower(coalesce(n.source_country, '')) CONTAINS $country OR toLower(coalesce(n.target_country, '')) CONTAINS $country OR toLower(coalesce(n.country, '')) CONTAINS $country)")
+            params["country"] = str(country).casefold()
+        if event_type:
+            clauses.append("toLower(coalesce(n.event_type, '')) CONTAINS $event_type")
+            params["event_type"] = str(event_type).casefold()
+        if category:
+            clauses.append("toLower(coalesce(n.cameo_code, '')) CONTAINS $category")
+            params["category"] = str(category).casefold()
+        if intensity_min is not None:
+            clauses.append("n.intensity >= $intensity_min")
+            params["intensity_min"] = float(intensity_min)
+        if intensity_max is not None:
+            clauses.append("n.intensity <= $intensity_max")
+            params["intensity_max"] = float(intensity_max)
+        if participant:
+            clauses.append("(toLower(coalesce(n.source_name, '')) CONTAINS $participant OR toLower(coalesce(n.target_name, '')) CONTAINS $participant)")
+            params["participant"] = str(participant).casefold()
+        order = "n.event_time DESC, n._instance_id" if mode == "cumulative" else "n.event_time, n._instance_id"
+        result = graph.query(f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n ORDER BY {order} LIMIT $limit", params=params)
         event_nodes = [self._node(row[0]) for row in result.result_set if self._node(row[0]).get("id")]
-        return static_nodes[:bounded] + event_nodes
+        context_nodes: list[dict[str, Any]] = []
+        event_ids = [node["id"] for node in event_nodes]
+        if event_ids and len(event_nodes) < bounded:
+            context_result = graph.query(
+                "MATCH (event)-[r]-(context) WHERE event._instance_id IN $event_ids "
+                "AND context._instance_id IS NOT NULL AND context.event_time IS NULL "
+                "RETURN context LIMIT $limit",
+                params={"event_ids": event_ids, "limit": bounded - len(event_nodes)},
+            )
+            seen: set[str] = set()
+            for row in context_result.result_set:
+                node = self._node(row[0])
+                if node.get("id") and node["id"] not in seen:
+                    seen.add(node["id"]); context_nodes.append(node)
+        if len(event_nodes) + len(context_nodes) < bounded:
+            static_result = graph.query("MATCH (n) WHERE n._instance_id IS NOT NULL AND n.event_time IS NULL RETURN n LIMIT $limit", params={"limit": bounded})
+            existing = {node["id"] for node in event_nodes + context_nodes}
+            for row in static_result.result_set:
+                node = self._node(row[0])
+                if node.get("id") and node["id"] not in existing:
+                    existing.add(node["id"]); context_nodes.append(node)
+                if len(event_nodes) + len(context_nodes) >= bounded: break
+        return event_nodes + context_nodes
 
-    def temporal_snapshot(self, ontology_id: str, at: str | None = None, limit: int = 300) -> dict[str, Any]:
-        nodes = self._event_nodes(ontology_id, at=at, limit=limit)
+    def temporal_snapshot(
+        self,
+        ontology_id: str,
+        at: str | None = None,
+        mode: str = "cumulative",
+        date_from: str | None = None,
+        date_to: str | None = None,
+        country: str | None = None,
+        event_type: str | None = None,
+        category: str | None = None,
+        intensity_min: float | None = None,
+        intensity_max: float | None = None,
+        participant: str | None = None,
+        limit: int = 300,
+    ) -> dict[str, Any]:
+        nodes = self._event_nodes(
+            ontology_id, at=at, mode=mode, date_from=date_from, date_to=date_to,
+            country=country, event_type=event_type, category=category,
+            intensity_min=intensity_min,
+            intensity_max=intensity_max, participant=participant, limit=limit,
+        )
         ids = [n["id"] for n in nodes]
         edges: list[dict[str, Any]] = []
         if ids and self.available:
             graph = self._graph(ontology_id)
             clauses = ["a._instance_id IN $ids", "b._instance_id IN $ids"]
             params: dict[str, Any] = {"ids": ids}
-            if at:
+            if mode == "cumulative" and at:
                 clauses.append("(r.valid_from IS NULL OR r.valid_from <= $at)")
                 params["at"] = at
+            if date_from:
+                clauses.append("(r.event_time IS NULL OR r.event_time >= $date_from)")
+                params["date_from"] = date_from
+            if date_to:
+                clauses.append("(r.event_time IS NULL OR r.event_time <= $date_to)")
+                params["date_to"] = date_to
+            if country:
+                clauses.append("(toLower(coalesce(a.source_country, '')) CONTAINS $country OR toLower(coalesce(a.target_country, '')) CONTAINS $country OR toLower(coalesce(a.country, '')) CONTAINS $country OR toLower(coalesce(b.source_country, '')) CONTAINS $country OR toLower(coalesce(b.target_country, '')) CONTAINS $country OR toLower(coalesce(b.country, '')) CONTAINS $country)")
+                params["country"] = str(country).casefold()
+            if event_type:
+                clauses.append("(toLower(coalesce(a.event_type, '')) CONTAINS $event_type OR toLower(coalesce(b.event_type, '')) CONTAINS $event_type)")
+                params["event_type"] = str(event_type).casefold()
+            if category:
+                clauses.append("(toLower(coalesce(a.cameo_code, '')) CONTAINS $category OR toLower(coalesce(b.cameo_code, '')) CONTAINS $category)")
+                params["category"] = str(category).casefold()
+            if intensity_min is not None:
+                clauses.append("(a.intensity >= $intensity_min OR b.intensity >= $intensity_min)")
+                params["intensity_min"] = float(intensity_min)
+            if intensity_max is not None:
+                clauses.append("(a.intensity <= $intensity_max OR b.intensity <= $intensity_max)")
+                params["intensity_max"] = float(intensity_max)
+            if participant:
+                clauses.append("(toLower(coalesce(a.source_name, '')) CONTAINS $participant OR toLower(coalesce(a.target_name, '')) CONTAINS $participant OR toLower(coalesce(b.source_name, '')) CONTAINS $participant OR toLower(coalesce(b.target_name, '')) CONTAINS $participant)")
+                params["participant"] = str(participant).casefold()
             result = graph.query(f"MATCH (a)-[r]->(b) WHERE {' AND '.join(clauses)} RETURN a._instance_id, b._instance_id, type(r), r", params=params)
             for source, target, rel_type, rel in result.result_set:
                 props = dict(getattr(rel, "properties", {}) or {})
-                if at and props.get("valid_to") and props["valid_to"] < at:
+                if mode == "cumulative" and at and props.get("valid_to") and props["valid_to"] < at:
                     continue
                 edges.append({"id": f"{source}:{rel_type}:{target}:{props.get('valid_from', '')}", "source": source, "target": target, "type": rel_type, "properties": props, "valid_from": props.get("valid_from"), "valid_to": props.get("valid_to")})
         total_nodes = len(nodes)
@@ -383,14 +502,41 @@ class FalkorDBService:
             graph = self._graph(ontology_id)
             node_clauses = ["n._instance_id IS NOT NULL"]
             node_params: dict[str, Any] = {}
-            if at:
+            if mode == "cumulative" and at:
                 node_clauses.append("(n.event_time IS NULL OR n.event_time <= $at)")
                 node_params["at"] = at
+            if date_from:
+                node_clauses.append("(n.event_time IS NULL OR n.event_time >= $date_from)")
+                node_params["date_from"] = date_from
+            if date_to:
+                node_clauses.append("(n.event_time IS NULL OR n.event_time <= $date_to)")
+                node_params["date_to"] = date_to
+            if mode == "window" and at and not date_from and not date_to:
+                node_clauses.append("(n.event_time IS NULL OR n.event_time = $at)")
+                node_params["at"] = at
+            if country:
+                node_clauses.append("(n.event_time IS NULL OR toLower(coalesce(n.source_country, '')) CONTAINS $country OR toLower(coalesce(n.target_country, '')) CONTAINS $country OR toLower(coalesce(n.country, '')) CONTAINS $country)")
+                node_params["country"] = str(country).casefold()
+            if event_type:
+                node_clauses.append("(n.event_time IS NULL OR toLower(coalesce(n.event_type, '')) CONTAINS $event_type)")
+                node_params["event_type"] = str(event_type).casefold()
+            if category:
+                node_clauses.append("(n.event_time IS NULL OR toLower(coalesce(n.cameo_code, '')) CONTAINS $category)")
+                node_params["category"] = str(category).casefold()
+            if intensity_min is not None:
+                node_clauses.append("(n.event_time IS NULL OR n.intensity >= $intensity_min)")
+                node_params["intensity_min"] = float(intensity_min)
+            if intensity_max is not None:
+                node_clauses.append("(n.event_time IS NULL OR n.intensity <= $intensity_max)")
+                node_params["intensity_max"] = float(intensity_max)
+            if participant:
+                node_clauses.append("(n.event_time IS NULL OR toLower(coalesce(n.source_name, '')) CONTAINS $participant OR toLower(coalesce(n.target_name, '')) CONTAINS $participant)")
+                node_params["participant"] = str(participant).casefold()
             count_nodes = graph.query(f"MATCH (n) WHERE {' AND '.join(node_clauses)} RETURN count(n)", params=node_params)
             total_nodes = int(count_nodes.result_set[0][0]) if count_nodes.result_set else total_nodes
             edge_clauses = ["a._instance_id IS NOT NULL", "b._instance_id IS NOT NULL"]
             edge_params: dict[str, Any] = {}
-            if at:
+            if mode == "cumulative" and at:
                 # A snapshot contains a relationship only when both endpoint
                 # events have occurred by ``at``.  Observation edges do not
                 # carry valid_from/valid_to themselves, so checking interval
@@ -403,11 +549,38 @@ class FalkorDBService:
                     "(r.valid_to IS NULL OR r.valid_to >= $at)",
                 ])
                 edge_params["at"] = at
+            if date_from:
+                edge_clauses.append("(r.event_time IS NULL OR r.event_time >= $date_from)")
+                edge_params["date_from"] = date_from
+            if date_to:
+                edge_clauses.append("(r.event_time IS NULL OR r.event_time <= $date_to)")
+                edge_params["date_to"] = date_to
+            if mode == "window" and at and not date_from and not date_to:
+                edge_clauses.append("(r.event_time IS NULL OR r.event_time = $at)")
+                edge_params["at"] = at
+            if country:
+                edge_clauses.append("(toLower(coalesce(a.source_country, '')) CONTAINS $country OR toLower(coalesce(a.target_country, '')) CONTAINS $country OR toLower(coalesce(a.country, '')) CONTAINS $country OR toLower(coalesce(b.source_country, '')) CONTAINS $country OR toLower(coalesce(b.target_country, '')) CONTAINS $country OR toLower(coalesce(b.country, '')) CONTAINS $country)")
+                edge_params["country"] = str(country).casefold()
+            if event_type:
+                edge_clauses.append("(toLower(coalesce(a.event_type, '')) CONTAINS $event_type OR toLower(coalesce(b.event_type, '')) CONTAINS $event_type)")
+                edge_params["event_type"] = str(event_type).casefold()
+            if category:
+                edge_clauses.append("(toLower(coalesce(a.cameo_code, '')) CONTAINS $category OR toLower(coalesce(b.cameo_code, '')) CONTAINS $category)")
+                edge_params["category"] = str(category).casefold()
+            if intensity_min is not None:
+                edge_clauses.append("(a.intensity >= $intensity_min OR b.intensity >= $intensity_min)")
+                edge_params["intensity_min"] = float(intensity_min)
+            if intensity_max is not None:
+                edge_clauses.append("(a.intensity <= $intensity_max OR b.intensity <= $intensity_max)")
+                edge_params["intensity_max"] = float(intensity_max)
+            if participant:
+                edge_clauses.append("(toLower(coalesce(a.source_name, '')) CONTAINS $participant OR toLower(coalesce(a.target_name, '')) CONTAINS $participant OR toLower(coalesce(b.source_name, '')) CONTAINS $participant OR toLower(coalesce(b.target_name, '')) CONTAINS $participant)")
+                edge_params["participant"] = str(participant).casefold()
             count_edges = graph.query(f"MATCH (a)-[r]->(b) WHERE {' AND '.join(edge_clauses)} RETURN count(r)", params=edge_params)
             total_edges = int(count_edges.result_set[0][0]) if count_edges.result_set else total_edges
-        return {"available": self.available, "graph_backend": "falkordb", "ontology_id": ontology_id, "at": at, "nodes": nodes, "edges": edges, "total_nodes": len(nodes), "total_edges": len(edges), "total_available_nodes": total_nodes, "total_available_edges": total_edges, "sample_limit": max(1, min(int(limit), 1000))}
+        return {"available": self.available, "graph_backend": "falkordb", "ontology_id": ontology_id, "at": at, "mode": mode, "date_from": date_from, "date_to": date_to, "nodes": nodes, "edges": edges, "total_nodes": len(nodes), "total_edges": len(edges), "total_available_nodes": total_nodes, "total_available_edges": total_edges, "sample_limit": max(1, min(int(limit), 1000))}
 
-    def temporal_timeline(self, ontology_id: str, entity_id: str | None = None, limit: int = 200) -> dict[str, Any]:
+    def temporal_timeline(self, ontology_id: str, entity_id: str | None = None, category: str | None = None, limit: int = 200) -> dict[str, Any]:
         if not self.available:
             return {"available": False, "graph_backend": "falkordb", "events": []}
         graph = self._graph(ontology_id)
@@ -416,12 +589,40 @@ class FalkorDBService:
         if entity_id:
             clauses.append("(n._instance_id = $entity_id OR n.stream_id = $entity_id)")
             params["entity_id"] = entity_id
+        if category:
+            clauses.append("(toLower(coalesce(n.cameo_code, '')) CONTAINS $category OR toLower(coalesce(n.event_type, '')) CONTAINS $category)")
+            params["category"] = str(category).casefold()
+        # Keep the event table bounded for the browser, but compute the date
+        # buckets without that limit.  ICEWS has hundreds of events per day,
+        # so deriving the slider dates from the first 500 events would hide
+        # later days entirely.  The buckets are also the API's deterministic
+        # day-level aggregation used by the Semantica-style timeline.
+        bucket_result = graph.query(
+            f"MATCH (n) WHERE {' AND '.join(clauses)} "
+            "RETURN n.event_time, count(n) ORDER BY n.event_time",
+            params={key: value for key, value in params.items() if key != "limit"},
+        )
+        buckets = [
+            {"timestamp": str(row[0]), "count": int(row[1])}
+            for row in bucket_result.result_set
+            if row and row[0] is not None
+        ]
         result = graph.query(f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n ORDER BY n.event_time LIMIT $limit", params=params)
         events = []
         for row in result.result_set:
             node = self._node(row[0]); props = node.get("properties") or {}
-            events.append({"id": node["id"], "timestamp": node.get("event_time"), "label": props.get("point_name") or props.get("name") or node.get("entity_type"), "entity_type": node.get("entity_type"), "value": props.get("value"), "stream_id": props.get("stream_id")})
-        return {"available": True, "graph_backend": "falkordb", "ontology_id": ontology_id, "events": events, "count": len(events), "sample_limit": params["limit"]}
+            events.append({"id": node["id"], "timestamp": node.get("event_time"), "label": props.get("event_type") or props.get("point_name") or props.get("name") or node.get("entity_type"), "entity_type": node.get("entity_type"), "value": props.get("value") if props.get("value") is not None else props.get("intensity"), "category": props.get("cameo_code"), "stream_id": props.get("stream_id")})
+        return {
+            "available": True,
+            "graph_backend": "falkordb",
+            "ontology_id": ontology_id,
+            "events": events,
+            "count": len(events),
+            "total_events": sum(bucket["count"] for bucket in buckets),
+            "dates": [bucket["timestamp"] for bucket in buckets],
+            "buckets": buckets,
+            "sample_limit": params["limit"],
+        }
 
     def temporal_diff(self, ontology_id: str, from_at: str, to_at: str, limit: int = 1000) -> dict[str, Any]:
         before = self.temporal_snapshot(ontology_id, at=from_at, limit=limit)

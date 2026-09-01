@@ -171,7 +171,14 @@ class StorageService:
     def delete_object(self, uri: str) -> None:
         """删除对象。"""
         bucket, key = self._parse_uri(uri)
-        self._client.remove_object(bucket, key)
+        if self._available and self._client:
+            self._client.remove_object(bucket, key)
+            return
+        # Keep the same deletion contract when the local filesystem fallback
+        # is active (used by tests and offline development).
+        local = os.path.join(self._LOCAL_BASE, bucket, key)
+        if os.path.exists(local):
+            os.remove(local)
 
     def list_prefix(self, bucket: str, prefix: str) -> list[str]:
         """返回 prefix 下的对象键列表。"""
