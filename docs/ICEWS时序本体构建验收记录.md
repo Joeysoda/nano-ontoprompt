@@ -15,7 +15,7 @@
 ```text
 运行日期：2026-09-01（Asia/Shanghai）
 分支：codex/icews-temporal-workbench
-commit：`80dcbc4`
+代码 commit：`5b32c9b`
 Docker Compose：docker-compose.v2.yml
 模型：本流程为确定性规则映射，未调用 Ollama/MiniMax
 ```
