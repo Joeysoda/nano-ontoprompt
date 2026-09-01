@@ -119,12 +119,22 @@ def _call_llm(provider: str, api_key: str, api_base: str | None, model: str, mes
         if api_base:
             kwargs["base_url"] = api_base
         client = openai.OpenAI(**kwargs)
-        create_kwargs: dict = {"model": model, "messages": messages, "timeout": 120, "max_tokens": 2048,
-                               "temperature": 0, "seed": _seed}
-        if provider == "compatible":
-            create_kwargs["extra_body"] = {"reasoning_effort": "none"}
-        if json_mode:
-            create_kwargs["response_format"] = {"type": "json_object"}
+        is_minimax = model == "MiniMax-M3" or "api.minimaxi.com" in str(api_base or "")
+        create_kwargs: dict = {"model": model, "messages": messages, "timeout": 300,
+                               "temperature": 0}
+        if is_minimax:
+            # MiniMax M3's OpenAI-compatible endpoint uses its own reasoning
+            # controls.  It rejects seed/response_format, so do not send
+            # those fields even when the caller requested JSON mode.
+            create_kwargs["max_completion_tokens"] = 65536
+            create_kwargs["extra_body"] = {"thinking": {"type": "adaptive"}, "reasoning_split": True}
+        else:
+            create_kwargs["max_tokens"] = 65536
+            create_kwargs["seed"] = _seed
+            if provider == "compatible":
+                create_kwargs["extra_body"] = {"reasoning_effort": "none"}
+            if json_mode:
+                create_kwargs["response_format"] = {"type": "json_object"}
         try:
             resp = client.chat.completions.create(**create_kwargs)
         except Exception:
@@ -132,6 +142,7 @@ def _call_llm(provider: str, api_key: str, api_base: str | None, model: str, mes
             # the portable OpenAI-compatible subset
             create_kwargs.pop("seed", None)
             create_kwargs.pop("extra_body", None)
+            create_kwargs.pop("response_format", None)
             resp = client.chat.completions.create(**create_kwargs)
         return resp.choices[0].message.content or ""
 

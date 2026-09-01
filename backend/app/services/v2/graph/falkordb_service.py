@@ -35,7 +35,10 @@ class FalkorDBService:
             return
         try:
             self._db = FalkorDB(host=self.host, port=self.port)
-            self._db.select_graph("nano_healthcheck").query("RETURN 1")
+            # A Redis PING verifies the service without creating a synthetic
+            # ``nano_healthcheck`` graph that would pollute the demo graph
+            # inventory every time /health or a graph endpoint is called.
+            self._db.connection.ping()
             self._available = True
         except Exception:
             self._db = None
@@ -43,6 +46,29 @@ class FalkorDBService:
     @property
     def available(self) -> bool:
         return self._available
+
+    def delete_graph(self, ontology_id: str) -> bool:
+        """Delete the isolated graph for an ontology.
+
+        FalkorDB exposes graph deletion on the client in recent releases.  A
+        small command fallback keeps cleanup compatible with older clients
+        without ever touching another ontology's graph.
+        """
+        if not self.available or not self._db:
+            return False
+        name = graph_name_for_ontology(ontology_id)
+        try:
+            deleter = getattr(self._db, "delete_graph", None)
+            if callable(deleter):
+                deleter(name)
+            else:
+                connection = getattr(self._db, "connection", None)
+                if connection is None:
+                    raise RuntimeError("FalkorDB client has no graph deletion API")
+                connection.execute_command("GRAPH.DELETE", name)
+            return True
+        except Exception:
+            return False
 
     def _graph(self, ontology_id: str):
         if not self._db:

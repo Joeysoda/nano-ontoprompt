@@ -23,6 +23,7 @@ uploads/
 node_modules/
 frontend/dist/
 frontend/.env.local
+.runtime_backups/
 
 # IDE
 .idea/

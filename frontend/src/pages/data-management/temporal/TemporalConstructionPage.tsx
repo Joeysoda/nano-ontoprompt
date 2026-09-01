@@ -110,12 +110,19 @@ export default function TemporalConstructionPage() {
   const createRun = async () => {
     setBusy(true); setLoadError(''); setSnapshot(null); setTimeline(null); setGrowth(null); setDiff(null)
     try {
-      const ontology = await apiClient.post<any>('/ontologies', {
-        name: `BTS Site B 时序本体 ${new Date().toLocaleString('zh-CN', { hour12: false }).replace(/[/: ]/g, '-')}`,
-        domain: '制造',
-        description: 'Building TimeSeries Site B → Brick 时序本体构建演示',
-        build_mode: 'temporal_pipeline',
-      })
+      // Reuse the retained BTS ontology on repeated demonstrations. Creating
+      // a new ontology for every click made the runtime fill with duplicates
+      // even though FalkorDB writes themselves were idempotent.
+      const catalogResult = await apiClient.get<any>('/ontologies?page_size=100')
+      let ontology = (catalogResult?.items || []).find((item: any) => String(item.name || '').startsWith('BTS Site B 时序本体'))
+      if (!ontology) {
+        ontology = await apiClient.post<any>('/ontologies', {
+          name: `BTS Site B 时序本体 ${new Date().toLocaleString('zh-CN', { hour12: false }).replace(/[/: ]/g, '-')}`,
+          domain: '制造',
+          description: 'Building TimeSeries Site B → Brick 时序本体构建演示',
+          build_mode: 'temporal_pipeline',
+        })
+      }
       const created = await apiClientV2.post<Run>(`/ontologies/${ontology.id}/temporal/runs`, {
         source: 'bts_site_b', adapter: 'bts', time_kind: timeKind,
         event_time_column: timeKind === 'instant' ? timeColumn : null,

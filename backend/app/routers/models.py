@@ -123,7 +123,14 @@ def test_model(model_id: str, db: Session = Depends(get_db), _=Depends(get_curre
                 kwargs["base_url"] = call_kwargs["api_base"]
             client = openai.OpenAI(**kwargs)
             model = call_kwargs["model"]
-            resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": "ping"}], max_tokens=10)
-            return {"data": {"ok": True, "response": resp.choices[0].message.content}}
+            create_kwargs = {"model": model, "messages": [{"role": "user", "content": "ping"}]}
+            if model == "MiniMax-M3" or "api.minimaxi.com" in str(call_kwargs["api_base"] or ""):
+                create_kwargs.update({"max_completion_tokens": 10, "extra_body": {"thinking": {"type": "adaptive"}, "reasoning_split": True}})
+            else:
+                create_kwargs["max_tokens"] = 10
+            resp = client.chat.completions.create(**create_kwargs)
+            message = resp.choices[0].message
+            content = getattr(message, "content", None) or getattr(message, "reasoning_content", None)
+            return {"data": {"ok": True, "response": content or "MiniMax M3 endpoint reachable"}}
     except Exception as e:
         raise HTTPException(400, f"Connection failed: {e}")

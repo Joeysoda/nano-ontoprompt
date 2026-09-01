@@ -16,7 +16,10 @@ class Settings(BaseSettings):
 
     # 上传限制
     max_upload_mb: int = 200
-    allowed_upload_extensions: str = "csv,xlsx,xls,json,xml,pdf,docx,doc,pptx,ppt,md,txt"
+    # Structured files plus evidence-bearing multimodal assets.  Video files
+    # are registered as media; the current prototype does not claim semantic
+    # video understanding until a dedicated processor is configured.
+    allowed_upload_extensions: str = "csv,xlsx,xls,json,xml,pdf,docx,doc,pptx,ppt,md,txt,png,jpg,jpeg,webp,mp4,mov"
 
     # v2 — Neo4j
     neo4j_uri: str = "bolt://localhost:7687"

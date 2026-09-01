@@ -1,4 +1,4 @@
-import { ArrowRight, Database, GitBranch, Table2 } from 'lucide-react'
+import { ArrowRight, Database, GitBranch, Table2, UploadCloud } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 /**
@@ -16,8 +16,15 @@ export default function RegularDataPage() {
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
-        <h2 className="text-xl font-semibold">常规数据</h2>
-        <p className="text-sm text-gray-500 mt-1">管理表格和数据库数据，并通过现有 Pipeline 转换成本体可用的数据集。</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold">常规数据</h2>
+            <p className="text-sm text-gray-500 mt-1">管理表格和数据库数据，并通过现有 Pipeline 转换成本体可用的数据集。</p>
+          </div>
+          <button onClick={() => navigate('/data/pipelines/connections')} className="inline-flex items-center gap-2 rounded-lg bg-black px-3 py-2 text-sm text-white hover:bg-gray-800">
+            <UploadCloud size={15} /> 导入文件
+          </button>
+        </div>
       </div>
       <div className="grid md:grid-cols-3 gap-4">
         {links.map(({ title, description, icon: Icon, path, color }) => (

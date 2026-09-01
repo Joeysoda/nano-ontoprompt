@@ -64,4 +64,15 @@ def delete_ontology(ontology_id: str, db: Session = Depends(get_db), _=Depends(r
     p = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
     if not p:
         raise HTTPException(404, "Not found")
+    # Graph data lives outside PostgreSQL. Remove the isolated FalkorDB graph
+    # together with the ontology so a deleted project cannot leave orphaned
+    # instances visible from the Graph page.
+    try:
+        from app.services.v2.graph.falkordb_service import FalkorDBService
+        FalkorDBService().delete_graph(ontology_id)
+    except Exception:
+        # Database deletion remains authoritative; unavailable FalkorDB is
+        # reported by health/cleanup tooling and must not block metadata
+        # cleanup.
+        pass
     db.delete(p); db.commit()

@@ -90,6 +90,20 @@ def create_temporal_run(ontology_id: str, body: TemporalRunCreate, background: B
     config = body.model_dump(exclude={"dataset_id", "model_name", "source"})
     config["source"] = body.source
     config["time"] = {"time_kind": body.time_kind, "event_time_column": body.event_time_column, "sequence_column": body.sequence_column, "valid_from_column": body.valid_from_column, "valid_to_column": body.valid_to_column}
+    # The BTS showcase is a deterministic, idempotent demo. Reusing its
+    # completed run avoids creating a new ConstructionRun on every page click
+    # while still allowing a new run when the time semantics or source change.
+    existing = db.query(ConstructionRun).filter(
+        ConstructionRun.ontology_id == ontology_id,
+        ConstructionRun.dataset_id == body.dataset_id,
+        ConstructionRun.mode == "temporal",
+        ConstructionRun.status == "completed",
+    ).order_by(ConstructionRun.completed_at.desc()).first()
+    if existing:
+        existing_config = existing.config or {}
+        existing_kind = (existing_config.get("time") or {}).get("time_kind") or existing_config.get("time_kind")
+        if existing_config.get("source") == body.source and existing_kind == body.time_kind:
+            return serialize_run(existing)
     run = create_run(db, ontology_id=ontology_id, dataset_id=body.dataset_id, model_name=body.model_name, mode="temporal", config=config)
     try:
         from app.tasks.v2.temporal_construction import run_temporal_construction_task, run_temporal_construction

@@ -85,6 +85,15 @@ def _seed_db():
 
         seed_admin(db)
 
+        # Opt-in MiniMax M3 bootstrap.  The key is read from the process
+        # environment, verified against the provider model list, then stored
+        # encrypted in the model registry; no secret is returned or logged.
+        try:
+            from app.services.minimax_bootstrap import bootstrap_minimax_model
+            bootstrap_minimax_model(db)
+        except Exception:
+            logger.warning("MiniMax bootstrap skipped; configure it from Models when needed", exc_info=True)
+
         # 重启时清理遗留的 running 任务 — daemon 线程被杀后 task 会永久卡在 85%
         from app.models.extraction_task import ExtractionTask
         stale = db.query(ExtractionTask).filter(ExtractionTask.status == "running").all()
