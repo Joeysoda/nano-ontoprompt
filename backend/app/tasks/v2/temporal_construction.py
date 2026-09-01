@@ -20,6 +20,7 @@ from app.services.v2.graph.falkordb_service import FalkorDBService
 from app.services.v2.temporal_service import (
     TemporalConfig,
     build_bts_instances,
+    build_factorynet_instances,
     build_observation_instances,
     normalize_temporal_rows,
     summarize_temporal_rows,
@@ -55,15 +56,10 @@ def _read_rows(run: ConstructionRun) -> tuple[list[dict[str, Any]], str]:
         raw = get_storage_service().get_object(version.storage_uri)
     finally:
         db.close()
-    text = raw.decode("utf-8", errors="replace").lstrip("\ufeff")
     if source in {ICEWS_SOURCE_ID, "icews"}:
         return parse_icews_tsv(raw), str(version.storage_uri)
-    if text.lstrip().startswith("["):
-        data = json.loads(text)
-        return (data if isinstance(data, list) else [data]), str(version.storage_uri)
-    first_line = text.splitlines()[0] if text.splitlines() else ""
-    delimiter = "\t" if "\t" in first_line and "," not in first_line else ","
-    return list(csv.DictReader(io.StringIO(text), delimiter=delimiter)), str(version.storage_uri)
+    from app.routers.v2.temporal import parse_temporal_bytes
+    return parse_temporal_bytes(raw), str(version.storage_uri)
 
 
 def _source_manifest(db, dataset_id: str | None) -> dict[str, Any]:
@@ -142,6 +138,65 @@ def _filter_icews_rows(rows: list[dict[str, Any]], filters: dict[str, Any] | Non
             selected = selected[:max(1, min(int(max_records), 100000))]
     except (TypeError, ValueError):
         pass
+    return selected
+
+
+def _filter_generic_rows(rows: list[dict[str, Any]], filters: dict[str, Any] | None, *, entity_column: str | None = None) -> list[dict[str, Any]]:
+    """Apply typed generic filters and deterministic per-series sampling."""
+    filters = filters or {}
+    equals = filters.get("equals") or {}
+    contains = filters.get("contains") or {}
+    ranges = filters.get("ranges") or {}
+    selected: list[dict[str, Any]] = []
+    for row in rows:
+        keep = True
+        for column, expected in equals.items():
+            values = expected if isinstance(expected, list) else [expected]
+            if values and str(row.get(column, "")) not in {str(value) for value in values}:
+                keep = False; break
+        if not keep:
+            continue
+        for column, expected in contains.items():
+            if expected and str(expected).casefold() not in str(row.get(column, "")).casefold():
+                keep = False; break
+        if not keep:
+            continue
+        for column, bounds in ranges.items():
+            value = row.get(column)
+            try:
+                number = float(value)
+                if bounds.get("min") not in (None, "") and number < float(bounds["min"]): keep = False
+                if bounds.get("max") not in (None, "") and number > float(bounds["max"]): keep = False
+            except (TypeError, ValueError):
+                keep = False
+            if not keep: break
+        if keep:
+            selected.append(row)
+    max_records = filters.get("max_records")
+    try:
+        maximum = int(max_records) if max_records not in (None, "") else len(selected)
+    except (TypeError, ValueError):
+        maximum = len(selected)
+    maximum = max(1, min(maximum, len(selected))) if selected else 0
+    if maximum and len(selected) > maximum:
+        # Deterministic time-uniform sampling by entity/series, preserving all
+        # groups whenever the requested size permits it.
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for row in selected:
+            key = str(row.get(entity_column or "_series_id") or "_series")
+            groups.setdefault(key, []).append(row)
+        chosen: list[dict[str, Any]] = []
+        group_items = list(groups.items())
+        for _, group in group_items:
+            if len(chosen) >= maximum: break
+            quota = max(1, int(round(maximum * len(group) / len(selected))))
+            quota = min(quota, len(group), maximum - len(chosen))
+            if quota == len(group):
+                chosen.extend(group)
+            else:
+                step = len(group) / quota
+                chosen.extend(group[min(len(group) - 1, int(index * step))] for index in range(quota))
+        selected = chosen[:maximum]
     return selected
 
 
@@ -270,6 +325,38 @@ def _ensure_icews_schema(db, ontology_id: str) -> None:
             ))
 
 
+def _ensure_factorynet_schema(db, ontology_id: str) -> None:
+    classes = [
+        ("Machine", "机器"), ("Episode", "生产过程"), ("Observation", "观测"),
+        ("ProcessPhase", "工序阶段"), ("ToolCondition", "刀具状态"),
+        ("SensorChannel", "传感器通道"), ("InspectionResult", "检测结果"),
+    ]
+    entities: dict[str, Entity] = {}
+    for english, chinese in classes:
+        entity_id = f"schema:{ontology_id}:{english}"
+        entity = db.get(Entity, entity_id)
+        if entity is None:
+            entity = Entity(id=entity_id, ontology_id=ontology_id, name_cn=chinese, name_en=english,
+                            name_abbr=english[:3].upper(), canonical_id=f"factorynet:{english}", type="Class",
+                            description=f"FactoryNet CNC 时序本体中的 {chinese}",
+                            properties={"source": "FactoryNet CNC", "schema_kind": "factorynet"}, confidence=1.0)
+            db.add(entity)
+        entities[english] = entity
+    db.flush()
+    relations = [
+        ("Machine", "Episode", "HAS_EPISODE"), ("Episode", "Observation", "HAS_OBSERVATION"),
+        ("Observation", "Machine", "OBSERVED_ON"), ("Observation", "ProcessPhase", "IN_PHASE"),
+        ("Observation", "Observation", "NEXT_OBSERVATION"), ("Observation", "ToolCondition", "HAS_TOOL_CONDITION"),
+        ("Machine", "SensorChannel", "EXPOSES_CHANNEL"), ("Episode", "InspectionResult", "HAS_INSPECTION"),
+    ]
+    for source, target, relation_type in relations:
+        rid = f"schema:{ontology_id}:{relation_type}:{source}:{target}"
+        if db.get(Relation, rid) is None:
+            db.add(Relation(id=rid, ontology_id=ontology_id, source_entity=entities[source].id,
+                            target_entity=entities[target].id, type=relation_type,
+                            properties={"source": "FactoryNet CNC", "schema_kind": "factorynet"}, confidence=1.0))
+
+
 def run_temporal_construction(run_id: str) -> dict[str, Any]:
     db = SessionLocal()
     run = db.query(ConstructionRun).filter(ConstructionRun.id == run_id, ConstructionRun.mode == "temporal").first()
@@ -279,6 +366,7 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
     try:
         update_run(db, run, status="running", progress={"stage": "读取时序数据", "completed": 0, "total": 0})
         rows, source_file = _read_rows(run)
+        source_row_count = len(rows)
         config = run.config or {}
         source = config.get("source_id") or config.get("source") or "bts_site_b"
         if source in {ICEWS_SOURCE_ID, "icews"}:
@@ -289,6 +377,8 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
                 pass
             normalized, issues = normalize_icews_rows(rows)
         else:
+            entity_column = config.get("entity_id_column") or (config.get("field_mapping") or {}).get("entity")
+            rows = _filter_generic_rows(rows, config.get("filters"), entity_column=entity_column)
             normalized, issues = normalize_temporal_rows(rows, TemporalConfig(
                 time_kind=(config.get("time") or {}).get("time_kind", "instant"),
                 sequence_column=(config.get("time") or {}).get("sequence_column", "event_seq"),
@@ -300,6 +390,8 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
         update_run(db, run, progress={"stage": "标准化时序", "completed": len(normalized), "total": len(rows), "issues": len(issues)})
         if source in {ICEWS_SOURCE_ID, "icews"}:
             nodes, edges = build_icews_instances(normalized)
+        elif source == "factorynet_cnc" or config.get("adapter") == "factorynet":
+            nodes, edges = build_factorynet_instances(normalized)
         elif config.get("adapter", "bts") == "bts":
             nodes, edges = build_bts_instances(normalized)
         else:
@@ -315,6 +407,8 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
             raise RuntimeError("FalkorDB unavailable")
         if source in {ICEWS_SOURCE_ID, "icews"}:
             _ensure_icews_schema(db, run.ontology_id)
+        elif source == "factorynet_cnc" or config.get("adapter") == "factorynet":
+            _ensure_factorynet_schema(db, run.ontology_id)
         else:
             _ensure_bts_schema(db, run.ontology_id)
         update_run(db, run, progress={"stage": "写入 FalkorDB", "completed": len(normalized), "total": len(rows), "issues": len(issues)})
@@ -333,9 +427,10 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
                 assertion_id = f"ICEWS:Event:{row.get('event_id')}"
                 source_version_value = source_version or "icews-2023-demo"
             else:
-                evidence_text = str({k: row.get(k) for k in ("stream_id", "brick_class", "event_time", "value")})
-                assertion_id = f"BTS:Observation:{row.get('stream_id')}:{row.get('event_time') or index}"
-                source_version_value = "bts-site-b-v1"
+                evidence_text = json.dumps({k: row.get(k) for k in row.keys() if not str(k).startswith("_")}, ensure_ascii=False, default=str)[:8000]
+                prefix = "FactoryNet:Observation" if source == "factorynet_cnc" or config.get("adapter") == "factorynet" else "Temporal:Observation"
+                assertion_id = f"{prefix}:{row.get('episode_id') or row.get(entity_id_column) or 'series'}:{row.get('_source_row_index', index)}"
+                source_version_value = str(manifest.get("sha256") or manifest.get("source_id") or "temporal-upload")
             evidence_rows.append({
                 "id": str(uuid.uuid4()),
                 "construction_run_id": run.id,
@@ -386,12 +481,24 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
             summary = icews_summary(normalized)
             ontology_classes = ["Actor", "InteractionEvent", "EventCategory", "Country", "Location"]
             relation_types = ["INITIATED", "TARGETED", "CLASSIFIED_AS", "ASSOCIATED_WITH", "OCCURRED_IN"]
+        elif source == "factorynet_cnc" or config.get("adapter") == "factorynet":
+            summary = {
+                "rows": len(normalized),
+                "episodes": len({str(row.get("episode_id")) for row in normalized if row.get("episode_id") not in (None, "")}),
+                "machines": len({str(row.get("machine_type")) for row in normalized if row.get("machine_type") not in (None, "")}),
+                "time_kind": "ordinal",
+                "time_from": min((row.get("time_s") for row in normalized if row.get("time_s") is not None), default=None),
+                "time_to": max((row.get("time_s") for row in normalized if row.get("time_s") is not None), default=None),
+            }
+            ontology_classes = ["Machine", "Episode", "Observation", "ProcessPhase", "ToolCondition", "SensorChannel", "InspectionResult"]
+            relation_types = ["HAS_EPISODE", "HAS_OBSERVATION", "OBSERVED_ON", "IN_PHASE", "NEXT_OBSERVATION", "HAS_TOOL_CONDITION", "EXPOSES_CHANNEL", "HAS_INSPECTION"]
         else:
             summary = summarize_temporal_rows(normalized)
             ontology_classes = ["Building", "Zone", "Equipment", "Point", "Observation", "AnomalyEvent"]
             relation_types = ["HAS_EQUIPMENT", "HAS_POINT", "LOCATED_IN", "OBSERVED_ON", "INSTANCE_OF", "INDICATES_ANOMALY", "VALID_DURING"]
         metrics = {
-            "rows_in": len(rows),
+            "rows_in": source_row_count,
+            "rows_selected": len(rows),
             "rows_normalized": len(normalized),
             "temporal_issues": len(issues),
             "nodes_upserted": node_count,
@@ -402,6 +509,12 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
             "relations": relation_types,
             "filters": config.get("filters") or {},
         }
+        if not normalized:
+            update_run(db, run, status="failed", progress={"stage": "没有有效时序记录", "completed": 0, "total": len(rows), "issues": len(issues)}, metrics=metrics, error="NO_VALID_TEMPORAL_ROWS: 没有一行通过时间语义校验")
+            return {"run_id": run.id, "status": "failed", "metrics": metrics, "issues": issues[:100]}
+        if node_count <= 0 or edge_count <= 0:
+            update_run(db, run, status="failed", progress={"stage": "图谱没有有效关系", "completed": len(normalized), "total": len(rows), "issues": len(issues)}, metrics=metrics, error="NO_GRAPH_RELATIONS: 未生成节点或关系")
+            return {"run_id": run.id, "status": "failed", "metrics": metrics, "issues": issues[:100]}
         update_run(db, run, status="completed", progress={"stage": "构建完成", "completed": len(normalized), "total": len(rows), "issues": len(issues)}, metrics=metrics)
         return {"run_id": run.id, "status": "completed", "metrics": metrics, "issues": issues[:100]}
     except Exception as exc:

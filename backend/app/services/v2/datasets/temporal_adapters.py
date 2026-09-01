@@ -54,12 +54,25 @@ def _icews(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return normalized
 
 
+def _factorynet(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """FactoryNet CNC uses episode + elapsed seconds as ordinal time."""
+    result = []
+    for row in rows:
+        item = dict(row)
+        item.setdefault("series_id", item.get("episode_id") or item.get("machine_type") or "_series_0")
+        item.setdefault("ordinal_value", item.get("time_s"))
+        result.append(item)
+    return result
+
+
 ADAPTERS = {
     "cmapss": TemporalAdapter("cmapss", "ordinal", "NASA C-MAPSS cycle is sequence time; no calendar date is inferred.", _cmapss),
     "c-mapss": TemporalAdapter("cmapss", "ordinal", "NASA C-MAPSS cycle is sequence time; no calendar date is inferred.", _cmapss),
     "scania": TemporalAdapter("scania", "instant", "SCANIA component records use source timestamps normalized by the temporal service.", _scania),
     "icews": TemporalAdapter("icews", "instant", "ICEWS event dates are day-precision Instant values; no time-of-day is invented.", _icews),
     "icews_2023_demo": TemporalAdapter("icews", "instant", "ICEWS event dates are day-precision Instant values; no time-of-day is invented.", _icews),
+    "factorynet": TemporalAdapter("factorynet", "ordinal", "FactoryNet CNC uses episode and elapsed seconds as ordinal time; no date is inferred.", _factorynet),
+    "factorynet_cnc": TemporalAdapter("factorynet", "ordinal", "FactoryNet CNC uses episode and elapsed seconds as ordinal time; no date is inferred.", _factorynet),
 }
 
 

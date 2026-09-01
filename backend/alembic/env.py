@@ -37,7 +37,7 @@ from app.models import (  # noqa: E402, F401
     extraction_task,
     rules_config,
 )
-from app.models.v2 import connection, dataset, pipeline, curated, mapping  # noqa: E402, F401
+from app.models.v2 import connection, dataset, pipeline, curated, mapping, temporal_profile  # noqa: E402, F401
 
 target_metadata = Base.metadata
 

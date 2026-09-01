@@ -1,2 +1,2 @@
-// Stable compatibility import for older route registrations.
-export { default } from './TemporalSourcesPage'
+// Compatibility entry point. The temporal product page is the generic wizard.
+export { default } from './TemporalConstructionWizard'

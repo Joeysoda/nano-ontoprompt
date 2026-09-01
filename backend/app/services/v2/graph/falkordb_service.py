@@ -257,6 +257,7 @@ class FalkorDBService:
         self,
         ontology_id: str,
         limit: int = 200,
+        offset: int = 0,
         entity_type: str | None = None,
         seq_from: int | None = None,
         seq_to: int | None = None,
@@ -264,7 +265,8 @@ class FalkorDBService:
     ) -> dict[str, Any]:
         if not self.available:
             return {"nodes": [], "edges": [], "total_instances": 0, "graph_backend": "falkordb", "available": False}
-        limit = max(1, min(int(limit), 1000))
+        limit = max(1, min(int(limit), 500))
+        offset = max(0, int(offset))
         graph = self._graph(ontology_id)
         clauses = ["n._instance_id IS NOT NULL"]
         params: dict[str, Any] = {"limit": limit}
@@ -278,8 +280,8 @@ class FalkorDBService:
             clauses.append("n.event_seq <= $seq_to")
             params["seq_to"] = int(seq_to)
         result = graph.query(
-            f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n ORDER BY n.event_seq LIMIT $limit",
-            params=params,
+            f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n ORDER BY n.event_seq, n._instance_id SKIP $offset LIMIT $limit",
+            params={**params, "offset": offset},
         )
         nodes: list[dict[str, Any]] = []
         ids: list[str] = []
@@ -314,12 +316,23 @@ class FalkorDBService:
                     "valid_to": props.get("valid_to"),
                     "edge_kind": "instance",
                 })
-        total = graph.query("MATCH (n) WHERE n._instance_id IS NOT NULL RETURN count(n)")
+        total_clauses = ["n._instance_id IS NOT NULL"]
+        total_params: dict[str, Any] = {}
+        if entity_type:
+            total_clauses.append("n._type = $entity_type"); total_params["entity_type"] = entity_type
+        if seq_from is not None:
+            total_clauses.append("n.event_seq >= $seq_from"); total_params["seq_from"] = int(seq_from)
+        if seq_to is not None:
+            total_clauses.append("n.event_seq <= $seq_to"); total_params["seq_to"] = int(seq_to)
+        total = graph.query(f"MATCH (n) WHERE {' AND '.join(total_clauses)} RETURN count(n)", params=total_params)
         total_instances = int(total.result_set[0][0]) if total.result_set else 0
         return {
             "nodes": nodes,
             "edges": edges,
             "total_instances": total_instances,
+            "returned": len(nodes),
+            "offset": offset,
+            "next_offset": offset + len(nodes) if offset + len(nodes) < total_instances else None,
             "sample_limit": limit,
             "graph_backend": "falkordb",
             "available": True,
@@ -451,6 +464,12 @@ class FalkorDBService:
         participant: str | None = None,
         limit: int = 300,
     ) -> dict[str, Any]:
+        # FactoryNet and uploaded ordinal datasets use numeric sequence values
+        # rather than calendar dates. Keep this path separate from the legacy
+        # ICEWS date predicates so a float ``time_s`` is never coerced to a
+        # fabricated timestamp.
+        if self.available and self._has_ordinal_nodes(ontology_id):
+            return self._ordinal_snapshot(ontology_id, at=at, mode=mode, limit=limit)
         nodes = self._event_nodes(
             ontology_id, at=at, mode=mode, date_from=date_from, date_to=date_to,
             country=country, event_type=event_type, category=category,
@@ -580,10 +599,46 @@ class FalkorDBService:
             total_edges = int(count_edges.result_set[0][0]) if count_edges.result_set else total_edges
         return {"available": self.available, "graph_backend": "falkordb", "ontology_id": ontology_id, "at": at, "mode": mode, "date_from": date_from, "date_to": date_to, "nodes": nodes, "edges": edges, "total_nodes": len(nodes), "total_edges": len(edges), "total_available_nodes": total_nodes, "total_available_edges": total_edges, "sample_limit": max(1, min(int(limit), 1000))}
 
+    def _has_ordinal_nodes(self, ontology_id: str) -> bool:
+        if not self.available:
+            return False
+        result = self._graph(ontology_id).query("MATCH (n) WHERE n.event_seq IS NOT NULL RETURN count(n)")
+        return bool(result.result_set and int(result.result_set[0][0]) > 0)
+
+    def _ordinal_snapshot(self, ontology_id: str, at: str | None, mode: str, limit: int) -> dict[str, Any]:
+        graph_data = self.get_graph_data(ontology_id, limit=min(max(int(limit), 1), 500))
+        all_nodes = graph_data.get("nodes", [])
+        try:
+            point = float(at) if at not in (None, "") else None
+        except (TypeError, ValueError):
+            point = None
+        if point is None:
+            selected = all_nodes
+        elif mode == "window":
+            selected = [n for n in all_nodes if n.get("event_seq") is None or float(n.get("event_seq")) == point]
+        else:
+            selected = [n for n in all_nodes if n.get("event_seq") is None or float(n.get("event_seq")) <= point]
+        ids = {n.get("id") for n in selected}
+        edges = [e for e in graph_data.get("edges", []) if e.get("source") in ids and e.get("target") in ids]
+        return {"available": True, "graph_backend": "falkordb", "ontology_id": ontology_id, "at": at, "mode": mode,
+                "time_kind": "ordinal", "nodes": selected[:limit], "edges": edges[:limit * 3],
+                "total_nodes": len(selected), "total_edges": len(edges),
+                "total_available_nodes": graph_data.get("total_instances", len(all_nodes)),
+                "total_available_edges": len(graph_data.get("edges", [])), "sample_limit": limit}
+
     def temporal_timeline(self, ontology_id: str, entity_id: str | None = None, category: str | None = None, limit: int = 200) -> dict[str, Any]:
         if not self.available:
             return {"available": False, "graph_backend": "falkordb", "events": []}
         graph = self._graph(ontology_id)
+        if self._has_ordinal_nodes(ontology_id):
+            buckets = graph.query("MATCH (n) WHERE n.event_seq IS NOT NULL RETURN n.event_seq, count(n) ORDER BY n.event_seq")
+            points = [{"timestamp": str(row[0]), "count": int(row[1])} for row in buckets.result_set]
+            result = graph.query("MATCH (n) WHERE n.event_seq IS NOT NULL RETURN n ORDER BY n.event_seq LIMIT $limit", params={"limit": max(1, min(int(limit), 1000))})
+            events = []
+            for row in result.result_set:
+                node = self._node(row[0]); props = node.get("properties") or {}
+                events.append({"id": node["id"], "timestamp": node.get("event_seq"), "label": props.get("episode_id") or props.get("phase") or node.get("entity_type"), "entity_type": node.get("entity_type"), "value": props.get("time_s") or props.get("elapsed_seconds")})
+            return {"available": True, "graph_backend": "falkordb", "ontology_id": ontology_id, "events": events, "count": len(events), "total_events": sum(p["count"] for p in points), "dates": [p["timestamp"] for p in points], "buckets": points, "time_kind": "ordinal", "sample_limit": limit}
         clauses = ["n.event_time IS NOT NULL"]
         params: dict[str, Any] = {"limit": max(1, min(int(limit), 1000))}
         if entity_id:
@@ -635,6 +690,13 @@ class FalkorDBService:
         if not self.available:
             return {"available": False, "graph_backend": "falkordb", "points": []}
         graph = self._graph(ontology_id)
+        if self._has_ordinal_nodes(ontology_id):
+            result = graph.query("MATCH (n) WHERE n.event_seq IS NOT NULL RETURN n.event_seq, count(n) ORDER BY n.event_seq LIMIT $limit", params={"limit": max(1, min(int(limit), 1000))})
+            points = [{"timestamp": str(row[0]), "observations": int(row[1])} for row in result.result_set]
+            running = 0
+            for point in points:
+                running += point["observations"]; point["cumulative_nodes"] = running
+            return {"available": True, "graph_backend": "falkordb", "ontology_id": ontology_id, "time_kind": "ordinal", "points": points}
         result = graph.query("MATCH (n) WHERE n.event_time IS NOT NULL RETURN n.event_time, count(n) ORDER BY n.event_time LIMIT $limit", params={"limit": max(1, min(int(limit), 1000))})
         points = [{"timestamp": str(row[0]), "observations": int(row[1])} for row in result.result_set]
         running = 0

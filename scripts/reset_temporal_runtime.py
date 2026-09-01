@@ -1,260 +1,73 @@
 #!/usr/bin/env python3
-"""Reset generated temporal runtime data before installing ICEWS.
+"""Safely remove legacy temporal demo runtime data.
 
-Only ontologies that are temporal builds (plus the historical BTS id) and
-their construction/evidence/schema records are selected.  Regular C-MAPSS
-datasets, pipelines, model configurations, users and settings are outside the
-delete set.  Always run ``--dry-run`` first.
+Only objects explicitly marked as temporal/ICEWS/BTS are selected.  The
+default is a dry run; ``--apply`` requires a second explicit confirmation and
+creates a JSON inventory before deleting database rows and FalkorDB graphs.
 """
 from __future__ import annotations
-
-import argparse
-import json
-import os
-import subprocess
+import argparse, json, os, sys
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
-from urllib.parse import unquote, urlparse
-
-ROOT = Path(__file__).resolve().parents[1]
-BACKUP_ROOT = ROOT / ".runtime-backups"
-BTS_ONTOLOGY_ID = "35dd75f2-edc4-4761-aed9-3361c78df612"
-DEBUG_GRAPHS = {"nano_healthcheck", "nano_test_label", "nano_nano_test_label"}
-
-
-def _imports():
-    import sys
-    sys.path.insert(0, str(ROOT / "backend"))
-    # Import model modules so SQLAlchemy knows all relationships before a
-    # bulk delete is issued against a legacy database.
-    from app.models import user, ontology, entity, relation, logic, action, file, prompt, model_config, extraction_task, rules_config, audit_task  # noqa: F401
-    from app.models.v2 import dataset, pipeline, connection, curated, mapping, logic as v2_logic, action as v2_action, construction, multimodal  # noqa: F401
-    from app.database import SessionLocal
-    from app.models.ontology import OntologyProject
-    from app.models.entity import Entity
-    from app.models.relation import Relation
-    from app.models.logic import LogicRule
-    from app.models.action import Action
-    from app.models.file import UploadedFile
-    from app.models.extraction_task import ExtractionTask
-    from app.models.v2.construction import ConstructionRun, EvidenceRef
-    from app.models.v2.mapping import OntologyMapping, OntologyLinkMapping
-    from app.models.v2.logic import OntologyLogicRule, OntologyStateMachine
-    from app.models.v2.action import OntologyActionType, OntologyActionRun
-    from app.models.v2.multimodal import ExtractedFragment
-    from app.models.v2.dataset import Dataset, DatasetVersion, MediaItem
-    from app.services.storage_service import get_storage_service
-    from app.services.v2.graph.falkordb_service import FalkorDBService, graph_name_for_ontology
-    return locals()
-
-
-def build_plan(db: Any) -> dict[str, Any]:
-    m = _imports()
-    OntologyProject, ConstructionRun = m["OntologyProject"], m["ConstructionRun"]
-    ontologies = db.query(OntologyProject).all()
-    temporal_ids = {run.ontology_id for run in db.query(ConstructionRun).filter(ConstructionRun.mode == "temporal").all()}
-    temporal_ids.update(o.id for o in ontologies if (o.build_mode or "").startswith("temporal"))
-    temporal_ids.add(BTS_ONTOLOGY_ID)
-    present = {o.id for o in ontologies}
-    temporal_ids.intersection_update(present)
-    run_ids = [run.id for run in db.query(ConstructionRun).filter(ConstructionRun.mode == "temporal").all()]
-    evidence_count = db.query(m["EvidenceRef"]).filter(m["EvidenceRef"].ontology_id.in_(temporal_ids)).count() if temporal_ids else 0
-    schema_entities = db.query(m["Entity"]).filter(m["Entity"].ontology_id.in_(temporal_ids)).count() if temporal_ids else 0
-    schema_relations = db.query(m["Relation"]).filter(m["Relation"].ontology_id.in_(temporal_ids)).count() if temporal_ids else 0
-    return {
-        "scope": "temporal runtime only",
-        "keep": {"regular_ontology_excluded": True, "regular_datasets_excluded": True, "repository_bts_assets": True},
-        "delete": {
-            "ontology_ids": sorted(temporal_ids), "construction_run_ids": sorted(run_ids),
-            "graph_names": sorted({m["graph_name_for_ontology"](x) for x in temporal_ids} | DEBUG_GRAPHS),
-        },
-        "counts": {
-            "temporal_ontologies": len(temporal_ids), "temporal_runs": len(run_ids),
-            "evidence_refs": evidence_count, "schema_entities": schema_entities,
-            "schema_relations": schema_relations,
-            "all_ontologies": len(ontologies),
-            "all_datasets": db.query(m["Dataset"]).count(),
-        },
-    }
-
-
-def _backup_dir() -> Path:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = BACKUP_ROOT / f"temporal-reset-{stamp}"
-    path.mkdir(parents=True, exist_ok=False)
-    return path
-
-
-def backup_database(path: Path) -> None:
-    """Create a logical dump, using the Compose Postgres container if needed."""
-    url = os.environ.get("DATABASE_URL", "")
-    dump = path / "postgres.sql"
-    if not url.startswith("postgresql"):
-        (path / "postgres-backup-note.txt").write_text("DATABASE_URL is not PostgreSQL; no logical dump was required.\n", encoding="utf-8")
-        return
-    try:
-        host_pg_dump = subprocess.run(["pg_dump", "--version"], capture_output=True).returncode == 0
-    except OSError:
-        host_pg_dump = False
-    if host_pg_dump:
-        result = subprocess.run(["pg_dump", url, "--file", str(dump)], capture_output=True, text=True)
-        if result.returncode == 0:
-            return
-        (path / "postgres-dump-error.txt").write_text(result.stderr or "pg_dump failed", encoding="utf-8")
-    parsed = urlparse(url)
-    user = unquote(parsed.username or "postgres")
-    database = unquote(parsed.path.lstrip("/") or "postgres")
-    try:
-        names_result = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True)
-    except OSError:
-        names_result = None
-    names = [name.strip() for name in (names_result.stdout if names_result else "").splitlines() if name.strip()]
-    configured = os.environ.get("POSTGRES_CONTAINER", "")
-    candidates = [configured] if configured else []
-    candidates += [name for name in names if name not in candidates and (name.endswith("-db-1") or "postgres" in name.lower())]
-    for container in candidates:
-        try:
-            inspect = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", container], capture_output=True, text=True)
-        except OSError:
-            continue
-        if inspect.returncode != 0 or inspect.stdout.strip().lower() != "true":
-            continue
-        with dump.open("wb") as stream:
-            try:
-                result = subprocess.run(["docker", "exec", container, "pg_dump", "-U", user, "-d", database], stdout=stream, stderr=subprocess.PIPE)
-            except OSError:
-                continue
-        if result.returncode == 0 and dump.stat().st_size > 0:
-            return
-    (path / "postgres-backup-note.txt").write_text("pg_dump was unavailable both on the host and in a running Compose container.\n", encoding="utf-8")
-
-
-def backup_storage(path: Path) -> None:
-    m = _imports()
-    try:
-        storage = m["get_storage_service"]()
-        items: list[str] = []
-        for bucket in ("raw-datasets", "curated-datasets", "media", "intermediate"):
-            try: items.extend(storage.list_prefix(bucket, ""))
-            except Exception: pass
-        (path / "minio-objects.json").write_text(json.dumps(sorted(items), ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as exc:
-        (path / "minio-objects-error.txt").write_text(str(exc), encoding="utf-8")
-
-
-def backup_graphs(path: Path, graph_names: list[str]) -> None:
-    m = _imports()
-    service = m["FalkorDBService"]()
-    manifest: dict[str, Any] = {}
-    if service.available and service._db:
-        for name in graph_names:
-            try:
-                graph = service._db.select_graph(name)
-                nodes = []
-                for row in graph.query("MATCH (n) RETURN n").result_set:
-                    node = row[0]
-                    nodes.append({"id": dict(getattr(node, "properties", {}) or {}).get("_instance_id"), "properties": dict(getattr(node, "properties", {}) or {})})
-                edges = []
-                for row in graph.query("MATCH (a)-[r]->(b) RETURN a._instance_id, b._instance_id, type(r), r").result_set:
-                    edges.append({"source": row[0], "target": row[1], "type": row[2], "properties": dict(getattr(row[3], "properties", {}) or {})})
-                manifest[name] = {"nodes": nodes, "edges": edges}
-            except Exception as exc:
-                manifest[name] = {"error": str(exc)}
-    else:
-        manifest["_status"] = "FalkorDB unavailable; no graph was deleted"
-    (path / "falkordb-graphs.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-
-
-def delete_runtime_objects(db: Any, ontology_ids: list[str], run_ids: list[str]) -> list[str]:
-    """Delete only objects owned by the temporal runs being removed.
-
-    Raw files belonging to regular C-MAPSS datasets are intentionally not
-    touched.  A temporal run's artifact, source version and evidence URI are
-    safe to remove after the backup has been written.
-    """
-    if not run_ids:
-        return []
-    m = _imports()
-    run_rows = db.query(m["ConstructionRun"]).filter(m["ConstructionRun"].id.in_(run_ids)).all()
-    dataset_ids = {run.dataset_id for run in run_rows if run.dataset_id}
-    uris: set[str] = {run.artifact_uri for run in run_rows if run.artifact_uri and str(run.artifact_uri).startswith("s3://")}
-    for evidence in db.query(m["EvidenceRef"]).filter(m["EvidenceRef"].construction_run_id.in_(run_ids)).all():
-        if evidence.source_file and str(evidence.source_file).startswith("s3://"):
-            uris.add(str(evidence.source_file))
-    for version in db.query(m["DatasetVersion"]).filter(m["DatasetVersion"].dataset_id.in_(dataset_ids)).all() if dataset_ids else []:
-        if version.storage_uri:
-            uris.add(version.storage_uri)
-        for media in db.query(m["MediaItem"]).filter(m["MediaItem"].dataset_version_id == version.id).all():
-            if media.storage_uri:
-                uris.add(media.storage_uri)
-    storage = m["get_storage_service"]()
-    deleted: list[str] = []
-    for uri in sorted(uris):
-        try:
-            storage.delete_object(uri)
-            deleted.append(uri)
-        except Exception:
-            # A missing object should not make the relational reset unsafe;
-            # the backup manifest still records the intended target.
-            continue
-    return deleted
-
-
-def apply_plan(db: Any, plan: dict[str, Any], backup: Path) -> dict[str, Any]:
-    m = _imports()
-    ontology_ids = plan["delete"]["ontology_ids"]
-    run_ids = plan["delete"]["construction_run_ids"]
-    service = m["FalkorDBService"]()
-    deleted_graphs: list[str] = []
-    for ontology_id in ontology_ids:
-        if service.delete_graph(ontology_id): deleted_graphs.append(m["graph_name_for_ontology"](ontology_id))
-    if service.available and service._db:
-        for name in DEBUG_GRAPHS:
-            try:
-                service._db.connection.execute_command("GRAPH.DELETE", name)
-                deleted_graphs.append(name)
-            except Exception: pass
-
-    deleted_objects = delete_runtime_objects(db, ontology_ids, run_ids)
-
-    # Explicit child deletion works on both PostgreSQL and the legacy SQLite
-    # database used by tests, regardless of FK cascade configuration.
-    if run_ids:
-        db.query(m["EvidenceRef"]).filter(m["EvidenceRef"].construction_run_id.in_(run_ids)).delete(synchronize_session=False)
-        db.query(m["ConstructionRun"]).filter(m["ConstructionRun"].id.in_(run_ids)).delete(synchronize_session=False)
-    if ontology_ids:
-        for model in (m["OntologyMapping"], m["OntologyLinkMapping"], m["OntologyLogicRule"], m["OntologyStateMachine"], m["OntologyActionType"], m["OntologyActionRun"], m["EvidenceRef"]):
-            db.query(model).filter(model.ontology_id.in_(ontology_ids)).delete(synchronize_session=False)
-        for model in (m["Relation"], m["Entity"], m["LogicRule"], m["Action"], m["UploadedFile"], m["ExtractionTask"]):
-            db.query(model).filter(model.ontology_id.in_(ontology_ids)).delete(synchronize_session=False)
-        db.query(m["OntologyProject"]).filter(m["OntologyProject"].id.in_(ontology_ids)).delete(synchronize_session=False)
-    db.commit()
-    (backup / "apply-result.json").write_text(json.dumps({"deleted_graphs": deleted_graphs, "deleted_objects": deleted_objects, "deleted_ontology_ids": ontology_ids, "deleted_run_ids": run_ids}, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"deleted_graphs": deleted_graphs, "deleted_objects": deleted_objects, "deleted_ontology_ids": ontology_ids, "deleted_run_ids": run_ids}
-
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--confirm", help="must equal ICEWS-TEMPORAL for --apply")
-    args = parser.parse_args()
-    if args.dry_run == args.apply: parser.error("choose exactly one of --dry-run or --apply")
-    if args.apply and args.confirm != "ICEWS-TEMPORAL": parser.error("--apply requires --confirm ICEWS-TEMPORAL")
-    m = _imports()
-    db = m["SessionLocal"]()
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    parser = argparse.ArgumentParser(); parser.add_argument('--dry-run', action='store_true'); parser.add_argument('--apply', action='store_true'); parser.add_argument('--yes', action='store_true'); args = parser.parse_args()
+    if not args.dry_run and not args.apply: args.dry_run = True
+    from app.models.v2.connection import Connection  # noqa: F401 ensure FK metadata
+    from app.database import SessionLocal
+    from app.models.ontology import OntologyProject
+    from app.models.v2.construction import ConstructionRun, EvidenceRef
+    from app.models.v2.dataset import Dataset, DatasetVersion
+    from app.services.v2.graph.falkordb_service import FalkorDBService, graph_name_for_ontology
+    db = SessionLocal()
     try:
-        plan = build_plan(db)
-        print(json.dumps(plan, ensure_ascii=False, indent=2))
+        all_runs = db.query(ConstructionRun).filter(ConstructionRun.mode.in_(['temporal','temporal_pipeline'])).all()
+        # Keep the newly validated FactoryNet run(s). Remove legacy ICEWS and
+        # malformed non-FactoryNet temporal runs only.
+        runs = [r for r in all_runs if (r.config or {}).get('source_id') != 'factorynet_cnc' and (r.config or {}).get('source') != 'factorynet_cnc' and (r.config or {}).get('adapter') != 'factorynet']
+        run_ontology_ids = {r.ontology_id for r in runs if r.ontology_id}
+        # Remove an ontology only when it is itself a temporal pipeline.  A
+        # malformed generic run may live on the regular C-MAPSS ontology; in
+        # that case delete the run but preserve the ontology and its graph.
+        temporal_ontology_ids = {o.id for o in db.query(OntologyProject).filter(OntologyProject.id.in_(run_ontology_ids)).all() if o.build_mode == 'temporal_pipeline'} if run_ontology_ids else set()
+        ontology_ids = temporal_ontology_ids
+        ontologies = db.query(OntologyProject).filter(OntologyProject.id.in_(ontology_ids)).all() if ontology_ids else []
+        datasets = [d for d in db.query(Dataset).all() if (d.schema_json or {}).get('source_id') == 'icews_2023_demo']
+        evidence_count = db.query(EvidenceRef).filter(EvidenceRef.ontology_id.in_(ontology_ids)).count() if ontology_ids else 0
+        inventory = {'generated_at': datetime.now(timezone.utc).isoformat(), 'runs': [r.id for r in runs], 'ontologies': [{'id':o.id,'name':o.name} for o in ontologies], 'datasets': [d.id for d in datasets], 'evidence_refs': evidence_count, 'graphs': [graph_name_for_ontology(i) for i in ontology_ids]}
+        print(json.dumps(inventory, ensure_ascii=False, indent=2))
         if args.dry_run: return 0
-        backup = _backup_dir()
-        (backup / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
-        backup_database(backup); backup_storage(backup); backup_graphs(backup, plan["delete"]["graph_names"])
-        result = apply_plan(db, plan, backup)
-        print(json.dumps({"backup_dir": str(backup), "result": result}, ensure_ascii=False, indent=2))
+        if not args.yes:
+            raise SystemExit('即将删除以上 temporal 运行数据；请添加 --yes 确认')
+        out = os.path.join(os.getenv('XDG_CACHE_HOME','/tmp'), 'nano-temporal-backups'); os.makedirs(out, exist_ok=True)
+        path = os.path.join(out, f'reset-{datetime.now().strftime("%Y%m%d-%H%M%S")}.json'); open(path,'w').write(json.dumps(inventory,ensure_ascii=False,indent=2)); print('备份清单:',path)
+        for r in runs: db.delete(r)
+        for oid in ontology_ids:
+            db.query(EvidenceRef).filter(EvidenceRef.ontology_id == oid).delete(synchronize_session=False)
+        # Remove only legacy stable BTS schema rows accidentally attached to
+        # C-MAPSS; regular datasets, pipelines and model configs stay intact.
+        # Remove only the six deterministic BTS schema rows accidentally
+        # attached to the preserved C-MAPSS ontology.
+        from app.models.entity import Entity
+        from app.models.relation import Relation
+        legacy_prefix = 'schema:b072efac-5905-4933-b912-b7dea6a40627:'
+        legacy_ids = [e.id for e in db.query(Entity).filter(Entity.id.like(legacy_prefix + '%')).all()]
+        if legacy_ids:
+            db.query(Relation).filter((Relation.id.like(legacy_prefix + '%')) | Relation.source_entity.in_(legacy_ids) | Relation.target_entity.in_(legacy_ids)).delete(synchronize_session=False)
+            db.query(Entity).filter(Entity.id.in_(legacy_ids)).delete(synchronize_session=False)
+        db.commit()
+        for o in ontologies:
+            db.delete(o)
+        db.commit()
+        for d in datasets:
+            for v in db.query(DatasetVersion).filter(DatasetVersion.dataset_id == d.id).all(): db.delete(v)
+            db.delete(d)
+        db.commit()
+        service = FalkorDBService()
+        for oid in ontology_ids:
+            try: service.delete_graph(oid)
+            except Exception as exc: print('graph delete skipped', oid, exc)
+        print('已删除 temporal 运行对象。')
         return 0
     finally: db.close()
-
-
-if __name__ == "__main__": raise SystemExit(main())
+if __name__ == '__main__': raise SystemExit(main())

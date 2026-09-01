@@ -80,6 +80,7 @@ def _seed_db():
         from app.models.v2.curated import CuratedDataset, CuratedReview, CuratedRowEdit  # noqa: F401
         from app.models.v2.mapping import OntologyMapping, OntologyLinkMapping  # noqa: F401
         from app.models.v2.construction import ConstructionRun, EvidenceRef  # noqa: F401
+        from app.models.v2.temporal_profile import TemporalDatasetProfile  # noqa: F401
         from app.models.v2.multimodal import ExtractedFragment  # noqa: F401
         _run_schema_migration()
 

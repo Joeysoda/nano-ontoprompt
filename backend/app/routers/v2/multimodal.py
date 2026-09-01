@@ -5,7 +5,7 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -52,17 +52,28 @@ class MultimodalRunCreate(BaseModel):
 
 
 @router.get("/status")
-def multimodal_status(db: Session = Depends(get_db)):
+def multimodal_status(probe: bool = Query(False), db: Session = Depends(get_db)):
     """Return safe M3 availability metadata without exposing credentials."""
     config = select_llm_model_config(db=db, purpose_tags=("VLM提取", "多模态"), allow_vlm=True)
     available = bool(config and is_vlm_config(config) and MODEL_NAME in [str(x) for x in (config.models or [])])
+    probe_error = None
+    if probe and available:
+        try:
+            kwargs = llm_call_kwargs(config)
+            if not kwargs or not kwargs.get("api_key"):
+                raise RuntimeError("凭据无法解密")
+            from app.services.llm_service import _call_llm
+            _call_llm(**kwargs, messages=[{"role": "system", "content": "只返回 OK"}, {"role": "user", "content": "ping"}], json_mode=False)
+        except Exception as exc:
+            available = False
+            probe_error = str(exc)[:300]
     return {
         "configured": bool(config and is_vlm_config(config)),
         "available": available,
         "model": MODEL_NAME,
         "model_id": config.id if available else None,
         "api_base": config.api_base if available else None,
-        "message": "MiniMax M3 可用" if available else "MiniMax M3 尚未配置或当前 Key 不具备权限",
+        "message": "MiniMax M3 可用" if available else (probe_error or "MiniMax M3 尚未配置或当前 Key 不具备权限"),
     }
 
 
