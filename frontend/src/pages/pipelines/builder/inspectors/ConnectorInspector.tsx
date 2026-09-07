@@ -59,10 +59,10 @@ export default function ConnectorInspector({ config, onChange, readOnly = false 
     return (
       <div className="space-y-3">
         <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs">
-          <p className="text-blue-700 font-medium mb-1">📋 已保存配置</p>
+          <p className="text-blue-700 font-medium mb-1">已保存配置</p>
           <p className="text-blue-600">类型: {SOURCE_LABEL[sourceType] || sourceType}</p>
           {sourceType === 'file' && hasStoredFiles && storedFiles.map((f: any, i: number) => (
-            <p key={i} className="text-blue-500">📄 {f.name} {formatSize(f.size)}</p>
+            <p key={i} className="text-blue-500">文件：{f.name} {formatSize(f.size)}</p>
           ))}
           {sourceType !== 'file' && hasDbConfig && Object.entries(cv).filter(([k]) => k !== 'password').map(([k, v]) => (
             <p key={k} className="text-blue-500">{k}: {String(v).slice(0, 30)}</p>

@@ -96,6 +96,17 @@ def infer_relations(entities: list, existing_relations: list, text: str,
 
 
 def _call_llm(provider: str, api_key: str, api_base: str | None, model: str, messages: list, json_mode: bool = True) -> str:
+    # Keep every application call on the same local LiteLLM boundary when the
+    # workbench runtime enables it.  Older callers still pass their provider
+    # URL directly, so the override belongs here as the final guard rather
+    # than relying on every legacy call site to remember the selector helper.
+    import os as _os
+    _gateway_base = _os.getenv("LITELLM_API_BASE", "").strip()
+    if _gateway_base:
+        provider = "openai"
+        api_base = _gateway_base.rstrip("/")
+        api_key = _os.getenv("LITELLM_API_KEY", "").strip() or api_key or "local-gateway"
+
     # Stable seed for reproducibility: derived from message content so same input → same seed.
     import hashlib as _hashlib, json as _json
     try:
@@ -131,7 +142,13 @@ def _call_llm(provider: str, api_key: str, api_base: str | None, model: str, mes
         else:
             create_kwargs["max_tokens"] = 65536
             create_kwargs["seed"] = _seed
-            if provider == "compatible":
+            if "qwen3.5" in str(model).lower():
+                # qwen3.5 exposes its internal reasoning in a separate
+                # Ollama field and can consume the entire token budget before
+                # producing visible content.  Disable that mode for the
+                # compact audit helper so callers receive an actual answer.
+                create_kwargs["extra_body"] = {"think": False}
+            elif provider == "compatible":
                 create_kwargs["extra_body"] = {"reasoning_effort": "none"}
             if json_mode:
                 create_kwargs["response_format"] = {"type": "json_object"}

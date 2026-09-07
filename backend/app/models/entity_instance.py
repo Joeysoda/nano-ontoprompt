@@ -13,4 +13,5 @@ class EntityInstance(Base):
     ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False)
     row_identity: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     row_data: Mapped[dict] = mapped_column(JSON, default=dict)
+    revision_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

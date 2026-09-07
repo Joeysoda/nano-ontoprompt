@@ -30,18 +30,19 @@ def get_db():
 
 
 class ConstructionRunCreate(BaseModel):
-    mode: str = Field(pattern="^(temporal|multimodal|quality_benchmark)$")
+    mode: str = Field(pattern="^(regular|temporal|multimodal|quality_benchmark)$")
     dataset_id: str | None = None
     model_name: str | None = None
     config: dict = {}
 
 
 class RunUpdate(BaseModel):
-    status: str | None = Field(default=None, pattern="^(queued|running|completed|failed|cancelled)$")
+    status: str | None = Field(default=None, pattern="^(queued|running|waiting_for_model|completed|failed|cancelled)$")
     progress: dict | None = None
     metrics: dict | None = None
     artifact_uri: str | None = None
     error: str | None = None
+    cancel_requested: bool | None = None
 
 
 class EvidenceCreate(BaseModel):
@@ -51,7 +52,9 @@ class EvidenceCreate(BaseModel):
     source_file: str | None = None
     source_row: int | None = None
     source_media_id: str | None = None
+    source_sample_id: str | None = None
     source_dataset_version: str | None = None
+    revision_id: str | None = None
     model_name: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
     confidence_method: str = "not_calibrated"
@@ -86,6 +89,17 @@ def patch_construction_run(run_id: str, body: RunUpdate, db: Session = Depends(g
     if not run:
         raise HTTPException(404, "Construction run not found")
     return serialize_run(update_run(db, run, **body.model_dump(exclude_none=True)))
+
+
+@construction_root_router.post("/construction-runs/{run_id}/cancel")
+def cancel_construction_run(run_id: str, db: Session = Depends(get_db)):
+    run = db.query(ConstructionRun).filter(ConstructionRun.id == run_id).first()
+    if not run:
+        raise HTTPException(404, "Construction run not found")
+    if run.status in {"completed", "failed", "cancelled"}:
+        return serialize_run(run)
+    updated = update_run(db, run, cancel_requested=True, status="cancelled", error="用户取消任务")
+    return serialize_run(updated)
 
 
 @router.get("/construction-runs/{run_id}/evidence")

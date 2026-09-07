@@ -9,13 +9,40 @@ from app.models.v2.dataset import Dataset, DatasetVersion
 from app.services.storage_service import StorageService, get_storage_service
 
 
+class DatasetStorageError(RuntimeError):
+    """A user-actionable error for a dataset version whose object is missing."""
+
+    def __init__(self, dataset_id: str, storage_uri: str | None, reason: str):
+        self.dataset_id = dataset_id
+        self.storage_uri = storage_uri
+        self.reason = reason
+        super().__init__(f"源文件不在当前对象存储：{reason}。可运行存储修复后重试")
+
+
 class DatasetService:
     def __init__(self, db: Session, storage: StorageService | None = None):
         self._db = db
         self._storage = storage or get_storage_service()
 
-    def create_dataset(self, name: str, kind: str, connection_id: str | None = None) -> Dataset:
-        ds = Dataset(name=name, kind=kind, source_connection_id=connection_id)
+    def create_dataset(
+        self,
+        name: str,
+        kind: str,
+        connection_id: str | None = None,
+        *,
+        data_class: str = "regular",
+        privacy_level: str = "standard",
+        schema_json: dict | None = None,
+    ) -> Dataset:
+        if data_class not in {"regular", "temporal", "multimodal"}:
+            raise ValueError("data_class must be regular, temporal or multimodal")
+        if privacy_level not in {"standard", "private"}:
+            raise ValueError("privacy_level must be standard or private")
+        ds = Dataset(
+            name=name, kind=kind, source_connection_id=connection_id,
+            data_class=data_class, privacy_level=privacy_level,
+            schema_json=schema_json or {},
+        )
         self._db.add(ds)
         self._db.commit()
         self._db.refresh(ds)
@@ -34,7 +61,7 @@ class DatasetService:
         version_no = (last_ver.version_no + 1) if last_ver else 1
 
         # 存入 MinIO
-        checksum = hashlib.sha256(data[:1024]).hexdigest()[:16]
+        checksum = hashlib.sha256(data).hexdigest()
         key = f"datasets/{dataset_id}/v{version_no}/data.bin"
         uri = self._storage.put_bytes("raw-datasets", key, data)
 
@@ -46,7 +73,15 @@ class DatasetService:
             checksum=checksum,
         )
         self._db.add(ver)
+        # SQLAlchemy evaluates the default UUID on flush.  Assigning
+        # ``ds.latest_version_id`` before that point used to persist NULL and
+        # made newly uploaded datasets appear to have no usable version.
+        self._db.flush()
         ds.latest_version_id = ver.id
+        # A version becomes selectable only after its object write has
+        # completed.  Failed legacy references remain visible as repairable
+        # records rather than silently producing empty previews.
+        ds.readiness = "ready"
         self._db.commit()
         self._db.refresh(ver)
         return ver
@@ -71,8 +106,10 @@ class DatasetService:
             DatasetVersion.dataset_id == dataset_id,
             DatasetVersion.version_no == version_no,
         ).first()
-        if not ver or not ver.storage_uri:
+        if not ver:
             return []
+        if not ver.storage_uri:
+            raise DatasetStorageError(dataset_id, None, "数据版本没有存储地址")
 
         try:
             raw = self._storage.get_object(ver.storage_uri)
@@ -122,5 +159,7 @@ class DatasetService:
                     break
                 rows.append(dict(row))
             return rows
-        except Exception:
-            return []
+        except DatasetStorageError:
+            raise
+        except Exception as exc:
+            raise DatasetStorageError(dataset_id, ver.storage_uri, str(exc)) from exc

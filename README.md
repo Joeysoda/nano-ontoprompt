@@ -1,13 +1,15 @@
 # nano-ontoprompt
 
+> Current workbench delivery: `factorynet-temporal-workbench`. The local demo uses C-MAPSS FD001, FactoryNet CNC, and I-BADAS with Docker, Celery, LiteLLM, and Ollama. See the [Chinese Docker and backend deployment guide](./DEPLOYMENT_WORKBENCH_ZH.md) for the exact ports and startup commands.
+
 **[中文文档](./README_zh.md)**
 
-A lightweight, Palantir Foundry-inspired platform for building domain ontologies from raw data. Connect your data sources, run them through a visual transform pipeline, map curated datasets to entity types, and explore the resulting knowledge graph — complete with entities, relations, logic rules, and executable actions.
+A lightweight, Palantir Foundry-inspired platform for building domain ontologies from raw data. Connect a source, select the fields and samples to process, confirm the ontology mapping, and inspect entity types, real instances, relations, logic rules, and evidence in one local workbench.
 
 Two build paths are supported:
 
 - **Pipeline Mapping** (v2) — full data-integration chain: `Data Connection → Raw Storage → Transform → Curated Dataset → Ontology Mapping`
-- **Simple LLM Extraction** (v1) — upload documents, pick a prompt and model, and extract a knowledge graph in one shot
+- **Simple LLM Extraction** (v1) — legacy document extraction endpoint retained for compatibility
 
 ---
 
@@ -22,7 +24,7 @@ In nano-ontoprompt, every ontology is made of these building blocks:
 | **Entity (Object Type)** | A key concept mapped from a curated dataset, one node per data row | `Supplier`, `PurchaseOrder` |
 | **Relation (Link Type)** | An edge between entities, inferred from foreign keys and cross-dataset value overlap | `PurchaseOrder -[HAS_SUPPLIER]-> Supplier` |
 | **Logic Rule** | The rule layer: mapping / validation / state / inference / automation rules discovered from schema, quality reports and relations | `amount > 0`, state machine on `库存状态` |
-| **Action** | The executable behavior layer: CRUD, state-transition and link actions generated from object types and relations, with submission criteria and audit snapshots | `Approve Record`, `Link Order to Supplier` |
+| **Evidence** | The traceable source material behind a type, property, relation, instance, or rule | source table, row, file, or multimodal asset |
 
 **Typical use cases:** supply chain modeling, clinical concept extraction, financial compliance, legal document structuring — any domain where you need to turn heterogeneous data into structured knowledge.
 
@@ -39,9 +41,9 @@ In nano-ontoprompt, every ontology is made of these building blocks:
 ### Ontology (v2)
 - **Auto mapping engine** — dataset → entity type, column → property, FK → link type, with cardinality inference
 - **Cross-dataset link inference** — exact FK matching, value normalization (`SUP-001` ↔ `SUP001`), alternate-key matching (e.g. document mentions of company names linking to Supplier entities), optional LLM-assisted semantic linking (`ENABLE_LLM_FK_DETECTION=1`)
-- **Logic & Action discovery** — rules and actions are discovered from mappings, schema constraints, state fields and relations, then go through draft → review → publish
-- **Knowledge graph** — interactive Cytoscape.js mesh view with isolated-node toggle; Neo4j-backed when available, SQLite fallback otherwise
-- **Search** — keyword search (SQL fallback when ChromaDB is down) and semantic search (ChromaDB)
+- **Logic rule discovery** — confirmed rules are attached to the ontology revision and shown with their evidence
+- **Ontology relation canvas** — interactive Cytoscape.js view with entity-type relations and a right-side inspector
+- **Search** — search the selected entity's properties or the complete ontology by type, property, relation, rule, or source
 
 ### Quality Audit (ReAct Agent)
 - **LLM-driven multi-step review** — an AI agent systematically checks ontology quality: isolated entities, broken references, missing relations, low-coverage entity types
@@ -84,18 +86,18 @@ For a deep dive into the Ontology-as-a-Service architecture — including Object
 
 ## Quick Start
 
-### Option 1 — Docker Compose (full v2 stack)
+### Option 1 — Docker Compose (local workbench)
 
 ```bash
-git clone https://github.com/jingw2/nano-ontoprompt.git
+git clone https://github.com/Joeysoda/nano-ontoprompt.git
 cd nano-ontoprompt
-cp .env.example .env          # edit secrets before production use
-docker compose -f docker-compose.v2.yml up --build
+cp .env.example .env
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
-This starts PostgreSQL, Redis, Neo4j, MinIO, ChromaDB, backend and frontend. For the lightweight v1 stack use `docker-compose.yml` instead.
+This starts PostgreSQL, Redis, Neo4j, MinIO, ChromaDB, Celery worker/beat, LiteLLM, backend, and frontend. Install Ollama and pull `qwen3.5:0.8b` on the host for local quality audits. See [DEPLOYMENT_WORKBENCH_ZH.md](./DEPLOYMENT_WORKBENCH_ZH.md) for the complete setup, health checks, and recovery commands.
 
-Open [http://localhost:5173](http://localhost:5173). Default credentials: `admin / admin123`.
+Open [http://127.0.0.1:15173/overview](http://127.0.0.1:15173/overview). Local mode does not show a login page; the backend is available at `http://127.0.0.1:18080`.
 
 ### Option 2 — Manual setup (minimal, no external services)
 
@@ -121,15 +123,13 @@ Neo4j / MinIO / ChromaDB / Redis are optional — without them the app uses SQLi
 
 ## Usage (Pipeline Mapping path)
 
-1. **Add a model** — *Models → Add Model*: provider, API key, base URL. Tag usage (extraction / VLM / FK detection).
-2. **Create a pipeline** — *Pipelines → New*: drop connector / storage / transform / output nodes on the canvas, attach your data file, pick a transform route, then **Run**.
-3. **Review curated data** — *Pipelines → Curated*: inspect quality score and preview, then approve (admin).
-4. **Create an ontology** — *Ontologies → New*, build mode **Pipeline Mapping**: select approved curated datasets and map each to an entity type with a primary key.
-5. **Build** — relations are inferred across datasets automatically; logic rules and actions are discovered as drafts.
-6. **Explore** — *Graph* tab for the mesh view, *Entities / Logic / Actions* tabs for details and review, then publish logic/actions.
-7. **Export** — JSON, YAML, CSV, Turtle (RDF), or HTML from the *Info* tab.
+1. **Choose a data class** — *Data construction* offers regular C-MAPSS FD001, temporal FactoryNet CNC, and multimodal I-BADAS.
+2. **Select the source and scope** — choose a prepared case or import a file/connection, then select tables, columns, time range, samples, and modalities.
+3. **Configure processing** — choose `standard` or `private`, review the fields and samples that may be sent to the model, and start mapping.
+4. **Confirm the mapping** — review entity types, properties, relations, and logic rules returned by the mapping task.
+5. **Build and inspect** — open the ontology relation canvas, select an entity type for its inspector, browse real instances and rules, and review the local audit trace.
 
-For the **Simple LLM Extraction** path: create an ontology in `simple_llm` mode, upload documents in the *Files* tab, pick a prompt + model, and run extraction.
+Legacy extraction and pipeline endpoints remain available for compatibility, but the current local demo is centered on the five-step ontology construction flow above.
 
 ---
 
@@ -157,13 +157,13 @@ nano-ontoprompt/
 │   ├── scripts/                # One-off debug / demo / test scripts
 │   └── src/
 │       ├── pages/pipelines/    # Pipeline list + canvas builder
-│       ├── pages/ontologies/   # Ontology detail: graph / entities / logic / actions / audit
-│       ├── pages/data-management/  # Structured data browser + curated detail panel
+│       ├── pages/ontologies/   # Ontology relation canvas / entities / logic rules / audit
+│       ├── pages/data-management/  # Regular / temporal / multimodal five-step builders
 │       └── api/                # Axios clients (v1 + v2)
 ├── scripts/
 │   └── data/                   # Data import & entity-linking scripts (SNOMED, supply chain)
-├── docker-compose.yml          # v1 lightweight stack
-├── docker-compose.v2.yml       # Full stack: Postgres + Redis + Neo4j + MinIO + Chroma + LiteLLM
+├── docker-compose.yml          # Base service definitions
+├── docker-compose.local.yml    # Local ports, single-user mode, Celery and LiteLLM
 ├── litellm_config.yaml         # LiteLLM proxy configuration
 ├── ONTOLOGY.md                 # Comprehensive architecture guide
 └── test_data/                  # Sample datasets and E2E acceptance scripts
@@ -224,7 +224,7 @@ Parallel extraction with multiple LLM calls can exhaust memory on machines with 
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jingw2/nano-ontoprompt&type=Date)](https://star-history.com/#jingw2/nano-ontoprompt&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Joeysoda/nano-ontoprompt&type=Date)](https://star-history.com/#Joeysoda/nano-ontoprompt&Date)
 
 ---
 

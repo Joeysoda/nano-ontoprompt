@@ -323,7 +323,7 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
   if (isLoading) return <div className="text-gray-400 text-center py-12">加载图谱中...</div>
   if (initError) return (
     <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
-      <p className="text-red-600 font-medium mb-2">知识图谱渲染失败</p>
+      <p className="text-red-600 font-medium mb-2">本体关系渲染失败</p>
       <p className="text-red-400 text-sm font-mono mb-4">{initError}</p>
       <button onClick={() => setInitError(null)} className="px-3 py-1.5 text-sm border border-red-300 text-red-500 rounded-lg hover:bg-red-100">重试</button>
     </div>

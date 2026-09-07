@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import uuid
+import os
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
@@ -50,6 +51,10 @@ from app.services.storage_service import get_storage_service
 router = APIRouter(prefix="/temporal", dependencies=[Depends(get_current_user)])
 ontology_router = APIRouter(prefix="/{ontology_id}/temporal", dependencies=[Depends(get_current_user)])
 
+CMAPSS_SOURCE_ID = "cmapss_fd004"
+CMAPSS_DATASET_NAME = "C-MAPSS FD004 时序案例包"
+CMAPSS_SOURCE_URL = "https://data.nasa.gov/dataset/?organization=nasa&res_format=ZIP&tags=ivhm&tags=phm&tags=prognostics"
+
 
 def get_falkordb() -> FalkorDBService:
     return FalkorDBService()
@@ -61,6 +66,16 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _read_source_object(storage_uri: str | None) -> bytes:
+    """Translate missing-object failures into a repairable API response."""
+    if not storage_uri:
+        raise HTTPException(424, detail={"error": "STORAGE_OBJECT_MISSING", "message": "数据版本没有存储地址；可运行存储修复后重试"})
+    try:
+        return get_storage_service().get_object(storage_uri)
+    except Exception as exc:
+        raise HTTPException(424, detail={"error": "STORAGE_OBJECT_MISSING", "message": f"源文件不在当前对象存储：{exc}。可运行存储修复后重试", "storage_uri": storage_uri}) from exc
 
 
 class TemporalRunCreate(BaseModel):
@@ -108,8 +123,48 @@ class TemporalQueryBody(BaseModel):
     entity_column: str | None = None
 
 
+class TemporalAnalysisRequest(BaseModel):
+    """Privacy is chosen before profiling so private data never reaches M3."""
+    privacy_level: str = Field(default="standard", pattern="^(standard|private)$")
+
+
+def _queue_temporal_profile(profile_id: str, background: BackgroundTasks | None) -> None:
+    if os.getenv("CELERY_ENABLED", "").lower() in {"1", "true", "yes"}:
+        try:
+            from app.tasks.v2.workbench import run_temporal_profile_task
+            run_temporal_profile_task.delay(profile_id)
+            return
+        except Exception:
+            # The caller keeps the profile queued and exposes a retryable
+            # state; it must not silently call another model or mark success.
+            return
+    if background is not None:
+        from app.services.v2.temporal_profile_service import run_profile
+        background.add_task(run_profile, profile_id)
+
+
 def _source_id(body: TemporalRunCreate) -> str:
     return body.source_id or body.source or ICEWS_SOURCE_ID
+
+
+def _find_cmapss_parts(db: Session) -> tuple[Dataset | None, Dataset | None]:
+    """Return the raw sensor table and its equipment dimension.
+
+    The historical database stores the two files as separate Dataset rows;
+    the user-facing source is one package so a construction run can preserve
+    the equipment_id relationship without asking the user to open a second
+    connection.
+    """
+    rows = db.query(Dataset).filter(Dataset.name.in_(["sensor_readings", "equipment"])).all()
+    by_name = {str(item.name).lower(): item for item in rows}
+    return by_name.get("sensor_readings"), by_name.get("equipment")
+
+
+def _latest_version(db: Session, dataset: Dataset | None) -> DatasetVersion | None:
+    if not dataset:
+        return None
+    version = db.query(DatasetVersion).filter(DatasetVersion.id == dataset.latest_version_id).first() if dataset.latest_version_id else None
+    return version or db.query(DatasetVersion).filter(DatasetVersion.dataset_id == dataset.id).order_by(DatasetVersion.version_no.desc()).first()
 
 
 def _source_item(db: Session, source_id: str) -> dict[str, Any]:
@@ -122,6 +177,7 @@ def _source_item(db: Session, source_id: str) -> dict[str, Any]:
             "name": FACTORYNET_DATASET_NAME,
             "kind": "temporal",
             "installed": bool(dataset and version),
+            "privacy_level": dataset.privacy_level if dataset else "standard",
             "dataset_id": dataset.id if dataset else None,
             "version_id": version.id if version else None,
             "records": version.rowcount if version else None,
@@ -133,6 +189,41 @@ def _source_item(db: Session, source_id: str) -> dict[str, Any]:
             "sha256": manifest.get("sha256", FACTORYNET_SHA256),
             "filename": manifest.get("filename", FACTORYNET_FILE),
             "manifest": manifest,
+        }
+    if source_id == CMAPSS_SOURCE_ID:
+        sensor, equipment = _find_cmapss_parts(db)
+        version = _latest_version(db, sensor)
+        equipment_version = _latest_version(db, equipment)
+        manifest = dict(sensor.schema_json or {}) if sensor else {}
+        columns = list(manifest.get("columns") or [])
+        if not columns and version and version.storage_uri:
+            try:
+                rows = _parse_dataset_rows(_read_source_object(version.storage_uri))
+                columns = [key for key in (rows[0].keys() if rows else []) if not str(key).startswith("_")]
+            except Exception:
+                columns = []
+        ready = bool(sensor and equipment and version and equipment_version and version.storage_uri and equipment_version.storage_uri)
+        return {
+            "id": CMAPSS_SOURCE_ID,
+            "name": CMAPSS_DATASET_NAME,
+            "kind": "temporal",
+            "installed": ready,
+            "privacy_level": sensor.privacy_level if sensor else "standard",
+            "dataset_id": sensor.id if sensor else None,
+            "related_dataset_id": equipment.id if equipment else None,
+            "version_id": version.id if version else None,
+            "related_version_id": equipment_version.id if equipment_version else None,
+            "records": version.rowcount if version else None,
+            "columns": columns,
+            "supports": ["ordinal"],
+            "time_kind": "ordinal",
+            "time_column": "cycle",
+            "entity_column": "equipment_id",
+            "source_url": CMAPSS_SOURCE_URL,
+            "license": "NASA C-MAPSS 数据集来源，按原始许可使用",
+            "filename": "sensor_readings.csv + equipment.csv",
+            "sha256": manifest.get("sha256") or version.checksum if version else None,
+            "manifest": {**manifest, "source_id": CMAPSS_SOURCE_ID, "temporal_source": True, "related_dataset_id": equipment.id if equipment else None},
         }
     if source_id == ICEWS_SOURCE_ID:
         dataset = find_icews_dataset(db)
@@ -150,6 +241,7 @@ def _source_item(db: Session, source_id: str) -> dict[str, Any]:
             "file_id": ICEWS_FILE_ID,
             "sha256": ICEWS_SHA256,
             "installed": bool(dataset),
+            "privacy_level": dataset.privacy_level if dataset else "standard",
             "dataset_id": dataset.id if dataset else None,
             "records": summary.get("rows") if dataset else None,
             "date_from": summary.get("time_from") if dataset else None,
@@ -170,13 +262,14 @@ def _source_item(db: Session, source_id: str) -> dict[str, Any]:
             columns: list[str] = []
             if version and version.storage_uri:
                 try:
-                    rows = _parse_dataset_rows(get_storage_service().get_object(version.storage_uri))
+                    rows = _parse_dataset_rows(_read_source_object(version.storage_uri))
                     columns = [key for key in rows[0].keys() if not key.startswith("_")] if rows else []
                 except Exception:
                     columns = []
             return {
                 "id": source_id, "name": dataset.name, "kind": "existing_dataset",
                 "installed": bool(version), "dataset_id": dataset.id,
+                "privacy_level": dataset.privacy_level or "standard",
                 "records": version.rowcount if version else None,
                 "columns": columns, "supports": ["instant", "ordinal", "interval"],
                 "source": "existing_dataset",
@@ -246,9 +339,11 @@ _parse_dataset_rows = parse_temporal_bytes
 
 def _existing_dataset_sources(db: Session) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for dataset in db.query(Dataset).filter(Dataset.kind.in_(["structured", "semi"])).order_by(Dataset.created_at.desc()).all():
+    for dataset in db.query(Dataset).filter(Dataset.kind.in_(["structured", "semi"]), Dataset.data_class == "temporal").order_by(Dataset.created_at.desc()).all():
         manifest = dataset.schema_json or {}
         if not manifest.get("temporal_source"):
+            continue
+        if dataset.name in {"sensor_readings", "equipment"} or manifest.get("cmapss_role"):
             continue
         item = _source_item(db, f"dataset:{dataset.id}")
         if item.get("installed"):
@@ -264,8 +359,8 @@ def adapters():
 
 @router.get("/sources")
 def sources(db: Session = Depends(get_db)):
-    """List the active FactoryNet card and explicitly uploaded temporal files."""
-    return [_source_item(db, FACTORYNET_SOURCE_ID), *_existing_dataset_sources(db)]
+    """List built-in temporal packages and explicitly uploaded temporal files."""
+    return [_source_item(db, FACTORYNET_SOURCE_ID), _source_item(db, CMAPSS_SOURCE_ID), *_existing_dataset_sources(db)]
 
 
 @router.post("/sources/factorynet_cnc/install", status_code=201)
@@ -296,7 +391,10 @@ async def upload_temporal_source(file: UploadFile = File(...), db: Session = Dep
     import hashlib
     name = os.path.splitext(filename)[0]
     svc = DatasetService(db)
-    dataset = svc.create_dataset(name=name, kind="structured")
+    dataset = svc.create_dataset(
+        name=name, kind="structured", data_class="temporal",
+        schema_json={"temporal_source": True, "source": "uploaded"},
+    )
     version = svc.create_version(dataset.id, raw, rowcount=len(rows))
     dataset.latest_version_id = version.id
     digest = hashlib.sha256(raw).hexdigest()
@@ -312,10 +410,14 @@ async def upload_temporal_source(file: UploadFile = File(...), db: Session = Dep
 
 
 @router.post("/sources/{source_id}/analyses", status_code=202)
-def create_temporal_analysis(source_id: str, background: BackgroundTasks, db: Session = Depends(get_db)):
+def create_temporal_analysis(source_id: str, body: TemporalAnalysisRequest | None = None, background: BackgroundTasks = None, db: Session = Depends(get_db)):
     dataset_id = source_id.split(":", 1)[1] if source_id.startswith("dataset:") else None
     if source_id == FACTORYNET_SOURCE_ID:
         dataset = find_factorynet_dataset(db)
+    elif source_id == CMAPSS_SOURCE_ID:
+        dataset, equipment = _find_cmapss_parts(db)
+        if not equipment:
+            raise HTTPException(409, "C-MAPSS 案例包缺少 equipment 关联表")
     else:
         dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first() if dataset_id else None
     if not dataset:
@@ -323,14 +425,31 @@ def create_temporal_analysis(source_id: str, background: BackgroundTasks, db: Se
     version = db.query(DatasetVersion).filter(DatasetVersion.id == dataset.latest_version_id).first() if dataset.latest_version_id else None
     if not version:
         raise HTTPException(404, "时序数据源没有版本")
+    privacy = (body.privacy_level if body else None) or dataset.privacy_level or "standard"
+    dataset.privacy_level = privacy
+    db.commit()
     existing = db.query(TemporalDatasetProfile).filter(TemporalDatasetProfile.dataset_version_id == version.id).order_by(TemporalDatasetProfile.updated_at.desc()).first()
     if existing:
-        if existing.status == "queued":
-            background.add_task(run_profile, existing.id)
+        if privacy == "private":
+            rows = parse_temporal_bytes(_read_source_object(version.storage_uri))
+            existing.deterministic_profile = profile_rows(rows, checksum=version.checksum)
+            existing.llm_suggestion = {}
+            existing.llm_used = False
+            existing.model_name = None
+            existing.error = None
+            existing.status = "completed"
+            db.commit()
+        elif existing.status == "queued":
+            _queue_temporal_profile(existing.id, background)
         return serialize_profile(existing)
+    if privacy == "private":
+        rows = parse_temporal_bytes(_read_source_object(version.storage_uri))
+        profile = TemporalDatasetProfile(dataset_id=dataset.id, dataset_version_id=version.id, status="completed", deterministic_profile=profile_rows(rows, checksum=version.checksum), llm_suggestion={}, llm_used=False, error=None)
+        db.add(profile); db.commit(); db.refresh(profile)
+        return serialize_profile(profile)
     profile = TemporalDatasetProfile(dataset_id=dataset.id, dataset_version_id=version.id, status="queued")
     db.add(profile); db.commit(); db.refresh(profile)
-    background.add_task(run_profile, profile.id)
+    _queue_temporal_profile(profile.id, background)
     return serialize_profile(profile)
 
 
@@ -365,7 +484,7 @@ def source_preview(
     scenario: str | None = None,
     db: Session = Depends(get_db),
 ):
-    if source_id not in {ICEWS_SOURCE_ID, FACTORYNET_SOURCE_ID} and not source_id.startswith("dataset:"):
+    if source_id not in {ICEWS_SOURCE_ID, FACTORYNET_SOURCE_ID, CMAPSS_SOURCE_ID} and not source_id.startswith("dataset:"):
         raise HTTPException(404, "temporal source not found")
     if source_id == FACTORYNET_SOURCE_ID:
         dataset = find_factorynet_dataset(db)
@@ -374,7 +493,7 @@ def source_preview(
         version = db.query(DatasetVersion).filter(DatasetVersion.id == dataset.latest_version_id).first()
         if not version or not version.storage_uri:
             raise HTTPException(422, "FactoryNet dataset version has no storage object")
-        all_rows = parse_temporal_bytes(get_storage_service().get_object(version.storage_uri))
+        all_rows = parse_temporal_bytes(_read_source_object(version.storage_uri))
         selected = all_rows[offset:offset + limit]
         return {"source_id": source_id, "dataset_id": dataset.id, "offset": offset, "limit": limit,
                 "rows": selected, "columns": [key for key in all_rows[0].keys() if not str(key).startswith("_")] if all_rows else [],
@@ -383,6 +502,21 @@ def source_preview(
                             "machines": len({str(row.get("machine_type")) for row in all_rows}), "time_kind": "ordinal",
                             "time_column": "time_s", "time_from": min((row.get("time_s") for row in all_rows if row.get("time_s") is not None), default=None),
                             "time_to": max((row.get("time_s") for row in all_rows if row.get("time_s") is not None), default=None)}}
+    if source_id == CMAPSS_SOURCE_ID:
+        sensor, equipment = _find_cmapss_parts(db)
+        version = _latest_version(db, sensor)
+        equipment_version = _latest_version(db, equipment)
+        if not sensor or not equipment or not version or not equipment_version or not version.storage_uri or not equipment_version.storage_uri:
+            raise HTTPException(409, detail={"error": "SOURCE_NOT_READY", "message": "C-MAPSS 案例包缺少 sensor_readings/equipment 可读版本"})
+        all_rows = _parse_dataset_rows(_read_source_object(version.storage_uri))
+        selected = all_rows[offset:offset + limit]
+        return {
+            "source_id": source_id, "dataset_id": sensor.id, "related_dataset_id": equipment.id,
+            "offset": offset, "limit": limit, "rows": selected,
+            "columns": [key for key in all_rows[0].keys() if not str(key).startswith("_")] if all_rows else [],
+            "total_rows": len(all_rows), "total_source_rows": len(all_rows),
+            "summary": {"rows": len(all_rows), "equipment": len({str(row.get("equipment_id")) for row in all_rows if row.get("equipment_id") not in (None, "")}), "time_kind": "ordinal", "time_column": "cycle", "entity_column": "equipment_id", "related_table": "equipment"},
+        }
     if source_id.startswith("dataset:"):
         dataset_id = source_id.split(":", 1)[1]
         dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
@@ -391,7 +525,7 @@ def source_preview(
             version = db.query(DatasetVersion).filter(DatasetVersion.dataset_id == dataset.id).order_by(DatasetVersion.version_no.desc()).first()
         if not dataset or not version or not version.storage_uri:
             raise HTTPException(404, "dataset source not found")
-        rows = _parse_dataset_rows(get_storage_service().get_object(version.storage_uri))
+        rows = _parse_dataset_rows(_read_source_object(version.storage_uri))
         page = rows[offset:offset + limit]
         return {
             "source_id": source_id, "dataset_id": dataset.id, "offset": offset,
@@ -408,7 +542,7 @@ def source_preview(
         version = db.query(DatasetVersion).filter(DatasetVersion.dataset_id == dataset.id).order_by(DatasetVersion.version_no.desc()).first()
     if not version or not version.storage_uri:
         raise HTTPException(422, "ICEWS dataset version has no storage object")
-    rows = parse_icews_tsv(get_storage_service().get_object(version.storage_uri))
+    rows = parse_icews_tsv(_read_source_object(version.storage_uri))
     filters = {
         "date_from": date_from, "date_to": date_to, "country": country,
         "event_type": event_type, "cameo_code": cameo_code,
@@ -434,7 +568,7 @@ def query_temporal_source(source_id: str, body: TemporalQueryBody, db: Session =
     version = db.query(DatasetVersion).filter(DatasetVersion.id == item.get("version_id")).first()
     if not version or not version.storage_uri:
         raise HTTPException(404, "时序数据源版本不存在")
-    rows = parse_temporal_bytes(get_storage_service().get_object(version.storage_uri))
+    rows = parse_temporal_bytes(_read_source_object(version.storage_uri))
     from app.tasks.v2.temporal_construction import _filter_generic_rows
     selected = _filter_generic_rows(rows, body.model_dump(exclude_none=True), entity_column=body.entity_column)
     page = selected[body.offset:body.offset + body.limit]
@@ -446,13 +580,13 @@ def query_temporal_source(source_id: str, body: TemporalQueryBody, db: Session =
 
 @router.get("/catalog")
 def catalog(db: Session = Depends(get_db)):
-    """Compatibility alias for the active FactoryNet temporal catalog."""
-    return [_source_item(db, FACTORYNET_SOURCE_ID), *_existing_dataset_sources(db)]
+    """Compatibility alias for the temporal source catalog."""
+    return [_source_item(db, FACTORYNET_SOURCE_ID), _source_item(db, CMAPSS_SOURCE_ID), *_existing_dataset_sources(db)]
 
 
 @router.get("/catalog/{dataset_key}/preview")
 def catalog_preview(dataset_key: str, limit: int = Query(25, ge=1, le=100)):
-    if dataset_key not in {ICEWS_SOURCE_ID, FACTORYNET_SOURCE_ID} and not dataset_key.startswith("dataset:"):
+    if dataset_key not in {ICEWS_SOURCE_ID, FACTORYNET_SOURCE_ID, CMAPSS_SOURCE_ID} and not dataset_key.startswith("dataset:"):
         raise HTTPException(404, "temporal source not found")
     with SessionLocal() as db:
         return source_preview(dataset_key, offset=0, limit=limit, db=db)
@@ -479,8 +613,11 @@ def _find_completed_run(db: Session, ontology_id: str, config_hash: str) -> Cons
 
 
 def create_temporal_run(ontology_id: str, body: TemporalRunCreate, background: BackgroundTasks, db: Session):
-    if not db.query(OntologyProject.id).filter(OntologyProject.id == ontology_id).first():
+    ontology = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
+    if not ontology:
         raise HTTPException(404, "Ontology not found")
+    if ontology.data_class != "temporal":
+        raise HTTPException(409, "只能追加到时序数据本体")
     source_id = _source_id(body)
     dataset_id = body.dataset_id
     if source_id == FACTORYNET_SOURCE_ID:
@@ -490,6 +627,15 @@ def create_temporal_run(ontology_id: str, body: TemporalRunCreate, background: B
         dataset_id = dataset.id
         if body.time_kind != "ordinal":
             raise HTTPException(422, "FactoryNet CNC 使用 Ordinal 相对时间")
+    elif source_id == CMAPSS_SOURCE_ID:
+        sensor, equipment = _find_cmapss_parts(db)
+        sensor_version = _latest_version(db, sensor)
+        equipment_version = _latest_version(db, equipment)
+        if not sensor or not equipment or not sensor_version or not equipment_version:
+            raise HTTPException(status_code=409, detail={"error": "SOURCE_NOT_READY", "message": "请先恢复 C-MAPSS 的 sensor_readings 与 equipment 两个版本"})
+        dataset_id = sensor.id
+        if body.time_kind != "ordinal":
+            raise HTTPException(422, "C-MAPSS cycle 使用 Ordinal 相对时间")
     elif source_id == ICEWS_SOURCE_ID:
         dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first() if dataset_id else find_icews_dataset(db)
         if not dataset:
@@ -507,9 +653,15 @@ def create_temporal_run(ontology_id: str, body: TemporalRunCreate, background: B
     if existing:
         return {**serialize_run(existing), "reused": True}
     run = create_run(db, ontology_id=ontology_id, dataset_id=dataset_id, model_name=body.model_name, mode="temporal", config=config)
+    # The desktop demo must remain responsive when Redis/Celery is not
+    # running.  Celery is opt-in; otherwise persist the run and use the local
+    # FastAPI background worker.  This avoids a 20-second broker retry before
+    # every FactoryNet click on a clean workstation.
+    import os
+    celery_enabled = os.getenv("CELERY_ENABLED", "").lower() in {"1", "true", "yes"}
     try:
         from app.tasks.v2.temporal_construction import run_temporal_construction_task, run_temporal_construction
-        if run_temporal_construction_task is not None:
+        if celery_enabled and run_temporal_construction_task is not None:
             run_temporal_construction_task.delay(run.id)
         else:
             background.add_task(run_temporal_construction, run.id)
@@ -524,17 +676,22 @@ def create_temporal_run(ontology_id: str, body: TemporalRunCreate, background: B
 def create_temporal_run_atomic(body: TemporalAtomicRunCreate, background: BackgroundTasks, db: Session = Depends(get_db), current_user: User = Depends(require_editor)):
     """Atomically create/reuse a target ontology and start a validated run."""
     profile = db.query(TemporalDatasetProfile).filter(TemporalDatasetProfile.id == body.profile_id).first()
-    if not profile or profile.status != "completed" or not profile.llm_used:
+    dataset_for_profile = db.query(Dataset).filter(Dataset.id == profile.dataset_id).first() if profile else None
+    private_profile = bool(dataset_for_profile and dataset_for_profile.privacy_level == "private")
+    if not profile or profile.status != "completed" or (not profile.llm_used and not private_profile):
         raise HTTPException(status_code=409, detail={"error": "PROFILE_NOT_READY", "message": "MiniMax M3 分析尚未成功，不能开始构建"})
-    dataset = db.query(Dataset).filter(Dataset.id == profile.dataset_id).first()
+    dataset = dataset_for_profile
     if not dataset:
         raise HTTPException(404, "分析对应的数据集不存在")
     if body.ontology_mode == "reuse":
         if not body.ontology_id:
             raise HTTPException(422, "请选择已有本体")
         ontology_id = body.ontology_id
-        if not db.query(OntologyProject.id).filter(OntologyProject.id == ontology_id).first():
+        existing_ontology = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
+        if not existing_ontology:
             raise HTTPException(404, "目标本体不存在")
+        if existing_ontology.data_class != "temporal":
+            raise HTTPException(409, "只能追加到时序数据本体")
     else:
         name = body.ontology_name.strip()
         if not name:
@@ -543,8 +700,8 @@ def create_temporal_run_atomic(body: TemporalAtomicRunCreate, background: Backgr
         if duplicate:
             raise HTTPException(status_code=409, detail={"error": "DUPLICATE_NAME", "message": "本体名称已存在，请选择复用或修改名称", "existing_id": duplicate.id})
         ontology = OntologyProject(id=str(uuid.uuid4()), name=name, domain=body.ontology_domain,
-                                   description=body.ontology_description or "由 FactoryNet 时序数据构建的工业本体",
-                                   build_mode="temporal_pipeline", created_by=current_user.id)
+                                   description=body.ontology_description or "由时序案例数据构建的工业本体",
+                                   build_mode="temporal_pipeline", data_class="temporal", created_by=current_user.id)
         db.add(ontology); db.commit(); db.refresh(ontology)
         ontology_id = ontology.id
     config_body = TemporalRunCreate(**body.model_dump(exclude={"ontology_mode", "ontology_id", "ontology_name", "ontology_domain", "ontology_description"}))

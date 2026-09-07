@@ -1,184 +1,159 @@
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
-import { useNavigate } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import { ontologyApi } from '@/api/ontologies'
-import { apiClient } from '@/api/client'
-import ConfidenceBar from '@/components/ConfidenceBar'
-import ConfirmDialog from '@/components/ConfirmDialog'
-import { Pencil, Trash2, Plus, Search, ToggleLeft, ToggleRight, CheckCircle, Loader2 } from 'lucide-react'
-import type { LogicRule } from '@/types/ontology'
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Loader2, Search } from "lucide-react";
+import { apiClientV2 } from "@/api/client";
 
-function parseLinkedEntities(value: unknown): string[] {
-  if (Array.isArray(value)) return value
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value || '[]')
-      return Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
-    }
-  }
-  return []
+type Rule = {
+  id: string;
+  name: string;
+  name_cn?: string;
+  name_en?: string;
+  description?: string;
+  formula?: string;
+  condition?: unknown;
+  effect?: unknown;
+  linked_entities?: string[];
+  evidence?: Record<string, unknown>;
+  confidence?: number;
+  model_invocation_id?: string | null;
+};
+
+function printed(value: unknown) {
+  if (
+    value == null ||
+    value === "" ||
+    (typeof value === "object" && !Object.keys(value as object).length)
+  )
+    return "—";
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
 export default function LogicTab({ ontologyId }: { ontologyId: string }) {
-  const { t } = useTranslation()
-  const qc = useQueryClient()
-  const navigate = useNavigate()
-  const [showCreate, setShowCreate] = useState(false)
-  const [searchQ, setSearchQ] = useState('')
-  const [deleteTarget, setDeleteTarget] = useState<LogicRule | null>(null)
-  const { register, handleSubmit, reset } = useForm<Partial<LogicRule>>()
-
-  const { data: rules = [], isLoading } = useQuery({
-    queryKey: ['logic', ontologyId],
-    queryFn: () => ontologyApi.listLogic(ontologyId) as any,
-  })
-
-  const createMut = useMutation({
-    mutationFn: (data: Partial<LogicRule>) => ontologyApi.createLogic(ontologyId, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['logic', ontologyId] }); qc.invalidateQueries({ queryKey: ['stats'] }); setShowCreate(false); reset() },
-  })
-
-  const deleteMut = useMutation({
-    mutationFn: (id: string) => ontologyApi.deleteLogic(ontologyId, id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['logic', ontologyId] }); qc.invalidateQueries({ queryKey: ['stats'] }) },
-  })
-
-  const toggleMut = useMutation({
-    mutationFn: (id: string) => apiClient.post(`/ontologies/${ontologyId}/logic/${id}/toggle`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['logic', ontologyId] }),
-  })
-
-  const publishMut = useMutation({
-    mutationFn: () => apiClient.post(`/ontologies/${ontologyId}/logic/publish`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['logic', ontologyId] }),
-  })
-
-  const filtered = useMemo(() => {
-    const q = searchQ.trim().toLowerCase()
-    if (!q) return rules as LogicRule[]
-    return (rules as LogicRule[]).filter(r =>
-      r.name_cn?.toLowerCase().includes(q) || r.name_en?.toLowerCase().includes(q) ||
-      r.description?.toLowerCase().includes(q) || r.formula?.toLowerCase().includes(q)
-    )
-  }, [rules, searchQ])
-
+  const [query, setQuery] = useState("");
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["ontology-logic-rules", ontologyId],
+    queryFn: () =>
+      apiClientV2.get<{ logic_rules: Rule[] }>(
+        `/ontologies/${ontologyId}/graph`,
+        { params: { view: "ontology" } },
+      ),
+  });
+  const rules = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const all = data?.logic_rules || [];
+    if (!needle) return all;
+    return all.filter((rule) =>
+      [
+        rule.name,
+        rule.name_cn,
+        rule.name_en,
+        rule.description,
+        rule.formula,
+        printed(rule.condition),
+        printed(rule.effect),
+      ].some((value) =>
+        String(value || "")
+          .toLowerCase()
+          .includes(needle),
+      ),
+    );
+  }, [data, query]);
+  if (isLoading)
+    return (
+      <div className="flex min-h-[240px] items-center justify-center text-sm text-slate-500">
+        <Loader2 size={16} className="mr-2 animate-spin" />
+        正在读取逻辑规则
+      </div>
+    );
+  if (error)
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        逻辑规则读取失败，请刷新后重试。
+      </div>
+    );
   return (
     <div className="space-y-4">
-      {/* Search + Actions */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
-            placeholder="搜索规则名称 / 公式…"
-            className="w-full border rounded-lg pl-8 pr-3 py-2 text-sm" />
-        </div>
-        <button onClick={() => publishMut.mutate()} disabled={publishMut.isPending}
-          className="flex items-center gap-1.5 px-3 py-2 bg-green-700 text-white rounded-lg text-sm disabled:opacity-50">
-          {publishMut.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-          发布全部
-        </button>
-        <button onClick={() => { setShowCreate(true); reset() }}
-          className="flex items-center gap-2 px-3 py-2 bg-black text-white rounded-lg text-sm">
-          <Plus size={14} /> {t('logic.add')}
-        </button>
+      <div className="relative max-w-md">
+        <Search
+          size={15}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+        />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-700"
+          placeholder="搜索规则名称、条件或结果"
+        />
       </div>
-
-      {/* Rules table */}
-      <div className="bg-white border rounded-lg overflow-hidden">
-        {isLoading ? <p className="py-8 text-center text-gray-400">{t('common.loading')}</p> : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-4 py-3 text-left text-gray-500 text-xs font-medium">名称</th>
-                <th className="px-4 py-3 text-left text-gray-500 text-xs font-medium">公式</th>
-                <th className="px-4 py-3 text-left text-gray-500 text-xs font-medium">描述</th>
-                <th className="px-4 py-3 text-left text-gray-500 text-xs font-medium">类型</th>
-                <th className="px-4 py-3 text-left text-gray-500 text-xs font-medium">关联实体</th>
-                <th className="px-4 py-3 text-left text-gray-500 text-xs font-medium">状态</th>
-                <th className="px-4 py-3 text-left text-gray-500 text-xs font-medium">置信度</th>
-                <th className="px-4 py-3 text-center text-gray-500 text-xs font-medium">启用</th>
-                <th className="px-4 py-3 text-right text-gray-500 text-xs font-medium">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r: any) => {
-                const linkedEntities = parseLinkedEntities(r.linked_entities)
-                const status = r.status || 'draft'
-                const enabled = r.enabled !== false
-                return (
-                  <tr key={r.id} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{r.name_cn || r.name || '—'}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600 max-w-xs truncate">{r.formula || '—'}</td>
-                    <td className="px-4 py-3 text-gray-500 max-w-xs truncate">{r.description || '—'}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs px-1.5 py-0.5 rounded border bg-gray-50 text-gray-600">{r.logic_type || 'rule'}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1 flex-wrap">
-                        {linkedEntities.map((e: string) => (
-                          <span key={e} className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{e}</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-1.5 py-0.5 rounded border ${
-                        status === 'published' ? 'bg-green-50 text-green-700 border-green-200' :
-                        status === 'draft' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                        'bg-gray-50 text-gray-600'
-                      }`}>{status}</span>
-                    </td>
-                    <td className="px-4 py-3 w-28"><ConfidenceBar value={r.confidence} /></td>
-                    <td className="px-4 py-3 text-center">
-                      <button onClick={() => toggleMut.mutate(r.id)} className="text-gray-500 hover:text-black">
-                        {enabled ? <ToggleRight size={16} className="text-green-600" /> : <ToggleLeft size={16} className="text-gray-400" />}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex items-center gap-3">
-                        <button onClick={() => navigate(`/ontologies/${ontologyId}/logic/${r.id}`)}
-                          title={t('common.edit')} className="p-1.5 rounded text-blue-600 hover:bg-blue-50"><Pencil size={14} /></button>
-                        <button onClick={() => setDeleteTarget(r)} title={t('common.delete')} className="p-1.5 rounded text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-        {!isLoading && filtered.length === 0 && <p className="text-center text-gray-400 py-8">{searchQ ? '无匹配结果' : t('logic.empty')}</p>}
-      </div>
-
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-6 w-96">
-            <h3 className="font-semibold mb-4">{t('logic.add')}</h3>
-            <form onSubmit={handleSubmit(data => createMut.mutate(data))} className="space-y-3">
-              <input {...register('name_cn', { required: true })} placeholder={t('entities.ph_name_cn')} className="w-full border rounded-lg px-3 py-2 text-sm" />
-              <input {...register('name_en')} placeholder={t('entities.ph_name_en')} className="w-full border rounded-lg px-3 py-2 text-sm" />
-              <input {...register('formula')} placeholder={t('logic.ph_formula')} className="w-full border rounded-lg px-3 py-2 text-sm font-mono" />
-              <textarea {...register('description')} placeholder={t('entities.ph_desc')} rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none" />
-              <input {...register('confidence', { valueAsNumber: true })} type="number" step="0.01" min="0" max="1" placeholder={t('entities.ph_confidence')} className="w-full border rounded-lg px-3 py-2 text-sm" />
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => { setShowCreate(false); reset() }} className="px-4 py-2 border rounded-lg text-sm">{t('common.cancel')}</button>
-                <button type="submit" className="px-4 py-2 bg-black text-white rounded-lg text-sm">{t('common.save')}</button>
+      <div className="space-y-3">
+        {rules.map((rule) => (
+          <article
+            key={rule.id}
+            className="rounded-xl border border-slate-200 bg-white p-5"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {rule.name_cn || rule.name}
+                </h3>
+                {rule.name_en && (
+                  <p className="mt-1 text-xs text-slate-500">{rule.name_en}</p>
+                )}
+                {rule.description && (
+                  <p className="mt-2 text-sm text-slate-600">
+                    {rule.description}
+                  </p>
+                )}
               </div>
-            </form>
+              <span className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                置信度 {Number(rule.confidence ?? 1).toFixed(2)}
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <section className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  IF
+                </p>
+                <pre className="whitespace-pre-wrap break-words font-sans text-xs leading-5 text-slate-700">
+                  {printed(rule.condition)}
+                </pre>
+              </section>
+              <section className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  THEN
+                </p>
+                <pre className="whitespace-pre-wrap break-words font-sans text-xs leading-5 text-slate-700">
+                  {printed(rule.effect)}
+                </pre>
+              </section>
+            </div>
+            {rule.formula && (
+              <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-600">
+                {rule.formula}
+              </div>
+            )}
+            <div className="mt-4 grid gap-3 text-xs text-slate-600 md:grid-cols-2">
+              <div>
+                <span className="font-medium text-slate-800">关联实体：</span>
+                {rule.linked_entities?.length
+                  ? rule.linked_entities.join("、")
+                  : "—"}
+              </div>
+              <div>
+                <span className="font-medium text-slate-800">来源证据：</span>
+                {rule.evidence && Object.keys(rule.evidence).length
+                  ? printed(rule.evidence)
+                  : "—"}
+              </div>
+            </div>
+          </article>
+        ))}
+        {!rules.length && (
+          <div className="rounded-xl border border-slate-200 bg-white py-12 text-center text-sm text-slate-400">
+            {query ? "无匹配规则" : "尚未发布逻辑规则"}
           </div>
-        </div>
-      )}
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        title={t('logic.delete_title')}
-        message={t('logic.delete_confirm', { name: deleteTarget?.name_cn ?? '' })}
-        onConfirm={() => { if (deleteTarget) deleteMut.mutate(deleteTarget.id); setDeleteTarget(null) }}
-        onCancel={() => setDeleteTarget(null)}
-      />
+        )}
+      </div>
     </div>
-  )
+  );
 }

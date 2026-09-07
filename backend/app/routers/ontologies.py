@@ -38,6 +38,7 @@ def create_ontology(body: OntologyCreate, db: Session = Depends(get_db), current
         raise HTTPException(status_code=409, detail={"error": "DUPLICATE_NAME", "message": f"Ontology 名称「{body.name}」已存在", "existing_id": existing.id})
     project = OntologyProject(id=str(uuid.uuid4()), name=body.name, domain=body.domain,
                                description=body.description, build_mode=body.build_mode or "simple_llm",
+                               data_class=body.data_class or "regular",
                                created_by=current_user.id)
     db.add(project); db.commit(); db.refresh(project)
     return {"data": OntologyOut.model_validate(project).model_dump()}

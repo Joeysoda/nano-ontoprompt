@@ -1,18 +1,193 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Pause, Play, RefreshCw, TriangleAlert } from 'lucide-react'
-import cytoscape from 'cytoscape'
-import { apiClientV2 } from '@/api/client'
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Loader2,
+  RefreshCw,
+  TriangleAlert,
+} from "lucide-react";
+import { apiClientV2 } from "@/api/client";
 
-type Node={id:string;entity_type?:string;properties?:Record<string,any>;event_seq?:number|null}; type Edge={id:string;source:string;target:string;type:string;properties?:Record<string,any>}; type Run={id:string;run_id?:string;ontology_id:string;status:string;metrics?:any;progress?:any;error?:string}
-const fmt=(v:any)=>v===null||v===undefined||v===''?'—':String(v); const colors=['#2563eb','#059669','#dc2626','#7c3aed','#d97706','#0891b2','#db2777']; const color=(s:string)=>colors[Math.abs([...s].reduce((a,c)=>a+c.charCodeAt(0),0))%colors.length]
-function Graph({nodes,edges,onSelect,hidden}:{nodes:Node[];edges:Edge[];onSelect:(n:Node)=>void;hidden:boolean}) { const ref=useRef<HTMLDivElement>(null); useEffect(()=>{if(!ref.current)return; const ids=new Set(nodes.map(n=>n.id)); const el=[...nodes.map(n=>({data:{id:n.id,label:String(n.properties?.name||n.properties?.episode_id||n.properties?.phase||n.entity_type||n.id).slice(0,24),color:color(n.entity_type||'Entity'),raw:n}})),...edges.filter(e=>ids.has(e.source)&&ids.has(e.target)).map(e=>({data:{id:e.id,source:e.source,target:e.target,label:e.type}}))];const cy=cytoscape({container:ref.current,elements:el,style:[{selector:'node',style:{label:hidden?'':'data(label)','background-color':'data(color)',color:'#fff','font-size':'9px','text-valign':'center','text-halign':'center',width:48,height:48}},{selector:'edge',style:{label:hidden?'':'data(label)','font-size':'8px','line-color':'#9ca3af','target-arrow-color':'#9ca3af','target-arrow-shape':'triangle','curve-style':'bezier'}}],layout:{name:'cose',animate:false,numIter:nodes.length>200?150:400} as any});cy.on('tap','node',e=>onSelect(e.target.data('raw')));return()=>cy.destroy()},[nodes,edges,onSelect,hidden]);return <div ref={ref} className="h-[520px] border rounded-lg bg-slate-50" data-testid="temporal-graph-canvas"/> }
-export default function TemporalWorkbenchPage(){
- const {runId}=useParams<{runId:string}>();const nav=useNavigate();const [run,setRun]=useState<Run|null>(null);const [nodes,setNodes]=useState<Node[]>([]);const [edges,setEdges]=useState<Edge[]>([]);const [selected,setSelected]=useState<Node|null>(null);const [evidence,setEvidence]=useState<any>(null);const [error,setError]=useState('');const [pageSize,setPageSize]=useState('200');const [hidden,setHidden]=useState(false);const [view,setView]=useState<'ontology'|'observations'>('ontology');const [at,setAt]=useState('');const [playing,setPlaying]=useState(false);const [timeline,setTimeline]=useState<any>(null);const [diff,setDiff]=useState<any>(null);const [fromAt,setFromAt]=useState('');const [toAt,setToAt]=useState('');
- const load=useCallback(async()=>{if(!runId)return;setError('');try{const r=await apiClientV2.get<Run>(`/construction-runs/${runId}`);setRun(r);if(r.status!=='completed')return;const limit=pageSize==='all'?500:Math.max(50,Number(pageSize));let offset=0;const ns:Node[]=[];const es:Edge[]=[];while(true){const g=await apiClientV2.get<any>(`/temporal/runs/${runId}/graph`,{params:{offset,limit}});ns.push(...(g.nodes||[]));es.push(...(g.edges||[]));if(pageSize!=='all'||!g.next_offset)break;offset=g.next_offset}setNodes(ns);setEdges(es);const t=await apiClientV2.get(`/ontologies/${r.ontology_id}/temporal/timeline`,{params:{limit:1000}});setTimeline(t)}catch(e:any){setError(e?.response?.data?.detail||e?.message||'运行结果加载失败')}},[runId,pageSize]);
- useEffect(()=>{load()},[load]);useEffect(()=>{if(!run||run.status==='completed'||run.status==='failed')return;const id=window.setInterval(load,1200);return()=>window.clearInterval(id)},[run?.status,load]);useEffect(()=>{if(!playing||!timeline?.dates?.length)return;const id=window.setInterval(()=>{const ds=timeline.dates;const i=ds.indexOf(at);setAt(ds[(i+1)%ds.length])},900);return()=>window.clearInterval(id)},[playing,timeline,at]);
- const dates=(timeline?.dates||[]).map(String);const shown=useMemo(()=>{let n=view==='observations'?nodes.filter(x=>x.entity_type==='Observation'):nodes;if(at){const p=Number(at);if(!Number.isNaN(p))n=n.filter(x=>x.event_seq==null||Number(x.event_seq)<=p)}return n},[nodes,view,at]);const shownIds=new Set(shown.map(n=>n.id));const shownEdges=edges.filter(e=>shownIds.has(e.source)&&shownIds.has(e.target));
- const select=async(n:Node)=>{setSelected(n);try{if(run)setEvidence(await apiClientV2.get(`/assertions/${encodeURIComponent(n.id)}/provenance`,{params:{ontology_id:run.ontology_id}}))}catch{setEvidence(null)}};const compare=async()=>{if(!run||!fromAt||!toAt)return;try{setDiff(await apiClientV2.get(`/ontologies/${run.ontology_id}/temporal/diff`,{params:{from_at:fromAt,to_at:toAt,limit:300}}))}catch(e:any){setError(e?.message||'差异查询失败')}};
- if(!run)return <div className="p-6 text-sm text-gray-500">加载构建任务...</div>;if(run.status!=='completed')return <div className="max-w-4xl space-y-4"><button onClick={()=>nav('/data/temporal')} className="text-xs text-gray-500 flex gap-1 items-center"><ArrowLeft size={13}/>返回</button><div className="bg-white border rounded-xl p-6"><p className="font-medium">{run.status==='failed'?'构建失败':'正在构建'}</p><p className="text-sm text-gray-500 mt-2">{run.error||run.progress?.stage||'准备中'} · {run.progress?.completed||0}/{run.progress?.total||0}</p></div></div>
- return <div className="max-w-[1500px] space-y-4"><div className="flex items-start justify-between"><div><button onClick={()=>nav('/data/temporal')} className="text-xs text-gray-500 flex gap-1 items-center mb-2"><ArrowLeft size={13}/>返回时序数据</button><h2 className="text-2xl font-semibold">时序图谱调查</h2><p className="text-sm text-gray-500 mt-1">{run.metrics?.summary?.dataset||'FactoryNet'} · {run.metrics?.time_kind||'ordinal'} · FalkorDB</p></div><button onClick={load} className="border rounded-lg px-3 py-2 text-sm flex gap-2 items-center"><RefreshCw size={14}/>刷新</button></div>{error&&<div className="border border-red-200 bg-red-50 text-red-700 rounded-lg px-4 py-3 text-sm flex gap-2"><TriangleAlert size={16}/>{error}</div>}<div className="grid grid-cols-2 md:grid-cols-6 gap-3">{[['源记录',run.metrics?.rows_in??'—'],['选中记录',run.metrics?.rows_selected??run.metrics?.rows_normalized??'—'],['节点',run.metrics?.nodes_upserted??nodes.length],['关系',run.metrics?.edges_upserted??edges.length],['系列',run.metrics?.summary?.episodes??'—'],['问题',run.metrics?.temporal_issues??0]].map(([k,v])=><div className="bg-white border rounded-lg p-3" key={String(k)}><p className="text-xs text-gray-400">{k}</p><p className="text-xl font-semibold mt-1">{fmt(v)}</p></div>)}</div><div className="bg-white border rounded-xl p-4 flex flex-wrap items-end gap-3"><label className="text-xs">渲染数量<select value={pageSize} onChange={e=>setPageSize(e.target.value)} className="mt-1 border rounded px-2 py-1.5"><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="500">500</option><option value="1000">1000</option><option value="all">全部（分批加载）</option></select></label><button onClick={()=>setView('ontology')} className={`border rounded px-3 py-1.5 text-xs ${view==='ontology'?'bg-black text-white':''}`}>全部节点</button><button onClick={()=>setView('observations')} className={`border rounded px-3 py-1.5 text-xs ${view==='observations'?'bg-black text-white':''}`}>Observation</button><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={hidden} onChange={e=>setHidden(e.target.checked)}/>隐藏标签</label><span className="text-xs text-gray-400">当前渲染 {shown.length} / 总节点 {run.metrics?.nodes_upserted??nodes.length}；“全部”会逐批请求，超过 5,000 节点可取消浏览器请求。</span></div><div className="grid xl:grid-cols-[1fr_300px] gap-4"><section className="bg-white border rounded-xl p-4 space-y-3"><div className="flex justify-between"><p className="font-medium">实例关联图</p><span className="text-xs text-gray-400">{shownEdges.length} 条可见关系</span></div><Graph nodes={shown} edges={shownEdges} onSelect={select} hidden={hidden}/><div className="border rounded-lg bg-gray-50 p-3"><div className="flex justify-between items-center"><p className="text-xs font-medium">序列时间轴（event_seq / time_s）</p><button onClick={()=>setPlaying(!playing)} className="border bg-white rounded px-2 py-1 text-xs flex gap-1 items-center">{playing?<Pause size={12}/>:<Play size={12}/>} {playing?'暂停':'播放'}</button></div><input type="range" min="0" max={Math.max(0,dates.length-1)} value={Math.max(0,dates.indexOf(at))} onChange={e=>setAt(dates[Number(e.target.value)]||'')} className="w-full mt-2" disabled={!dates.length}/><div className="flex justify-between text-[10px] text-gray-500"><span>{fmt(dates[0])}</span><b>{fmt(at)}</b><span>{fmt(dates.at(-1))}</span></div></div></section><aside className="bg-white border rounded-xl p-4 space-y-3"><p className="font-medium text-sm">节点 / 证据详情</p>{selected?(<><p className="font-mono text-xs break-all">{selected.id}</p><p className="text-xs">类型：{selected.entity_type}</p><pre className="text-[10px] bg-gray-50 rounded p-2 max-h-64 overflow-auto whitespace-pre-wrap">{JSON.stringify(selected.properties||{},null,2)}</pre><p className="text-xs font-medium">原始来源</p>{evidence?.evidence?.length?<div className="space-y-2">{evidence.evidence.slice(0,8).map((x:any)=><div key={x.id} className="border rounded p-2 text-[10px]">{x.source_file} · 行 {x.source_row}<br/>{x.evidence_text}</div>)}</div>:<p className="text-xs text-gray-400">暂无 EvidenceRef</p>}</>):<p className="text-xs text-gray-400">点击图中节点查看属性和来源行。</p>}</aside></div><div className="bg-white border rounded-xl p-4 space-y-3"><p className="font-medium text-sm">两个序列位置对比</p><div className="flex gap-3 items-end"><label className="text-xs">从<input value={fromAt} onChange={e=>setFromAt(e.target.value)} className="mt-1 border rounded px-2 py-1.5 block" placeholder="0"/></label><label className="text-xs">到<input value={toAt} onChange={e=>setToAt(e.target.value)} className="mt-1 border rounded px-2 py-1.5 block" placeholder="10"/></label><button onClick={compare} className="bg-black text-white rounded px-3 py-1.5 text-xs">比较</button></div>{diff&&<p className="text-xs text-gray-600">窗口出现 {diff.added_nodes?.length||0} 个节点，窗口未出现 {diff.removed_nodes?.length||0} 个节点，新增关系 {diff.added_edges?.length||0} 条。</p>}</div></div>
+type Run = {
+  id: string;
+  ontology_id: string;
+  status: string;
+  metrics?: Record<string, any>;
+  progress?: {
+    stage?: string;
+    pct?: number;
+    completed?: number;
+    total?: number;
+  };
+  error?: string;
+};
+
+const formatValue = (value: unknown) =>
+  value === null || value === undefined || value === "" ? "—" : String(value);
+
+const taskTitle = (status: string) => {
+  if (status === "completed") return "构建完成";
+  if (status === "failed") return "构建失败";
+  if (status === "cancelled") return "已取消";
+  if (status === "waiting_for_model") return "等待模型";
+  if (status === "queued") return "排队中";
+  return "处理中";
+};
+
+export default function TemporalWorkbenchPage() {
+  const { runId } = useParams<{ runId: string }>();
+  const navigate = useNavigate();
+  const [run, setRun] = useState<Run | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    if (!runId) return;
+    try {
+      setError("");
+      setRun(await apiClientV2.get<Run>(`/construction-runs/${runId}`));
+    } catch (reason: any) {
+      setError(
+        reason?.response?.data?.detail || reason?.message || "无法读取构建状态",
+      );
+    }
+  }, [runId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!run || ["completed", "failed", "cancelled"].includes(run.status))
+      return;
+    const timer = window.setInterval(load, 1200);
+    return () => window.clearInterval(timer);
+  }, [load, run?.status]);
+
+  if (!run && !error) {
+    return (
+      <div className="flex min-h-56 items-center gap-2 text-sm text-slate-500">
+        <Loader2 className="h-4 w-4 animate-spin" /> 读取构建任务
+      </div>
+    );
+  }
+
+  const status = run?.status || "failed";
+  const progress = run?.progress || {};
+  const percent = Math.max(
+    0,
+    Math.min(100, Number(progress.pct ?? (status === "completed" ? 100 : 0))),
+  );
+  const summary = run?.metrics?.summary || {};
+  const measures = [
+    ["源记录", run?.metrics?.rows_in],
+    ["选中记录", run?.metrics?.rows_selected ?? run?.metrics?.rows_normalized],
+    ["实体", run?.metrics?.entities_upserted ?? run?.metrics?.nodes_upserted],
+    ["关系", run?.metrics?.relations_upserted ?? run?.metrics?.edges_upserted],
+    ["序列", summary.episodes],
+    ["时序问题", run?.metrics?.temporal_issues ?? 0],
+  ];
+  const isComplete = status === "completed";
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <button
+            onClick={() => navigate("/data/temporal")}
+            className="mb-2 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900"
+          >
+            <ArrowLeft size={13} /> 返回时序数据
+          </button>
+          <h2 className="text-2xl font-semibold text-slate-900">
+            时序本体构建
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {summary.dataset || "FactoryNet CNC"} ·{" "}
+            {run?.metrics?.time_kind || "ordinal"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={load}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
+          >
+            <RefreshCw size={14} /> 刷新
+          </button>
+          {isComplete && run?.ontology_id && (
+            <button
+              onClick={() => navigate(`/ontologies/${run.ontology_id}`)}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-700"
+            >
+              打开本体
+            </button>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {isComplete ? (
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            ) : (
+              <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+            )}
+            <div>
+              <p className="font-medium text-slate-900">{taskTitle(status)}</p>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {run?.error || progress.stage || "等待任务更新"}
+              </p>
+            </div>
+          </div>
+          <span className="text-sm font-medium tabular-nums text-slate-700">
+            {percent}%
+          </span>
+        </div>
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className={`h-full rounded-full transition-all ${status === "failed" ? "bg-red-500" : status === "waiting_for_model" ? "bg-amber-500" : "bg-blue-600"}`}
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          已处理 {formatValue(progress.completed)} /{" "}
+          {formatValue(progress.total)}
+        </p>
+      </section>
+
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {measures.map(([label, value]) => (
+          <div
+            key={String(label)}
+            className="rounded-xl border border-slate-200 bg-white p-4"
+          >
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+              {formatValue(value)}
+            </p>
+          </div>
+        ))}
+      </section>
+
+      {isComplete && (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
+          本体已发布。实体、关系、逻辑规则和质量审查在“打开本体”中统一查看。
+        </section>
+      )}
+
+      {["failed", "cancelled"].includes(status) && (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+          请返回时序数据，检查时间定义和数据选择后重新构建。
+        </section>
+      )}
+    </div>
+  );
 }

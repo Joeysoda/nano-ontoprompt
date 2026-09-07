@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { settingsApi, usersApi, promptApi } from '@/api/ontologies'
-import { Trash2, Plus, Pencil, X, Check, Sparkles, Search, Loader2 } from 'lucide-react'
+import { Trash2, Plus, Pencil, X, Check, Sparkles, Search, Loader2, Boxes, DatabaseZap, Gauge, ServerCog, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import {
   EXTRACTION_RULES,
   VALIDATION_RULES,
@@ -14,12 +14,18 @@ import {
   type ExtractionRuleState,
 } from '@/utils/extractionRules'
 
-type ActiveTab = 'rules' | 'extraction_rules' | 'users' | 'prompts'
+type ActiveTab = 'general' | 'build_defaults' | 'model_assist' | 'evidence_quality' | 'data_sources' | 'rules' | 'extraction_rules' | 'users' | 'prompts'
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation()
   const qc = useQueryClient()
-  const [activeTab, setActiveTab] = useState<ActiveTab>('rules')
+  const [activeTab, setActiveTab] = useState<ActiveTab>('general')
+  const [denseMode, setDenseMode] = useState(() => localStorage.getItem('workbench_density') === 'compact')
+  const [defaultClass, setDefaultClass] = useState(() => localStorage.getItem('workbench_default_class') || 'regular')
+  const [defaultBuildMode, setDefaultBuildMode] = useState(() => localStorage.getItem('workbench_build_mode') || 'create')
+  const [rowCap, setRowCap] = useState(() => Number(localStorage.getItem('workbench_row_cap') || 5000))
+  const [pointCap, setPointCap] = useState(() => Number(localStorage.getItem('workbench_point_cap') || 50000))
+  const [workbenchMsg, setWorkbenchMsg] = useState('')
   const [ruleValues, setRuleValues] = useState<Record<string, string>>({})
   const [extractStates, setExtractStates] = useState<Record<string, ExtractionRuleState>>(loadRuleStates)
   const [validationStates, setValidationStates] = useState<Record<string, boolean>>(loadValidationStates)
@@ -181,6 +187,11 @@ export default function SettingsPage() {
   }
 
   const tabs: { key: ActiveTab; label: string }[] = [
+    { key: 'general', label: '通用' },
+    { key: 'build_defaults', label: '构建默认值' },
+    { key: 'model_assist', label: '模型辅助' },
+    { key: 'evidence_quality', label: '证据与质量' },
+    { key: 'data_sources', label: '数据源' },
     { key: 'rules', label: t('settings.rules') },
     { key: 'extraction_rules', label: t('settings.tab_extraction') },
     { key: 'users', label: t('settings.tab_users') },
@@ -202,6 +213,29 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
+
+      {activeTab === 'general' && (
+        <div className="grid lg:grid-cols-2 gap-4 max-w-5xl">
+          <section className="wb-surface p-5 space-y-4"><div className="wb-section-kicker"><ServerCog size={13} /> 运行方式</div><h3 className="wb-section-title">本地工作台</h3><div className="wb-config-row"><span>认证模式</span><strong>{import.meta.env.VITE_AUTH_MODE === 'local_single_user' ? 'local_single_user · 免登录' : 'jwt · 登录'}</strong></div><div className="wb-config-row"><span>作用范围</span><strong>电脑浏览器 · 本地服务</strong></div><div className="wb-config-row"><span>云模型边界</span><strong>由数据集隐私级别决定</strong></div></section>
+          <section className="wb-surface p-5 space-y-4"><div className="wb-section-kicker"><SlidersHorizontal size={13} /> 显示</div><h3 className="wb-section-title">界面密度</h3><label className="flex items-center justify-between rounded-lg border border-gray-200 p-3 text-sm"><span>工作台紧凑模式</span><input type="checkbox" checked={denseMode} onChange={event => { const value = event.target.checked; setDenseMode(value); localStorage.setItem('workbench_density', value ? 'compact' : 'comfortable') }} /></label><p className="text-xs text-gray-500">首页保持适中密度，构筑页优先显示字段、状态和动作。</p></section>
+        </div>
+      )}
+
+      {activeTab === 'build_defaults' && (
+        <div className="wb-surface p-5 max-w-2xl space-y-4"><div className="wb-section-kicker"><Boxes size={13} /> 构建默认值</div><h3 className="wb-section-title">新建构筑草案</h3><label className="wb-label">默认数据分类<select className="wb-input mt-1" value={defaultClass} onChange={event => setDefaultClass(event.target.value)}><option value="regular">常规数据</option><option value="temporal">时序数据</option><option value="multimodal">多模态数据</option></select></label><label className="wb-label">默认构建方式<select className="wb-input mt-1" value={defaultBuildMode} onChange={event => setDefaultBuildMode(event.target.value)}><option value="create">新建本体</option><option value="append">追加到当前本体</option></select></label><label className="wb-label">常规数据最大处理行数<input className="wb-input mt-1" type="number" min={1} max={10000} value={rowCap} onChange={event => setRowCap(Math.max(1, Math.min(10000, Number(event.target.value) || 1)))} /></label><button className="wb-button-primary" onClick={() => { localStorage.setItem('workbench_default_class', defaultClass); localStorage.setItem('workbench_build_mode', defaultBuildMode); localStorage.setItem('workbench_row_cap', String(rowCap)); setWorkbenchMsg('默认值已保存'); setTimeout(() => setWorkbenchMsg(''), 2000) }}><Check size={14} />保存默认值</button>{workbenchMsg && <span className="text-xs text-emerald-700">{workbenchMsg}</span>}</div>
+      )}
+
+      {activeTab === 'model_assist' && (
+        <div className="grid lg:grid-cols-2 gap-4 max-w-5xl"><section className="wb-surface p-5"><div className="wb-section-kicker"><Gauge size={13} /> 主构建模型</div><h3 className="wb-section-title mt-1">MiniMax M3</h3><div className="mt-4 space-y-2 text-sm"><div className="wb-config-row"><span>用途</span><strong>标准数据语义映射</strong></div><div className="wb-config-row"><span>流程</span><strong>确定性画像 → M3 → 规则门禁</strong></div><div className="wb-config-row"><span>失败状态</span><strong className="text-amber-700">等待模型，不切换</strong></div></div></section><section className="wb-surface p-5"><div className="wb-section-kicker"><ShieldCheck size={13} /> 本地审查</div><h3 className="wb-section-title mt-1">qwen3.5:0.8b</h3><div className="mt-4 space-y-2 text-sm"><div className="wb-config-row"><span>用途</span><strong>ReAct 质量审查 / 私密数据</strong></div><div className="wb-config-row"><span>服务</span><strong>Ollama · 本地</strong></div><div className="wb-config-row"><span>隐私边界</span><strong>private 不调用云模型</strong></div></div><a href="/models" className="wb-button-secondary mt-4 inline-flex text-xs">打开模型检测</a></section></div>
+      )}
+
+      {activeTab === 'evidence_quality' && (
+        <div className="grid lg:grid-cols-2 gap-4 max-w-5xl"><section className="wb-surface p-5 space-y-3"><div className="wb-section-kicker"><DatabaseZap size={13} /> 证据</div><h3 className="wb-section-title">来源与定位</h3><div className="wb-config-row"><span>EvidenceRef</span><strong>构建任务、修订、样本、资产定位</strong></div><div className="wb-config-row"><span>文件核验</span><strong>路径、大小、SHA-256</strong></div><div className="wb-config-row"><span>点云展示上限</span><input className="wb-input w-28 text-right" type="number" min={1000} max={50000} value={pointCap} onChange={event => setPointCap(Math.max(1000, Math.min(50000, Number(event.target.value) || 1000)))} /></div><button className="wb-button-primary" onClick={() => { localStorage.setItem('workbench_point_cap', String(pointCap)); setWorkbenchMsg('质量设置已保存'); setTimeout(() => setWorkbenchMsg(''), 2000) }}><Check size={14} />保存</button>{workbenchMsg && <span className="text-xs text-emerald-700">{workbenchMsg}</span>}</section><section className="wb-surface p-5 space-y-3"><div className="wb-section-kicker"><ShieldCheck size={13} /> 质量门禁</div><h3 className="wb-section-title">规则优先</h3><div className="wb-config-row"><span>确定性错误</span><strong className="text-red-700">硬阻断</strong></div><div className="wb-config-row"><span>本地模型发现</span><strong className="text-amber-700">建议，可忽略并留痕</strong></div><div className="wb-config-row"><span>审查记录</span><strong>只读工具调用与结论</strong></div></section></div>
+      )}
+
+      {activeTab === 'data_sources' && (
+        <div className="grid lg:grid-cols-2 gap-4 max-w-5xl"><section className="wb-surface p-5"><div className="wb-section-kicker"><DatabaseZap size={13} /> 多模态来源</div><h3 className="wb-section-title mt-1">I-BADAS · 12 组演示包</h3><p className="mt-3 text-sm text-gray-600">Hugging Face 固定修订 · RGB / 深度 / 掩码 / 点云 / JSON 元数据</p><div className="mt-3 flex flex-wrap gap-2"><span className="wb-tag">CC BY-NC 4.0</span><span className="wb-tag">在线安装</span><span className="wb-tag">ZIP + manifest</span></div><a href="/data/multimodal" className="wb-button-secondary mt-4 inline-flex text-xs">打开多模态构筑</a></section><section className="wb-surface p-5"><div className="wb-section-kicker"><Boxes size={13} /> 时序来源</div><h3 className="wb-section-title mt-1">FactoryNet CNC</h3><p className="mt-3 text-sm text-gray-600">Ordinal · episode_id + time_s · 真实数据集与时间轴联动</p><div className="mt-3 flex flex-wrap gap-2"><span className="wb-tag">官方样例</span><span className="wb-tag">SHA-256</span><span className="wb-tag">可恢复任务</span></div><a href="/data/temporal" className="wb-button-secondary mt-4 inline-flex text-xs">打开时序构筑</a></section></div>
+      )}
 
       {activeTab === 'rules' && (
         <div className="max-w-lg">

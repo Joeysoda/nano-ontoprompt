@@ -7,6 +7,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
 import { apiClient, apiClientV2 } from "@/api/client";
@@ -17,13 +18,25 @@ type Source = {
   installed: boolean;
   dataset_id?: string;
   records?: number;
-  columns?: string[];
+  columns?: Array<
+    string | { name?: string; column?: string; type?: string; dtype?: string }
+  >;
   source_url?: string;
   license?: string;
   filename?: string;
   sha256?: string;
+  time_kind?: "instant" | "ordinal" | "interval";
+  time_column?: string;
+  entity_column?: string;
+  related_dataset_id?: string;
+  privacy_level?: "standard" | "private";
 };
-type Ontology = { id: string; name: string; domain?: string };
+type Ontology = {
+  id: string;
+  name: string;
+  domain?: string;
+  data_class?: string;
+};
 type Profile = {
   id: string;
   status: string;
@@ -44,12 +57,36 @@ const errorText = (e: any) =>
   e?.detail ||
   e?.message ||
   "请求失败";
+const columnName = (value: unknown) => {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const item = value as { name?: string; column?: string };
+    return item.name || item.column || "";
+  }
+  return "";
+};
+const defaultRole = (
+  column: string,
+  entityColumn: string,
+  timeColumn: string,
+  timeKind: string,
+) =>
+  column === entityColumn
+    ? "实体标识"
+    : column === timeColumn
+      ? timeKind === "ordinal"
+        ? "Ordinal 顺序"
+        : timeKind === "instant"
+          ? "Instant 时间点"
+          : "Interval 边界"
+      : "观测属性";
 
 export default function TemporalConstructionWizard() {
   const navigate = useNavigate();
   const uploadRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(0);
   const [history, setHistory] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [source, setSource] = useState<Source | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -70,7 +107,10 @@ export default function TemporalConstructionWizard() {
   );
   const [ontologyId, setOntologyId] = useState("");
   const [ontologyName, setOntologyName] = useState("FactoryNet CNC 时序本体");
-  const [fieldMap, setFieldMap] = useState<Record<string, string>>({});
+  const [fieldMap, setFieldMap] = useState<
+    Record<string, { target: string; role: string }>
+  >({});
+  const [privacy, setPrivacy] = useState<"standard" | "private">("standard");
   const [relations, setRelations] = useState<string[]>([
     "HAS_EPISODE",
     "HAS_OBSERVATION",
@@ -84,6 +124,7 @@ export default function TemporalConstructionWizard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [updatedAt, setUpdatedAt] = useState("");
+  const timeConfigRef = useRef("");
   const load = async () => {
     setLoading(true);
     setError("");
@@ -95,8 +136,15 @@ export default function TemporalConstructionWizard() {
         }),
         apiClientV2.get<any[]>("/temporal/runs", { params: { limit: 20 } }),
       ]);
-      setSources(Array.isArray(ss) ? ss : []);
-      setOntologies(Array.isArray(oo) ? oo : oo?.items || []);
+      setSources(
+        (Array.isArray(ss) ? ss : []).filter(
+          (item) => item.id !== "cmapss_fd004",
+        ),
+      );
+      const ontologyRows = Array.isArray(oo) ? oo : oo?.items || [];
+      setOntologies(
+        ontologyRows.filter((item: Ontology) => item.data_class === "temporal"),
+      );
       setHistory(Array.isArray(rr) ? rr : []);
       setUpdatedAt(new Date().toLocaleTimeString());
     } catch (e: any) {
@@ -128,33 +176,36 @@ export default function TemporalConstructionWizard() {
   };
   const startAnalysis = async (item: Source) => {
     setSource(item);
+    setPrivacy(item.privacy_level || "standard");
     setProfile(null);
     setPreview(null);
     setError("");
-    const cols = item.columns || [];
+    const cols = (item.columns || []).map(columnName).filter(Boolean);
     const pick = (re: RegExp, f: string) => cols.find((c) => re.test(c)) || f;
     setEntityColumn(
       item.id === "factorynet_cnc"
         ? cols.includes("episode_id")
           ? "episode_id"
           : pick(/episode|series|machine|device|unit|entity|id/i, "_series_id")
-        : pick(/episode|series|machine|device|unit|entity|id/i, "_series_id"),
+        : item.id === "cmapss_fd004"
+          ? item.entity_column ||
+            (cols.includes("equipment_id") ? "equipment_id" : "_series_id")
+          : pick(/episode|series|machine|device|unit|entity|id/i, "_series_id"),
     );
     setTimeColumn(
       item.id === "factorynet_cnc" && cols.includes("time_s")
         ? "time_s"
-        : pick(/time|timestamp|date|cycle|step|seq/i, "_event_seq"),
+        : item.id === "cmapss_fd004" && cols.includes("cycle")
+          ? "cycle"
+          : pick(/time|timestamp|date|cycle|step|seq/i, "_event_seq"),
     );
-    setTimeKind(item.id === "factorynet_cnc" ? "ordinal" : "instant");
+    setTimeKind(
+      item.id === "factorynet_cnc" || item.id === "cmapss_fd004"
+        ? "ordinal"
+        : item.time_kind || "instant",
+    );
     if (!item.installed) return;
     try {
-      const p = await apiClientV2.post<Profile>(
-        `/temporal/sources/${encodeURIComponent(item.id)}/analyses`,
-      );
-      setProfile(p);
-      if (p.status === "failed") setError(p.error || "MiniMax 分析失败");
-      else if (p.status === "queued" || p.status === "running")
-        pollProfile(p.id);
       setPreview(
         await apiClientV2.get(
           `/temporal/sources/${encodeURIComponent(item.id)}/preview`,
@@ -163,6 +214,28 @@ export default function TemporalConstructionWizard() {
       );
     } catch (e: any) {
       setError(errorText(e));
+    }
+  };
+  const processAnalysis = async () => {
+    if (!source?.installed) {
+      setError("请先选择已安装的数据源");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const p = await apiClientV2.post<Profile>(
+        `/temporal/sources/${encodeURIComponent(source.id)}/analyses`,
+        { privacy_level: privacy },
+      );
+      setProfile(p);
+      if (p.status === "failed") setError(p.error || "MiniMax 分析失败");
+      else if (p.status === "queued" || p.status === "running")
+        pollProfile(p.id);
+    } catch (e: any) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
     }
   };
   const install = async () => {
@@ -224,25 +297,63 @@ export default function TemporalConstructionWizard() {
     setFilters(next);
     query(next);
   };
-  const columns: string[] = (
-    profile?.deterministic_profile?.columns ||
-    preview?.columns ||
-    source?.columns ||
-    []
-  ).filter((x: any) => typeof x === "string" && !x.startsWith("_")) as string[];
+  const rawColumns = [
+    ...(profile?.deterministic_profile?.columns || []),
+    ...(preview?.columns || []),
+    ...(source?.columns || []),
+  ];
+  const columns: string[] = Array.from(
+    new Set(
+      rawColumns
+        .map(columnName)
+        .filter((name) => Boolean(name) && !name.startsWith("_")),
+    ),
+  );
+  useEffect(() => {
+    if (!columns.length) return;
+    setFieldMap((current) => {
+      const next = { ...current };
+      for (const column of columns) {
+        if (!next[column])
+          next[column] = {
+            target: column,
+            role: defaultRole(column, entityColumn, timeColumn, timeKind),
+          };
+      }
+      return next;
+    });
+  }, [columns.join("|"), entityColumn, timeColumn, timeKind]);
+  useEffect(() => {
+    const signature = `${source?.id || ""}|${timeKind}|${entityColumn}|${timeColumn}|${fromColumn}|${toColumn}`;
+    if (
+      timeConfigRef.current &&
+      timeConfigRef.current !== signature &&
+      profile?.status === "completed"
+    ) {
+      setProfile(null);
+      setError("时间定义已变更；请重新处理数据后再确认本体映射。");
+    }
+    timeConfigRef.current = signature;
+  }, [
+    source?.id,
+    timeKind,
+    entityColumn,
+    timeColumn,
+    fromColumn,
+    toColumn,
+    profile?.status,
+  ]);
   const suggested = profile?.llm_suggestion || {};
   const canNext =
     step === 0
-      ? Boolean(
-          source?.installed &&
-          profile?.status === "completed" &&
-          profile?.llm_used,
-        )
+      ? Boolean(source?.installed)
       : step === 1
         ? Boolean(preview && Number(preview.total_rows) > 0)
-        : step === 3
-          ? relations.some(Boolean)
-          : true;
+        : step === 2
+          ? Boolean(profile?.status === "completed")
+          : step === 3
+            ? relations.some(Boolean)
+            : true;
   const execute = async () => {
     if (!source || !profile) return;
     setBusy(true);
@@ -252,7 +363,12 @@ export default function TemporalConstructionWizard() {
         profile_id: profile.id,
         source_id: source.id,
         dataset_id: source.dataset_id,
-        adapter: "factorynet",
+        adapter:
+          source.id === "cmapss_fd004"
+            ? "cmapss"
+            : source.id === "factorynet_cnc"
+              ? "factorynet"
+              : "bts",
         time_kind: timeKind,
         time_precision: "source-defined",
         event_time_column: timeKind === "instant" ? timeColumn : null,
@@ -263,6 +379,7 @@ export default function TemporalConstructionWizard() {
         filters,
         field_mapping: { columns: fieldMap, relations },
         sample_limit: Number(filters.max_records || source.records || 5000),
+        privacy_level: privacy,
         ontology_mode: ontologyMode,
         ontology_id: ontologyMode === "reuse" ? ontologyId : null,
         ontology_name: ontologyName,
@@ -284,8 +401,8 @@ export default function TemporalConstructionWizard() {
   if (loading)
     return <div className="p-6 text-sm text-gray-500">加载时序数据...</div>;
   return (
-    <div className="max-w-7xl space-y-5">
-      <div className="flex items-start justify-between">
+    <div className="wb-page max-w-[1320px]">
+      <div className="wb-page-header">
         <div>
           <button
             onClick={() => navigate("/data/temporal")}
@@ -294,29 +411,30 @@ export default function TemporalConstructionWizard() {
             <ArrowLeft size={13} />
             返回
           </button>
-          <h2 className="text-2xl font-semibold">时序数据构建</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            选择数据、定义时间、编辑映射，然后构建可调查的关联图谱。
+          <div className="wb-eyebrow">数据构筑 / 时序数据</div>
+          <h2 className="wb-page-title">时序数据构建</h2>
+          <p className="wb-page-subtitle">
+            FactoryNet CNC · Instant / Ordinal / Interval
           </p>
         </div>
-        <button
-          onClick={load}
-          className="border rounded-lg px-3 py-2 text-sm flex gap-2 items-center"
-        >
+        <button onClick={load} className="wb-button-secondary">
           <RefreshCw size={14} />
           刷新历史任务<span className="text-xs text-gray-400">{updatedAt}</span>
         </button>
       </div>
-      <div className="flex items-center gap-2 overflow-auto">
+      <div className="wb-stepper wb-surface">
         {steps.map((s, i) => (
-          <div key={s} className="flex items-center gap-2 min-w-max">
+          <div
+            key={s}
+            className={`wb-step min-w-max ${i === step ? "wb-step-active" : i < step ? "wb-step-done" : ""}`}
+          >
             <div
-              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${i < step ? "bg-green-600 text-white" : i === step ? "bg-black text-white" : "bg-gray-100 text-gray-500"}`}
+              className={`wb-step-index ${i < step ? "bg-emerald-600 text-white" : i === step ? "bg-slate-900 text-white" : ""}`}
             >
               {i < step ? <Check size={14} /> : i + 1}
             </div>
             <span
-              className={`text-sm ${i === step ? "font-medium" : "text-gray-400"}`}
+              className={`${i === step ? "font-medium text-white" : i < step ? "text-gray-700" : "text-gray-400"}`}
             >
               {s}
             </span>
@@ -325,19 +443,18 @@ export default function TemporalConstructionWizard() {
         ))}
       </div>
       {error && (
-        <div className="border border-red-200 bg-red-50 text-red-700 rounded-lg px-4 py-3 text-sm flex gap-2">
+        <div className="wb-alert wb-alert-danger">
           <TriangleAlert size={16} />
           {error}
         </div>
       )}
       {step === 0 && (
-        <section className="bg-white border rounded-xl p-5 space-y-5">
+        <section className="wb-surface p-5 space-y-5">
           <div>
             <p className="text-xs text-gray-400">步骤 1 / 5</p>
             <h3 className="font-semibold mt-1">选择或导入数据</h3>
             <p className="text-sm text-gray-500 mt-1">
-              选择后先生成数据画像，再调用 MiniMax M3
-              分析字段含义；分析失败不能进入下一步。
+              先选择数据源，字段画像与时间定义在后续步骤确认。
             </p>
           </div>
           <div className="grid lg:grid-cols-2 gap-4">
@@ -352,7 +469,9 @@ export default function TemporalConstructionWizard() {
                     <p className="text-xs text-gray-500 mt-1">
                       {item.id === "factorynet_cnc"
                         ? "CNC 三轴铣削 · 25,286 行 · 18 个生产过程 · 57 个字段"
-                        : "用户上传文件"}
+                        : item.id === "cmapss_fd004"
+                          ? "sensor_readings + equipment · cycle 顺序值 · 关联设备表"
+                          : "用户上传文件"}
                     </p>
                   </div>
                   <span
@@ -369,21 +488,23 @@ export default function TemporalConstructionWizard() {
                     字段 {item.columns?.length || "—"}
                   </span>
                   <span className="bg-gray-50 rounded p-2">
-                    时间 {item.id === "factorynet_cnc" ? "Ordinal" : "自动识别"}
+                    时间{" "}
+                    {item.id === "factorynet_cnc" ||
+                    item.id === "cmapss_fd004" ||
+                    item.time_kind === "ordinal"
+                      ? "Ordinal"
+                      : "自动识别"}
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mt-3">
                   来源：
                   <a
                     className="underline"
-                    href={
-                      item.source_url ||
-                      "https://huggingface.co/datasets/factorynet/factorynet"
-                    }
+                    href={item.source_url || "#"}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    FactoryNet 官方数据页
+                    官方来源页
                   </a>{" "}
                   · License：{item.license || "CC BY-NC-SA 4.0"}
                 </p>
@@ -480,7 +601,7 @@ export default function TemporalConstructionWizard() {
         </section>
       )}
       {step === 1 && (
-        <section className="bg-white border rounded-xl p-5 space-y-5">
+        <section className="wb-surface p-5 space-y-5">
           <p className="text-xs text-gray-400">步骤 2 / 5</p>
           <h3 className="font-semibold">筛选数据</h3>
           <p className="text-sm text-gray-500">
@@ -579,12 +700,40 @@ export default function TemporalConstructionWizard() {
         </section>
       )}
       {step === 2 && (
-        <section className="bg-white border rounded-xl p-5 space-y-5">
+        <section className="wb-surface p-5 space-y-5">
           <p className="text-xs text-gray-400">步骤 3 / 5</p>
           <h3 className="font-semibold">定义时间语义</h3>
           <p className="text-sm text-gray-500">
-            时间语义决定图谱如何排序、筛选和比较。它不是自动生成日期。
+            选择时间列的语义；系统不会凭空生成日期。
           </p>
+          <div className="grid md:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setPrivacy("standard")}
+              className={`text-left border rounded-lg p-4 flex gap-3 ${privacy === "standard" ? "border-black ring-1 ring-black" : ""}`}
+            >
+              <ShieldCheck size={17} className="mt-0.5 text-blue-600" />
+              <span>
+                <strong className="text-sm">标准 standard</strong>
+                <span className="block text-xs text-gray-500 mt-1">
+                  确认后的字段摘要可发送给 MiniMax M3
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrivacy("private")}
+              className={`text-left border rounded-lg p-4 flex gap-3 ${privacy === "private" ? "border-black ring-1 ring-black" : ""}`}
+            >
+              <ShieldCheck size={17} className="mt-0.5 text-emerald-600" />
+              <span>
+                <strong className="text-sm">私密 private</strong>
+                <span className="block text-xs text-gray-500 mt-1">
+                  不调用云模型，仅使用规则与人工映射
+                </span>
+              </span>
+            </button>
+          </div>
           <div className="grid md:grid-cols-3 gap-3">
             {[
               [
@@ -676,10 +825,55 @@ export default function TemporalConstructionWizard() {
               ? `${fromColumn} → ${toColumn}`
               : timeColumn}
           </div>
+          <div className="border rounded-lg bg-gray-50 p-4 flex items-center justify-between gap-3">
+            <div className="text-sm">
+              <b>确定性画像与字段建议</b>
+              <p className="text-xs text-gray-500 mt-1">
+                {privacy === "private"
+                  ? "私密模式不会调用 MiniMax M3。"
+                  : "标准模式仅在明确点击后调用 MiniMax M3。"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={processAnalysis}
+              disabled={busy || profile?.status === "completed"}
+              className="bg-black text-white rounded-lg px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-40"
+            >
+              <Play size={14} />
+              {profile?.status === "completed"
+                ? "已完成"
+                : busy
+                  ? "处理中"
+                  : "开始处理"}
+            </button>
+          </div>
+          {profile && (
+            <div className="text-xs text-gray-500">
+              画像状态：
+              <b
+                className={
+                  profile.status === "completed"
+                    ? "text-emerald-700"
+                    : profile.status === "failed"
+                      ? "text-red-700"
+                      : "text-amber-700"
+                }
+              >
+                {profile.status === "completed"
+                  ? "已完成"
+                  : profile.status === "failed"
+                    ? "失败"
+                    : "处理中"}
+              </b>
+              {profile.llm_used ? " · 已使用 MiniMax M3" : " · 未调用云模型"}
+              {profile.error ? ` · ${profile.error}` : ""}
+            </div>
+          )}
         </section>
       )}
       {step === 3 && (
-        <section className="bg-white border rounded-xl p-5 space-y-5">
+        <section className="wb-surface p-5 space-y-5">
           <p className="text-xs text-gray-400">步骤 4 / 5</p>
           <h3 className="font-semibold">编辑本体映射</h3>
           <p className="text-sm text-gray-500">
@@ -691,8 +885,10 @@ export default function TemporalConstructionWizard() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="text-left px-3 py-2">源列</th>
-                    <th className="text-left px-3 py-2">目标属性/角色</th>
-                    <th className="text-left px-3 py-2">来源</th>
+                    <th className="text-left px-3 py-2">目标属性</th>
+                    <th className="text-left px-3 py-2">时序角色</th>
+                    <th className="text-left px-3 py-2">建议来源</th>
+                    <th className="text-left px-3 py-2">置信度</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -701,24 +897,65 @@ export default function TemporalConstructionWizard() {
                       <td className="px-3 py-2 font-mono">{c}</td>
                       <td className="px-3 py-2">
                         <input
-                          value={
-                            fieldMap[c] ||
-                            (c === entityColumn
-                              ? "实体 ID"
-                              : c === timeColumn
-                                ? "时间属性"
-                                : "Observation 属性")
-                          }
+                          value={fieldMap[c]?.target || c}
                           onChange={(e) =>
-                            setFieldMap({ ...fieldMap, [c]: e.target.value })
+                            setFieldMap({
+                              ...fieldMap,
+                              [c]: {
+                                target: e.target.value,
+                                role:
+                                  fieldMap[c]?.role ||
+                                  defaultRole(
+                                    c,
+                                    entityColumn,
+                                    timeColumn,
+                                    timeKind,
+                                  ),
+                              },
+                            })
                           }
                           className="border rounded px-2 py-1 w-full"
                         />
                       </td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={
+                            fieldMap[c]?.role ||
+                            defaultRole(c, entityColumn, timeColumn, timeKind)
+                          }
+                          onChange={(e) =>
+                            setFieldMap({
+                              ...fieldMap,
+                              [c]: {
+                                target: fieldMap[c]?.target || c,
+                                role: e.target.value,
+                              },
+                            })
+                          }
+                          className="border rounded px-2 py-1 w-full"
+                        >
+                          <option>实体标识</option>
+                          <option>Ordinal 顺序</option>
+                          <option>Instant 时间点</option>
+                          <option>Interval 边界</option>
+                          <option>观测属性</option>
+                          <option>关联维度</option>
+                        </select>
+                      </td>
                       <td className="px-3 py-2 text-gray-500">
-                        {suggested.measurement_columns?.includes(c)
-                          ? "M3 建议"
-                          : "规则"}
+                        {suggested.measurement_columns?.includes(c) ||
+                        suggested.time_column === c ||
+                        suggested.entity_column === c
+                          ? "MiniMax 建议"
+                          : "确定性画像"}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">
+                        {Number(
+                          suggested.confidence_by_column?.[c] ??
+                            (suggested.measurement_columns?.includes(c)
+                              ? 0.86
+                              : 1),
+                        ).toFixed(2)}
                       </td>
                     </tr>
                   ))}
@@ -770,7 +1007,7 @@ export default function TemporalConstructionWizard() {
         </section>
       )}
       {step === 4 && (
-        <section className="bg-white border rounded-xl p-5 space-y-5">
+        <section className="wb-surface p-5 space-y-5">
           <p className="text-xs text-gray-400">步骤 5 / 5</p>
           <h3 className="font-semibold">确认并构建</h3>
           <div className="grid md:grid-cols-2 gap-4">
@@ -852,9 +1089,59 @@ export default function TemporalConstructionWizard() {
           </button>
         </section>
       )}
-      <section className="bg-white border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3"><h3 className="font-semibold">历史构建任务</h3><span className="text-xs text-gray-400">{history.length} 条</span></div>
-        {history.length === 0 ? <p className="text-sm text-gray-500">暂无历史任务</p> : <div className="space-y-2">{history.map((r:any)=><button key={r.id||r.run_id} onClick={()=>navigate(`/data/temporal/runs/${r.id||r.run_id}`)} className="w-full text-left border rounded-lg px-3 py-2 hover:bg-gray-50"><div className="flex justify-between text-sm"><span>{r.config?.source_id||r.config?.source||'时序数据'} · {r.config?.adapter||'generic'}</span><span className={r.status==='completed'?'text-green-700':r.status==='failed'?'text-red-700':'text-amber-700'}>{r.status}</span></div><p className="text-xs text-gray-500 mt-1">{r.metrics?.rows_selected??r.metrics?.rows_normalized??'—'} 条记录 · {r.metrics?.nodes_upserted??0} 节点 · {r.metrics?.edges_upserted??0} 关系 · {r.created_at||''}</p></button>)}</div>}
+      <section className="wb-surface p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">历史构建任务</h3>
+          <button
+            type="button"
+            onClick={() => setShowHistory((value) => !value)}
+            className="text-xs text-slate-500 underline hover:text-slate-900"
+          >
+            {showHistory ? "收起历史任务" : `显示历史任务（${history.length}）`}
+          </button>
+        </div>
+        {!showHistory ? (
+          <p className="text-sm text-gray-500">历史任务默认收起。</p>
+        ) : history.length === 0 ? (
+          <p className="text-sm text-gray-500">暂无历史任务</p>
+        ) : (
+          <div className="space-y-2">
+            {history.map((r: any) => (
+              <button
+                key={r.id || r.run_id}
+                onClick={() =>
+                  navigate(`/data/temporal/runs/${r.id || r.run_id}`)
+                }
+                className="w-full text-left border rounded-lg px-3 py-2 hover:bg-gray-50"
+              >
+                <div className="flex justify-between text-sm">
+                  <span>
+                    {r.config?.source_id || r.config?.source || "时序数据"} ·{" "}
+                    {r.config?.adapter || "generic"}
+                  </span>
+                  <span
+                    className={
+                      r.status === "completed"
+                        ? "text-green-700"
+                        : r.status === "failed"
+                          ? "text-red-700"
+                          : "text-amber-700"
+                    }
+                  >
+                    {r.status}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {r.metrics?.rows_selected ??
+                    r.metrics?.rows_normalized ??
+                    "—"}{" "}
+                  条记录 · {r.metrics?.nodes_upserted ?? 0} 节点 ·{" "}
+                  {r.metrics?.edges_upserted ?? 0} 关系 · {r.created_at || ""}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
       <div className="flex justify-between">
         <button

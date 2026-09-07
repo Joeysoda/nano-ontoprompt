@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 import Layout from "@/components/Layout";
@@ -7,11 +7,7 @@ import LoginPage from "@/pages/login/LoginPage";
 import RegisterPage from "@/pages/register/RegisterPage";
 import OverviewPage from "@/pages/overview/OverviewPage";
 import OntologyListPage from "@/pages/ontologies/list/OntologyListPage";
-import OntologyCreateWizard from "@/pages/ontologies/new/OntologyCreateWizard";
 import OntologyDetailPage from "@/pages/ontologies/detail/OntologyDetailPage";
-import EntityDetailPage from "@/pages/ontologies/detail/entity/EntityDetailPage";
-import LogicDetailPage from "@/pages/ontologies/detail/logic/LogicDetailPage";
-import ActionDetailPage from "@/pages/ontologies/detail/action/ActionDetailPage";
 import ModelsPage from "@/pages/models/ModelsPage";
 import SettingsPage from "@/pages/settings/SettingsPage";
 import PipelinesLayout from "@/pages/pipelines/PipelinesLayout";
@@ -63,9 +59,20 @@ const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
+// The local demonstration is intentionally login-free. A deployed instance
+// can set VITE_AUTH_MODE=jwt and regain the existing login surface.
+const LOCAL_SINGLE_USER = import.meta.env.VITE_AUTH_MODE === 'local_single_user'
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
-  return token ? <Layout>{children}</Layout> : <Navigate to="/login" replace />;
+  return LOCAL_SINGLE_USER || token ? <Layout>{children}</Layout> : <Navigate to="/login" replace />;
+}
+
+/** Legacy detail links are retained as safe entry points, but the old
+ * detail forms are no longer part of the workbench surface. */
+function LegacyOntologyRedirect({ tab = "graph" }: { tab?: "graph" | "entities" | "logic" }) {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={id ? `/ontologies/${id}?tab=${tab}` : "/ontologies"} replace />;
 }
 
 export default function App() {
@@ -74,12 +81,10 @@ export default function App() {
       <BrowserRouter>
         <AppErrorBoundary>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            {/* Product entry point: work starts after authentication. The old
-              public C-MAPSS showcase is intentionally not a product page. */}
-            <Route path="/" element={<Navigate to="/login" replace />} />
-            <Route path="/demo" element={<Navigate to="/login" replace />} />
+            <Route path="/login" element={LOCAL_SINGLE_USER ? <Navigate to="/overview" replace /> : <LoginPage />} />
+            <Route path="/register" element={LOCAL_SINGLE_USER ? <Navigate to="/overview" replace /> : <RegisterPage />} />
+            <Route path="/" element={<Navigate to="/overview" replace />} />
+            <Route path="/demo" element={<Navigate to="/overview" replace />} />
             <Route
               path="/overview"
               element={
@@ -191,7 +196,7 @@ export default function App() {
               path="/ontologies/new"
               element={
                 <ProtectedRoute>
-                  <OntologyCreateWizard />
+                  <Navigate to="/data" replace />
                 </ProtectedRoute>
               }
             />
@@ -207,7 +212,7 @@ export default function App() {
               path="/ontologies/:id/entities/:eid"
               element={
                 <ProtectedRoute>
-                  <EntityDetailPage />
+                  <LegacyOntologyRedirect tab="entities" />
                 </ProtectedRoute>
               }
             />
@@ -215,7 +220,7 @@ export default function App() {
               path="/ontologies/:id/logic/:lid"
               element={
                 <ProtectedRoute>
-                  <LogicDetailPage />
+                  <LegacyOntologyRedirect tab="logic" />
                 </ProtectedRoute>
               }
             />
@@ -223,7 +228,7 @@ export default function App() {
               path="/ontologies/:id/actions/:aid"
               element={
                 <ProtectedRoute>
-                  <ActionDetailPage />
+                  <LegacyOntologyRedirect />
                 </ProtectedRoute>
               }
             />

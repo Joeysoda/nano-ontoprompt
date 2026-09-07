@@ -5,8 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.deps import get_current_user, require_admin
-from app.services.v2.dataset_service import DatasetService
+from app.services.v2.dataset_service import DatasetService, DatasetStorageError
 from app.models.v2.dataset import Dataset, DatasetVersion, MediaItem
+from app.models.v2.connection import Connection
 from app.models.v2.curated import CuratedDataset, CuratedReview, CuratedRowEdit
 from app.models.v2.pipeline import Pipeline, PipelineRun
 from app.models.v2.construction import ConstructionRun
@@ -14,6 +15,7 @@ from app.models.v2.mapping import OntologyMapping, OntologyLinkMapping
 from app.services.storage_service import get_storage_service
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
+data_sources_router = APIRouter(dependencies=[Depends(get_current_user)])
 
 def get_db():
     db = SessionLocal()
@@ -22,21 +24,88 @@ def get_db():
     finally:
         db.close()
 
+
+@data_sources_router.get("/data-sources")
+def unified_data_sources(include_history: bool = Query(False), db: Session = Depends(get_db)):
+    """One source directory for the three construction entry points."""
+    cases = [
+        {"id": "cmapss_fd001_regular_subset", "name": "NASA C-MAPSS FD001", "data_class": "regular", "input": ["equipment", "sensor_readings", "100 条下采样读数"], "installed": bool(db.query(Dataset.id).filter(Dataset.name.ilike("%C-MAPSS FD001%"), Dataset.data_class == "regular").first())},
+        {"id": "factorynet_cnc", "name": "FactoryNet CNC", "data_class": "temporal", "input": ["Parquet"], "installed": bool(db.query(Dataset.id).filter(Dataset.name.ilike("%FactoryNet%"), Dataset.data_class == "temporal").first())},
+        {"id": "ibadas_12_demo", "name": "I-BADAS RGB-D 12 组", "data_class": "multimodal", "input": ["ZIP + manifest", "RGB", "depth", "mask", "point cloud"], "installed": bool(db.query(Dataset.id).filter(Dataset.name.ilike("%I-BADAS%"), Dataset.data_class == "multimodal", Dataset.readiness == "ready").first())},
+    ]
+    query = db.query(Dataset)
+    if not include_history:
+        query = query.filter(Dataset.readiness.in_([None, "ready"]))
+        datasets = [item for item in query.order_by(Dataset.created_at.desc()).all() if not bool((item.schema_json or {}).get("technical")) and not any(token in item.name.lower() for token in ("_pipeline", " curated", "test"))]
+    else:
+        datasets = query.order_by(Dataset.created_at.desc()).all()
+    return {"cases": cases, "datasets": [{"id": item.id, "name": item.name, "data_class": item.data_class, "privacy_level": item.privacy_level, "readiness": item.readiness, "latest_version_id": item.latest_version_id} for item in datasets], "connections": [{"id": item.id, "name": item.name, "kind": item.kind, "status": item.status} for item in db.query(Connection).order_by(Connection.created_at.desc()).all()]}
+
+
+@data_sources_router.get("/storage/integrity")
+def storage_integrity(include_history: bool = Query(True), db: Session = Depends(get_db)):
+    """Return a read-only object-storage integrity report for dataset assets.
+
+    The report deliberately checks metadata and existence only; it never
+    downloads or rewrites user data.  Missing objects are surfaced with the
+    exact URI so the UI can guide the operator to a storage repair.
+    """
+    query = db.query(Dataset)
+    if not include_history:
+        query = query.filter(Dataset.readiness.in_([None, "ready"]))
+    storage = get_storage_service()
+    checked = 0
+    present = 0
+    missing: list[dict[str, str]] = []
+    for dataset in query.order_by(Dataset.created_at.asc()).all():
+        versions = db.query(DatasetVersion).filter(DatasetVersion.dataset_id == dataset.id).all()
+        for version in versions:
+            if version.storage_uri:
+                checked += 1
+                if storage.object_exists(version.storage_uri):
+                    present += 1
+                else:
+                    missing.append({"kind": "dataset_version", "dataset_id": dataset.id, "version_id": version.id, "storage_uri": version.storage_uri})
+            for media in db.query(MediaItem).filter(MediaItem.dataset_version_id == version.id).all():
+                checked += 1
+                if storage.object_exists(media.storage_uri):
+                    present += 1
+                else:
+                    missing.append({"kind": "media_item", "dataset_id": dataset.id, "version_id": version.id, "media_id": media.id, "storage_uri": media.storage_uri})
+    return {
+        "status": "ok" if not missing else "repair_needed",
+        "checked": checked,
+        "present": present,
+        "missing_count": len(missing),
+        "missing": missing[:200],
+        "truncated": len(missing) > 200,
+        "next": "运行存储修复或重新导入缺失来源" if missing else "无需修复",
+    }
+
 class DatasetResponse(BaseModel):
     id: str
     name: str
     kind: str
+    data_class: str = "regular"
+    privacy_level: str = "standard"
     source_connection_id: str | None = None
     latest_version_id: str | None = None
     version_count: int = 0
     rowcount: int | None = None
+    readiness: str | None = None
     used_by_pipeline: bool = False
     used_by_mapping: bool = False
     class Config:
         from_attributes = True
 
 @router.post("/upload", status_code=201)
-async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_dataset(
+    file: UploadFile = File(...),
+    data_class: str = Query("regular", pattern="^(regular|temporal|multimodal)$"),
+    privacy_level: str = Query("standard", pattern="^(standard|private)$"),
+    connection_id: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
     """上传 CSV/Excel 文件，自动创建 raw Dataset + DatasetVersion"""
     import os
     from app.config import settings
@@ -58,8 +127,13 @@ async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get
     else:
         kind = "unstructured"
 
+    if data_class == "multimodal":
+        raise HTTPException(422, "多模态数据请使用 ZIP + manifest 导入，保证样本和资产关联完整")
     svc = DatasetService(db)
-    ds = svc.create_dataset(name=name, kind=kind)
+    ds = svc.create_dataset(name=name, kind=kind, connection_id=connection_id, data_class=data_class, privacy_level=privacy_level)
+    # Regular uploads stay in the default standard lane.  Multimodal ZIP
+    # ingestion uses the dedicated manifest endpoint so every sample/asset
+    # relationship is validated before it is committed.
     # 估算行数
     rowcount = None
     if ext == "csv":
@@ -82,12 +156,14 @@ async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get
         db.commit()
         db.refresh(item)
         media_items.append({"id": item.id, "media_type": item.media_type, "storage_uri": item.storage_uri, "ocr_status": item.ocr_status})
-    return {"data": {"id": ds.id, "name": ds.name, "kind": ds.kind, "dataset_type": "raw_dataset", "schema_type": "tabular", "version_id": version.id, "media_items": media_items}}
+    return {"data": {"id": ds.id, "name": ds.name, "kind": ds.kind, "data_class": ds.data_class, "privacy_level": ds.privacy_level, "dataset_type": "raw_dataset", "schema_type": "tabular", "version_id": version.id, "media_items": media_items}}
 
 @router.get("", response_model=list[DatasetResponse])
-def list_datasets(kind: str | None = None, db: Session = Depends(get_db)):
+def list_datasets(kind: str | None = None, include_history: bool = Query(False), db: Session = Depends(get_db)):
     svc = DatasetService(db)
     items = svc.list_datasets(kind=kind)
+    if not include_history:
+        items = [item for item in items if (getattr(item, "readiness", None) in {None, "ready"}) and not bool((item.schema_json or {}).get("technical")) and not any(token in item.name.lower() for token in ("_pipeline", " curated", "test"))]
     result = []
     for dataset in items:
         versions = svc.list_versions(dataset.id)
@@ -95,10 +171,13 @@ def list_datasets(kind: str | None = None, db: Session = Depends(get_db)):
             "id": dataset.id,
             "name": dataset.name,
             "kind": dataset.kind,
+            "data_class": dataset.data_class,
+            "privacy_level": dataset.privacy_level,
             "source_connection_id": dataset.source_connection_id,
             "latest_version_id": dataset.latest_version_id,
             "version_count": len(versions),
             "rowcount": versions[-1].rowcount if versions else None,
+            "readiness": getattr(dataset, "readiness", None),
             "used_by_pipeline": db.query(Pipeline.id).filter(Pipeline.source_dataset_id == dataset.id).first() is not None,
             "used_by_mapping": db.query(OntologyMapping.id).filter(OntologyMapping.curated_dataset_id == dataset.id).first() is not None,
         })
@@ -121,7 +200,10 @@ def list_versions(dataset_id: str, db: Session = Depends(get_db)):
 @router.get("/{dataset_id}/versions/{version_no}/preview")
 def preview_data(dataset_id: str, version_no: int, limit: int = 100, db: Session = Depends(get_db)):
     svc = DatasetService(db)
-    return svc.preview(dataset_id, version_no, limit)
+    try:
+        return svc.preview(dataset_id, version_no, limit)
+    except DatasetStorageError as exc:
+        raise HTTPException(424, detail={"error": "STORAGE_OBJECT_MISSING", "message": str(exc), "dataset_id": exc.dataset_id, "storage_uri": exc.storage_uri}) from exc
 
 
 @router.get("/{dataset_id}/schema")
@@ -138,7 +220,10 @@ def get_schema(dataset_id: str, db: Session = Depends(get_db)):
         return {"dataset_id": dataset_id, "columns": []}
 
     latest_version_no = versions[-1].version_no
-    rows = svc.preview(dataset_id, latest_version_no, limit=10)
+    try:
+        rows = svc.preview(dataset_id, latest_version_no, limit=10)
+    except DatasetStorageError as exc:
+        raise HTTPException(424, detail={"error": "STORAGE_OBJECT_MISSING", "message": str(exc), "dataset_id": exc.dataset_id, "storage_uri": exc.storage_uri}) from exc
     if not rows:
         return {"dataset_id": dataset_id, "columns": []}
 

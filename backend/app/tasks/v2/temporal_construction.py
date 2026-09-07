@@ -10,13 +10,18 @@ from pathlib import Path
 from typing import Any
 
 from app.database import SessionLocal
+from app.models.ontology import OntologyProject
 from app.models.v2.construction import ConstructionRun, EvidenceRef
 from app.models.v2.dataset import Dataset, DatasetVersion  # register FK target in worker metadata
 from app.models.entity import Entity
+from app.models.entity_instance import EntityInstance
+from app.models.logic import LogicRule
 from app.models.relation import Relation
+from app.models.v2.temporal_profile import TemporalDatasetProfile
 from app.services.storage_service import get_storage_service
 from app.services.v2.construction_service import update_run
 from app.services.v2.graph.falkordb_service import FalkorDBService
+from app.services.v2.ontology_materializer import attach_revision_to_materialized_rows
 from app.services.v2.temporal_service import (
     TemporalConfig,
     build_bts_instances,
@@ -332,15 +337,32 @@ def _ensure_factorynet_schema(db, ontology_id: str) -> None:
         ("SensorChannel", "传感器通道"), ("InspectionResult", "检测结果"),
     ]
     entities: dict[str, Entity] = {}
+    property_definitions = {
+        "Machine": [{"id": "machine_type", "name": "machine_type", "label": "machine_type", "type": "string", "isIdentifier": True, "source_field": "machine_type"}],
+        "Episode": [{"id": "episode_id", "name": "episode_id", "label": "episode_id", "type": "string", "isIdentifier": True, "source_field": "episode_id"}],
+        "Observation": [
+            {"id": "observation_id", "name": "observation_id", "label": "observation_id", "type": "string", "isIdentifier": True, "source_field": "_source_row_index"},
+            {"id": "time_s", "name": "time_s", "label": "time_s", "type": "decimal", "unit": "s", "source_field": "time_s"},
+            {"id": "ordinal", "name": "ordinal", "label": "Ordinal 顺序", "type": "integer", "source_field": "event_seq"},
+        ],
+        "ProcessPhase": [{"id": "phase", "name": "phase", "label": "phase", "type": "string", "source_field": "phase"}],
+        "ToolCondition": [{"id": "tool_condition", "name": "tool_condition", "label": "tool_condition", "type": "string", "source_field": "tool_condition"}],
+        "SensorChannel": [{"id": "sensor_channel", "name": "sensor_channel", "label": "sensor_channel", "type": "string", "source_field": "sensor_channel"}],
+        "InspectionResult": [{"id": "inspection_result", "name": "inspection_result", "label": "inspection_result", "type": "string", "source_field": "inspection_result"}],
+    }
     for english, chinese in classes:
         entity_id = f"schema:{ontology_id}:{english}"
         entity = db.get(Entity, entity_id)
+        properties = {"schema_version": "ontology-mapping-v2", "property_definitions": property_definitions.get(english, []), "source_fields": [entry.get("source_field") for entry in property_definitions.get(english, []) if entry.get("source_field")], "source": "FactoryNet CNC", "schema_kind": "factorynet", "data_class": "temporal"}
         if entity is None:
             entity = Entity(id=entity_id, ontology_id=ontology_id, name_cn=chinese, name_en=english,
-                            name_abbr=english[:3].upper(), canonical_id=f"factorynet:{english}", type="Class",
+                            name_abbr=english[:3].upper(), canonical_id=f"factorynet:{english}", type="EntityType",
                             description=f"FactoryNet CNC 时序本体中的 {chinese}",
-                            properties={"source": "FactoryNet CNC", "schema_kind": "factorynet"}, confidence=1.0)
+                            properties=properties, confidence=1.0)
             db.add(entity)
+        else:
+            entity.type = "EntityType"
+            entity.properties = properties
         entities[english] = entity
     db.flush()
     relations = [
@@ -351,10 +373,76 @@ def _ensure_factorynet_schema(db, ontology_id: str) -> None:
     ]
     for source, target, relation_type in relations:
         rid = f"schema:{ontology_id}:{relation_type}:{source}:{target}"
-        if db.get(Relation, rid) is None:
+        properties = {"schema_version": "ontology-mapping-v2", "name": relation_type, "description": f"FactoryNet CNC 中的 {relation_type} 关系", "cardinality": "one-to-many", "attributes": [], "source_fields": ["episode_id", "time_s"], "source": "FactoryNet CNC", "schema_kind": "factorynet"}
+        relation = db.get(Relation, rid)
+        if relation is None:
             db.add(Relation(id=rid, ontology_id=ontology_id, source_entity=entities[source].id,
                             target_entity=entities[target].id, type=relation_type,
-                            properties={"source": "FactoryNet CNC", "schema_kind": "factorynet"}, confidence=1.0))
+                            properties=properties, confidence=1.0))
+        else:
+            relation.properties = properties
+            relation.type = relation_type
+
+
+def _temporal_instance_id(ontology_id: str, entity_type: str, identity: str) -> str:
+    digest = hashlib.sha256(f"{ontology_id}:{entity_type}:{identity}".encode("utf-8")).hexdigest()[:20]
+    return f"temporal:{ontology_id}:{entity_type}:{digest}"
+
+
+def _materialize_factorynet_rows(db, run: ConstructionRun, rows: list[dict[str, Any]], source_file: str) -> dict[str, int]:
+    """Attach concrete FactoryNet rows to the published entity types.
+
+    FalkorDB is still written for efficient temporal traversal, while these
+    SQL rows are the canonical content consumed by the ontology inspector and
+    the quality auditor.
+    """
+    entity_ids = {
+        name: f"schema:{run.ontology_id}:{name}"
+        for name in ("Machine", "Episode", "Observation")
+    }
+    counts = {"Machine": 0, "Episode": 0, "Observation": 0}
+    seen: set[tuple[str, str]] = set()
+    for index, row in enumerate(rows):
+        episode = str(row.get("episode_id") or row.get("_series_id") or "series")
+        machine = str(row.get("machine_type") or row.get("machine_id") or "unknown-machine")
+        observation = str(row.get("_source_row_index", index + 1))
+        for entity_type, identity, row_data in (
+            ("Machine", machine, {"machine_type": machine}),
+            ("Episode", episode, {"episode_id": episode, "machine_type": machine}),
+            ("Observation", f"{episode}:{observation}", dict(row)),
+        ):
+            key = (entity_type, identity)
+            if key in seen:
+                continue
+            seen.add(key)
+            instance_id = _temporal_instance_id(run.ontology_id, entity_type, identity)
+            instance = db.get(EntityInstance, instance_id)
+            if instance is None:
+                instance = EntityInstance(id=instance_id, ontology_id=run.ontology_id, entity_id=entity_ids[entity_type], row_identity=identity[:200], row_data=row_data)
+                db.add(instance)
+            else:
+                instance.entity_id = entity_ids[entity_type]
+                instance.row_identity = identity[:200]
+                instance.row_data = row_data
+            counts[entity_type] += 1
+    profile_id = (run.config or {}).get("profile_id")
+    profile = db.query(TemporalDatasetProfile).filter(TemporalDatasetProfile.id == profile_id).first() if profile_id else None
+    suggestion = (profile.llm_suggestion or {}) if profile else {}
+    rule_id = f"schema:{run.ontology_id}:rule:factorynet-ordinal-order"
+    rule = db.get(LogicRule, rule_id)
+    condition = {"all": [{"entity": "Observation", "property": suggestion.get("sequence_column") or "time_s", "operator": ">=", "value": 0}], "time_kind": "Ordinal"}
+    effect = {"relation": "NEXT_OBSERVATION", "order_by": suggestion.get("sequence_column") or "time_s", "meaning": "仅表示来源中的相对顺序，不转换为日期"}
+    if rule is None:
+        rule = LogicRule(id=rule_id, ontology_id=run.ontology_id, name_cn="FactoryNet 观测顺序", name_en="FactoryNet observation order", description="已确认的 Ordinal 顺序语义", formula="IF Observation.time_s >= 0 THEN NEXT_OBSERVATION follows source order", confidence=1.0, version="v2", enabled=True, status="published")
+        db.add(rule)
+    rule.linked_entities = [entity_ids["Observation"], entity_ids["Episode"]]
+    rule.condition_json = condition
+    rule.effect_json = effect
+    rule.evidence_json = {"source_file": source_file, "profile_id": profile_id, "model_used": bool(profile and profile.llm_used), "source_fields": [suggestion.get("sequence_column") or "time_s", "episode_id"]}
+    rule.confidence = 1.0
+    rule.status = "published"
+    db.flush()
+    return {"entity_instances": sum(counts.values()), **{f"{key.lower()}_instances": value for key, value in counts.items()}}
 
 
 def run_temporal_construction(run_id: str) -> dict[str, Any]:
@@ -377,8 +465,19 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
                 pass
             normalized, issues = normalize_icews_rows(rows)
         else:
-            entity_column = config.get("entity_id_column") or (config.get("field_mapping") or {}).get("entity")
+            entity_id_column = config.get("entity_id_column") or (config.get("field_mapping") or {}).get("entity") or "unit_id"
+            entity_column = entity_id_column
             rows = _filter_generic_rows(rows, config.get("filters"), entity_column=entity_column)
+            # ``sample_limit`` is the final task-level guard.  The UI also
+            # sends ``filters.max_records`` for interactive preview, but API
+            # callers may provide only sample_limit; never silently process
+            # the entire source in that case.
+            try:
+                requested_limit = int(config.get("sample_limit") or 0)
+            except (TypeError, ValueError):
+                requested_limit = 0
+            if requested_limit > 0:
+                rows = rows[:requested_limit]
             normalized, issues = normalize_temporal_rows(rows, TemporalConfig(
                 time_kind=(config.get("time") or {}).get("time_kind", "instant"),
                 sequence_column=(config.get("time") or {}).get("sequence_column", "event_seq"),
@@ -411,6 +510,9 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
             _ensure_factorynet_schema(db, run.ontology_id)
         else:
             _ensure_bts_schema(db, run.ontology_id)
+        materialization_metrics: dict[str, int] = {}
+        if source == "factorynet_cnc" or config.get("adapter") == "factorynet":
+            materialization_metrics = _materialize_factorynet_rows(db, run, normalized, source_file)
         update_run(db, run, progress={"stage": "写入 FalkorDB", "completed": len(normalized), "total": len(rows), "issues": len(issues)})
         node_count = falkor.upsert_instances(run.ontology_id, nodes)
         edge_count = falkor.upsert_relations(run.ontology_id, edges)
@@ -428,8 +530,10 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
                 source_version_value = source_version or "icews-2023-demo"
             else:
                 evidence_text = json.dumps({k: row.get(k) for k in row.keys() if not str(k).startswith("_")}, ensure_ascii=False, default=str)[:8000]
-                prefix = "FactoryNet:Observation" if source == "factorynet_cnc" or config.get("adapter") == "factorynet" else "Temporal:Observation"
-                assertion_id = f"{prefix}:{row.get('episode_id') or row.get(entity_id_column) or 'series'}:{row.get('_source_row_index', index)}"
+                if source == "factorynet_cnc" or config.get("adapter") == "factorynet":
+                    assertion_id = _temporal_instance_id(run.ontology_id, "Observation", f"{row.get('episode_id') or 'series'}:{row.get('_source_row_index', index + 1)}")
+                else:
+                    assertion_id = f"Temporal:Observation:{row.get(entity_id_column) or 'series'}:{row.get('_source_row_index', index)}"
                 source_version_value = str(manifest.get("sha256") or manifest.get("source_id") or "temporal-upload")
             evidence_rows.append({
                 "id": str(uuid.uuid4()),
@@ -508,6 +612,7 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
             "ontology_classes": ontology_classes,
             "relations": relation_types,
             "filters": config.get("filters") or {},
+            **materialization_metrics,
         }
         if not normalized:
             update_run(db, run, status="failed", progress={"stage": "没有有效时序记录", "completed": 0, "total": len(rows), "issues": len(issues)}, metrics=metrics, error="NO_VALID_TEMPORAL_ROWS: 没有一行通过时间语义校验")
@@ -515,6 +620,32 @@ def run_temporal_construction(run_id: str) -> dict[str, Any]:
         if node_count <= 0 or edge_count <= 0:
             update_run(db, run, status="failed", progress={"stage": "图谱没有有效关系", "completed": len(normalized), "total": len(rows), "issues": len(issues)}, metrics=metrics, error="NO_GRAPH_RELATIONS: 未生成节点或关系")
             return {"run_id": run.id, "status": "failed", "metrics": metrics, "issues": issues[:100]}
+        # Every successful construction gets an immutable revision and a
+        # queued local quality audit.  Keep the revision pointer on the run so
+        # graph/evidence viewers can navigate back to the exact snapshot.
+        from app.services.v2.revision_service import create_revision
+        revision = create_revision(
+            db,
+            run.ontology_id,
+            source_run_id=run.id,
+            summary={
+                "rows_processed": len(normalized),
+                "nodes_written": node_count,
+                "edges_written": edge_count,
+                "temporal_issues": len(issues),
+                "privacy_level": (run.config or {}).get("privacy_level", "standard"),
+                **materialization_metrics,
+            },
+        )
+        run.revision_id = revision.id
+        attach_revision_to_materialized_rows(db, run=run, revision_id=revision.id)
+        project = db.query(OntologyProject).filter(OntologyProject.id == run.ontology_id).first()
+        if project:
+            project.status = "created"
+        db.commit()
+        from app.services.v2.audit_runner import queue_local_audit
+        queue_local_audit(db, ontology_id=run.ontology_id, revision_id=revision.id, construction_run_id=run.id)
+        metrics["revision_id"] = revision.id
         update_run(db, run, status="completed", progress={"stage": "构建完成", "completed": len(normalized), "total": len(rows), "issues": len(issues)}, metrics=metrics)
         return {"run_id": run.id, "status": "completed", "metrics": metrics, "issues": issues[:100]}
     except Exception as exc:

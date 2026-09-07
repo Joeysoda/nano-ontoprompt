@@ -5,6 +5,7 @@ from jose import JWTError
 from app.database import SessionLocal
 from app.services.auth_service import decode_token, get_user_by_id
 from app.models.user import User
+from app.config import settings
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -19,6 +20,14 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer),
     db: Session = Depends(get_db),
 ) -> User:
+    if settings.auth_mode == "local_single_user":
+        # The local workbench is deliberately single-user, but still passes a
+        # real User object through every existing permission dependency so the
+        # rest of the application does not need an insecure bypass branch.
+        user = db.query(User).filter(User.role == "admin", User.is_active == True).order_by(User.created_at).first()
+        if user:
+            return user
+        raise HTTPException(status_code=503, detail="本地管理员尚未初始化")
     if not credentials:
         raise HTTPException(status_code=403, detail="Not authenticated")
     try:

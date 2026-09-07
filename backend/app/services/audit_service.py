@@ -6,6 +6,8 @@ ReAct 本体质量审查 Agent
 """
 
 import json
+import re
+import os
 import uuid
 from typing import Callable
 
@@ -24,7 +26,6 @@ DOMAIN_RELATION_PATTERNS = [
     ("Organization", "Employee", "PART-OF"),
     ("Process", "Step", "PART-OF"),
     ("Rule", "Entity", "关联"),
-    ("Action", "Rule", "关联"),
     ("Category", "Item", "PART-OF"),
 ]
 
@@ -35,7 +36,6 @@ SYSTEM_PROMPT = """你是一个本体质量审查专家。你的任务是通过�
 - list_isolated_entities：找出没有参与任何关系的孤立实体
 - check_relation_refs：检查所有关系的 source/target 是否能解析到已知实体
 - check_logic_refs：检查逻辑规则的 linked_entities 是否全部指向已知实体
-- check_action_refs：检查动作的 linked_entities 和 linked_logic_ids 是否全部可解析
 - get_entity_coverage：统计各类型实体参与关系的覆盖率，找出低覆盖类型
 - find_missing_relations：根据实体类型，推断是否存在明显缺失的关系
 - submit_findings：提交最终审查结果（调用此工具将终止审查）
@@ -50,10 +50,10 @@ SYSTEM_PROMPT = """你是一个本体质量审查专家。你的任务是通过�
 findings 中每条问题的格式：
 {
   "severity": "critical | warning | info",
-  "category": "isolated_entity | broken_ref | missing_relation | low_coverage | action_unreachable | other",
+  "category": "isolated_entity | broken_ref | missing_relation | low_coverage | temporal_semantics | evidence_gap | other",
   "title": "简短标题（不超过50字）",
   "description": "详细描述和修复建议",
-  "affected_items": ["受影响的实体/规则/动作名称列表"]
+  "affected_items": ["受影响的实体、关系或规则名称列表"]
 }
 
 请务必调用 submit_findings 来结束审查，不要直接输出文字结论。"""
@@ -100,11 +100,6 @@ def _tool_definitions() -> list:
         {
             "name": "check_logic_refs",
             "description": "遍历所有逻辑规则，检查 linked_entities 中的名称是否全部指向已知实体，返回断链的引用",
-            "input_schema": {"type": "object", "properties": {}, "required": []},
-        },
-        {
-            "name": "check_action_refs",
-            "description": "遍历所有动作，检查 linked_entities 和 linked_logic_ids 是否可解析，返回断链列表",
             "input_schema": {"type": "object", "properties": {}, "required": []},
         },
         {
@@ -161,11 +156,30 @@ def _execute_tool(tool_name: str, tool_args: dict, snapshot: dict) -> str:
     entities = snapshot["entities"]
     relations = snapshot["relations"]
     logic_rules = snapshot["logic_rules"]
-    actions = snapshot["actions"]
 
     entity_ids = {e["id"] for e in entities}
-    entity_names = {e["name_cn"] for e in entities}
-    logic_ids = {r["id"] for r in logic_rules}
+
+    def _reference_key(value: object) -> str:
+        """Normalize a human-facing entity reference without changing IDs.
+
+        Legacy rules sometimes use ``SensorReadings`` while their entity
+        definition uses ``Sensor Readings``.  Case, whitespace and separators
+        are presentation differences, not a broken semantic reference.
+        """
+        return re.sub(r"[\W_]+", "", str(value or "").casefold())
+
+    entity_names = {
+        alias
+        for entity in entities
+        for alias in (
+            entity.get("name_cn"),
+            entity.get("name_en"),
+            entity.get("name_abbr"),
+            entity.get("canonical_id"),
+        )
+        if alias
+    }
+    entity_reference_keys = {_reference_key(name) for name in entity_names}
 
     if tool_name == "get_ontology_summary":
         in_relation = set()
@@ -184,9 +198,10 @@ def _execute_tool(tool_name: str, tool_args: dict, snapshot: dict) -> str:
 
         return json.dumps({
             "entity_count": n,
+            "instance_count": int(snapshot.get("instance_count", 0)),
+            "evidence_count": int(snapshot.get("evidence_count", 0)),
             "relation_count": len(relations),
             "logic_rule_count": len(logic_rules),
-            "action_count": len(actions),
             "type_distribution": type_dist,
             "relation_density": density,
             "isolated_entity_count": isolated_count,
@@ -223,23 +238,18 @@ def _execute_tool(tool_name: str, tool_args: dict, snapshot: dict) -> str:
     elif tool_name == "check_logic_refs":
         broken = []
         for rule in logic_rules:
-            missing = [e for e in rule.get("linked_entities", []) if e not in entity_names]
+            # New workbench rules store stable entity IDs while older rules
+            # stored Chinese display names.  Accept either form.
+            missing = [
+                entity_ref
+                for entity_ref in rule.get("linked_entities", [])
+                if entity_ref not in entity_ids
+                and entity_ref not in entity_names
+                and _reference_key(entity_ref) not in entity_reference_keys
+            ]
             if missing:
                 broken.append({"rule_name": rule["name_cn"], "missing_entities": missing})
         return json.dumps({"broken_logic_refs": broken, "count": len(broken)}, ensure_ascii=False)
-
-    elif tool_name == "check_action_refs":
-        broken = []
-        for action in actions:
-            missing_entities = [e for e in action.get("linked_entities", []) if e not in entity_names]
-            missing_logic = [lid for lid in action.get("linked_logic_ids", []) if lid not in logic_ids]
-            if missing_entities or missing_logic:
-                broken.append({
-                    "action_name": action["name_cn"],
-                    "missing_entities": missing_entities,
-                    "missing_logic_ids": missing_logic,
-                })
-        return json.dumps({"broken_action_refs": broken, "count": len(broken)}, ensure_ascii=False)
 
     elif tool_name == "get_entity_coverage":
         in_relation: dict = {}
@@ -336,6 +346,16 @@ def _call_openai_with_tools(api_key: str, api_base: str | None, model_name: str,
         else:
             messages.append({"role": turn["role"], "content": turn["content"]})
 
+    # qwen3.5 keeps internal reasoning in a separate Ollama field.  If it is
+    # left enabled during a compact tool-call audit, a small local model can
+    # exhaust its completion budget before issuing any visible tool call.
+    # The trace deliberately records only tools and observations, so disable
+    # that mode for this route as well as the ordinary LLM helper.
+    extra_body = (
+        {"think": False}
+        if "qwen3.5" in str(model_name).lower()
+        else {"reasoning_effort": "none"}
+    )
     create_kwargs = {
         "model": model_name,
         "messages": messages,
@@ -343,7 +363,7 @@ def _call_openai_with_tools(api_key: str, api_base: str | None, model_name: str,
         "tool_choice": "auto",
         "max_tokens": 2048,
         "timeout": 120,
-        "extra_body": {"reasoning_effort": "none"},
+        "extra_body": extra_body,
     }
     try:
         resp = client.chat.completions.create(**create_kwargs)
@@ -446,6 +466,143 @@ def _call_anthropic_with_tools(api_key: str, model_name: str,
 
 # ── 主入口 ───────────────────────────────────────────────────────────────────
 
+def _normalise_findings(value: object) -> list[dict]:
+    """Keep model-provided audit findings displayable and structurally safe."""
+    if not isinstance(value, list):
+        return []
+
+    def text(item: object, fallback: str = "") -> str:
+        if isinstance(item, list):
+            return " · ".join(str(part) for part in item if part is not None) or fallback
+        return str(item) if item is not None else fallback
+
+    normalised: list[dict] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            continue
+        severity = str(item.get("severity") or "warning").lower()
+        if severity not in {"critical", "warning", "info"}:
+            severity = "warning"
+        affected = item.get("affected_items")
+        normalised.append({
+            "severity": severity,
+            "category": text(item.get("category"), "other"),
+            "title": text(item.get("title"), f"发现 {index + 1}"),
+            "description": text(item.get("description")),
+            "affected_items": [text(part) for part in affected if part is not None] if isinstance(affected, list) else [],
+        })
+    return normalised
+
+
+def _ground_findings(value: object, trace: list[dict]) -> list[dict]:
+    """Keep only review findings that have a matching read-only observation.
+
+    The local 0.8B model is deliberately used for the review conclusion, but
+    it must not turn a successful relation/reference check into a fabricated
+    warning.  The visible result therefore uses the model's selected
+    *category* only when a preceding tool observation proves that category;
+    the title, affected items and severity are derived from the observed data.
+    """
+    observed: dict[str, dict] = {}
+    for step in trace:
+        tool_name = step.get("tool_name")
+        raw = step.get("observation")
+        if not tool_name or not isinstance(raw, str):
+            continue
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(parsed, dict):
+            observed[tool_name] = parsed
+
+    summary = observed.get("get_ontology_summary", {})
+    isolated = observed.get("list_isolated_entities", {})
+    broken_relations = observed.get("check_relation_refs", {})
+    broken_logic = observed.get("check_logic_refs", {})
+    coverage = observed.get("get_entity_coverage", {})
+    missing_relations = observed.get("find_missing_relations", {})
+
+    category_aliases = {
+        "broken_relation_refs": "broken_ref",
+        "broken_logic_refs": "broken_logic_ref",
+        "broken_logic": "broken_logic_ref",
+    }
+    emitted: set[str] = set()
+    grounded: list[dict] = []
+    for candidate in _normalise_findings(value):
+        category = category_aliases.get(candidate["category"], candidate["category"])
+        if category in emitted:
+            continue
+
+        if category == "isolated_entity" and isolated.get("count", 0):
+            items = [str(item.get("name_cn", "未命名实体")) for item in isolated.get("isolated_entities", [])][:10]
+            grounded.append({
+                "severity": "warning",
+                "category": category,
+                "title": f"发现 {isolated.get('count', len(items))} 个未参与关系的实体",
+                "description": "这些实体尚未连接到其他实体类型；请确认是否应补充关系，或明确保留为独立概念。",
+                "affected_items": items,
+            })
+        elif category == "broken_ref" and broken_relations.get("count", 0):
+            items = [
+                f"{item.get('source', '未知')} → {item.get('target', '未知')}"
+                for item in broken_relations.get("broken_relations", [])
+            ][:10]
+            grounded.append({
+                "severity": "critical",
+                "category": category,
+                "title": f"发现 {broken_relations.get('count', len(items))} 条关系引用无法解析",
+                "description": "关系的起点或终点不在当前本体实体中；构建或修订前需要修正引用。",
+                "affected_items": items,
+            })
+        elif category == "broken_logic_ref" and broken_logic.get("count", 0):
+            items = [str(item.get("rule_name", "未命名逻辑规则")) for item in broken_logic.get("broken_logic_refs", [])][:10]
+            grounded.append({
+                "severity": "critical",
+                "category": category,
+                "title": f"发现 {broken_logic.get('count', len(items))} 条逻辑规则引用无法解析",
+                "description": "逻辑规则引用了当前本体中不存在的实体；请修正规则绑定后重新审查。",
+                "affected_items": items,
+            })
+        elif category == "low_coverage" and coverage.get("low_coverage_types"):
+            items = [str(item.get("type", "未知类型")) for item in coverage.get("low_coverage_types", [])][:10]
+            grounded.append({
+                "severity": "warning",
+                "category": category,
+                "title": "部分实体类型的关系覆盖率偏低",
+                "description": "这些类型中少于一半的实体参与了关系；请核对是否遗漏关联数据或证据。",
+                "affected_items": items,
+            })
+        elif category == "missing_relation" and missing_relations.get("suggested_relations"):
+            items = [
+                f"{item.get('from', '未知')} → {item.get('to', '未知')}"
+                for item in missing_relations.get("suggested_relations", [])
+            ][:10]
+            grounded.append({
+                "severity": "info",
+                "category": category,
+                "title": "可复核的关系补充建议",
+                "description": "以下关系来自规则模式匹配，尚未写入本体；确认业务含义后再创建修订。",
+                "affected_items": items,
+            })
+        elif category == "evidence_gap" and int(summary.get("evidence_count", 0)) == 0:
+            grounded.append({
+                "severity": "warning",
+                "category": category,
+                "title": "当前本体没有可绑定的来源证据",
+                "description": "实体、关系和规则目前没有 EvidenceRef；建议在下一次构建时保留来源记录或资产引用。",
+                "affected_items": [],
+            })
+        else:
+            # Unsupported/unproven recommendations remain in the encrypted
+            # model invocation record, but are not presented as an ontology
+            # quality issue.
+            continue
+        emitted.add(category)
+
+    return grounded
+
 def run_react_audit(
     ontology_snapshot: dict,
     model_config: dict,
@@ -461,20 +618,56 @@ def run_react_audit(
     provider = model_config.get("provider", "openai")
     api_key = model_config["api_key"]
     api_base = model_config.get("api_base")
+    # The audit runner is also used by a few legacy v1 entry points.  Enforce
+    # the same LiteLLM boundary here so an old provider value cannot bypass
+    # the local gateway in the workbench runtime.
+    gateway_base = os.getenv("LITELLM_API_BASE", "").strip()
+    if gateway_base:
+        provider = "openai"
+        api_base = gateway_base.rstrip("/")
+        api_key = os.getenv("LITELLM_API_KEY", "").strip() or api_key or "local-gateway"
 
-    summary_str = _execute_tool("get_ontology_summary", {}, ontology_snapshot)
+    trace: list = []
+    findings: list = []
+    # The first five inspections are deterministic read-only tools.  They are
+    # intentionally run before the local model is asked for a conclusion:
+    # this gives every review a complete, reproducible evidence trail even
+    # when a small local model elects to answer in plain text instead of
+    # issuing its first tool call.
+    preflight_tools = (
+        "get_ontology_summary",
+        "list_isolated_entities",
+        "check_relation_refs",
+        "check_logic_refs",
+        "get_entity_coverage",
+    )
+    preflight_observations: list[str] = []
+    for step, tool_name in enumerate(preflight_tools):
+        if on_step:
+            on_step(step, max_steps)
+        observation = _execute_tool(tool_name, {}, ontology_snapshot)
+        trace.append({
+            "step": step,
+            "tool_name": tool_name,
+            "tool_args": {},
+            "observation": observation,
+        })
+        preflight_observations.append(f"{tool_name}: {observation}")
+        if on_trace_step:
+            on_trace_step(trace)
 
     turns: list = [
         {
             "role": "user",
-            "content": f"请开始审查本体质量。本体基本信息：\n{summary_str}\n\n请系统地检查所有质量维度，最后调用 submit_findings 提交结论。",
+            "content": (
+                "请根据以下只读审查结果给出质量结论。不要输出隐藏推理或解释文字；"
+                "必须调用 submit_findings，提交可证实的问题。\n\n"
+                + "\n\n".join(preflight_observations)
+            ),
         }
     ]
 
-    trace: list = []
-    findings: list = []
-
-    for step in range(max_steps):
+    for step in range(len(trace), max_steps):
         if on_step:
             on_step(step, max_steps)
 
@@ -523,11 +716,37 @@ def run_react_audit(
             })
 
             if tool_name == "submit_findings":
-                findings = tool_args.get("findings", [])
+                submitted = tool_args.get("findings", [])
+                findings = _ground_findings(submitted, trace)
+                # The visible ReAct trace distinguishes what the local model
+                # suggested from what the deterministic evidence gate accepted.
+                # This prevents a small-model hallucination from looking like a
+                # real unresolved ontology issue.
+                trace[-1]["observation"] = json.dumps({
+                    "status": "accepted",
+                    "submitted_count": len(submitted) if isinstance(submitted, list) else 0,
+                    "grounded_count": len(findings),
+                }, ensure_ascii=False)
+                if on_trace_step:
+                    on_trace_step(trace)
                 break
 
         else:
-            trace.append({"step": step, "text": response.get("content", "")})
+            # A visible text reply is not a structured finding.  The five
+            # deterministic checks have already completed, so record that
+            # bounded fallback explicitly rather than claiming Ollama is
+            # unavailable or turning unstructured prose into a finding.
+            trace.append({
+                "step": step,
+                "tool_name": "submit_findings",
+                "tool_args": {"findings": []},
+                "observation": json.dumps({
+                    "status": "fallback",
+                    "submitted_count": 0,
+                    "grounded_count": 0,
+                    "detail": "本地模型未返回结构化建议；已完成只读核验",
+                }, ensure_ascii=False),
+            })
             if on_trace_step:
                 on_trace_step(trace)
             break

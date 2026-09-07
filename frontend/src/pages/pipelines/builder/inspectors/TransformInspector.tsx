@@ -45,7 +45,7 @@ export default function TransformInspector({ config, onChange, readOnly = false,
     return (
       <div className="space-y-3">
         <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-xs">
-          <p className="text-amber-700 font-medium mb-1">⚙️ 转换配置</p>
+          <p className="text-amber-700 font-medium mb-1">转换配置</p>
           <p className="text-amber-600">路径: {currentPath === 'auto' ? '自动检测' : currentPath === 'structured' ? 'Path A · 结构化' : currentPath === 'semi_structured' ? 'Path B · 半结构化' : currentPath === 'unstructured' ? 'Path C · 非结构化' : '宽表拆分'}</p>
           <p className="text-amber-600">引擎: {String(config.engine || 'pandas')}</p>
           <p className="text-amber-600">步骤: {steps.length} 个</p>

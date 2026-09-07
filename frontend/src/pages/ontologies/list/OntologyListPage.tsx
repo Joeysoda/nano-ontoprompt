@@ -115,8 +115,8 @@ export default function OntologyListPage() {
                 <td className="px-4 py-3 text-gray-500">{o.domain}</td>
                 <td className="px-4 py-3">
                   {o.build_mode === 'pipeline_mapping'
-                    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-blue-50 border border-blue-200 text-blue-700">🔄 Pipeline</span>
-                    : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-50 border border-amber-200 text-amber-700">⚡ 简易LLM</span>
+                    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-blue-50 border border-blue-200 text-blue-700">Pipeline</span>
+                    : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-50 border border-amber-200 text-amber-700">简易 LLM</span>
                   }
                 </td>
                 <td className="px-4 py-3 text-gray-500 font-mono text-xs">{o.entity_count ?? 0}</td>

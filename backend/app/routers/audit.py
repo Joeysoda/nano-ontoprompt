@@ -67,4 +67,9 @@ def get_audit_status(ontology_id: str, task_id: str, db: Session = Depends(get_d
                 data[field] = json.loads(data[field])
             except json.JSONDecodeError:
                 data[field] = {} if field == "progress" else []
+    if isinstance(data.get("react_trace"), list):
+        data["react_trace"] = [
+            {key: value for key, value in item.items() if key not in {"thought", "reasoning_content"}}
+            for item in data["react_trace"] if isinstance(item, dict)
+        ]
     return {"data": AuditTaskOut.model_validate(data).model_dump()}

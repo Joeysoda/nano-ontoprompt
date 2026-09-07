@@ -1,4 +1,18 @@
 model_list:
+  # Workbench primary builder — browser requests go through this proxy.
+  - model_name: MiniMax-M3
+    litellm_params:
+      model: openai/MiniMax-M3
+      api_base: https://api.minimaxi.com/v1
+      api_key: os.environ/MINIMAX_API_KEY
+
+  # Workbench local audit/build helper (Ollama runs on the host).
+  - model_name: qwen3.5:0.8b
+    litellm_params:
+      model: ollama/qwen3.5:0.8b
+      api_base: http://host.docker.internal:11434
+      api_key: os.environ/OLLAMA_API_KEY
+
   # OpenAI
   - model_name: gpt-4o
     litellm_params:

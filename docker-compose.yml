@@ -95,7 +95,7 @@ services:
 
   celery_beat:
     build: ./backend
-    command: celery -A app.tasks.extraction beat --loglevel=info
+    command: celery -A app.tasks.celery_app beat --loglevel=info
     env_file: .env
     depends_on: [db, redis]
     volumes:

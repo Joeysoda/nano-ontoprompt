@@ -1,6 +1,6 @@
 import uuid, json
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, ForeignKey, Text, Float
+from sqlalchemy import String, DateTime, ForeignKey, Text, Float, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import event
 from app.database import Base
@@ -18,6 +18,13 @@ class LogicRule(Base):
     version: Mapped[str] = mapped_column(String(20), default="v0.1")
     enabled: Mapped[bool] = mapped_column(default=True)
     status: Mapped[str] = mapped_column(String(20), default="draft")
+    # Structured, user-visible IF/THEN representation.  ``formula`` remains
+    # for legacy callers and exports.
+    condition_json: Mapped[dict | list] = mapped_column(JSON, nullable=False, default=dict)
+    effect_json: Mapped[dict | list] = mapped_column(JSON, nullable=False, default=dict)
+    evidence_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    model_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    revision_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     _linked_entities: Mapped[str] = mapped_column("linked_entities", Text, default="[]")

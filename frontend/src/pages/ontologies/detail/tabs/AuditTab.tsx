@@ -1,382 +1,374 @@
-import { useEffect, useRef, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
-import { ontologyApi, modelApi } from '@/api/ontologies'
-import {
-  CheckCircle, XCircle, Loader2, ChevronRight, AlertTriangle, AlertCircle,
-  Info, ChevronDown, ChevronUp,
-} from 'lucide-react'
+import { useCallback, useEffect, useState } from "react";
+import { AlertCircle, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { apiClientV2 } from "@/api/client";
 
-const STAGE_KEYS = [
-  { key: 'queued',               i18nKey: 'audit.stage_queued' },
-  { key: 'loading ontology',     i18nKey: 'audit.stage_loading' },
-  { key: 'running react agent',  i18nKey: 'audit.stage_running' },
-  { key: 'saving findings',      i18nKey: 'audit.stage_saving' },
-  { key: 'done',                 i18nKey: 'audit.stage_done' },
-]
+type AuditFinding = {
+  title?: string;
+  category?: string;
+  description?: string;
+  affected_items?: string[];
+  disposition?: string;
+};
 
-const STAGE_PCT: Record<string, number> = {
-  queued: 0, 'loading ontology': 10, 'running react agent': 30, 'saving findings': 90, done: 100,
+type AuditTraceStep = {
+  step?: number;
+  tool_name?: string;
+  tool_args?: Record<string, unknown>;
+  observation?: string;
+  error?: string;
+};
+
+type AuditTask = {
+  id: string;
+  ontology_id: string;
+  model_name?: string;
+  status: string;
+  progress?: { stage?: string; pct?: number };
+  error?: string | null;
+  findings?: AuditFinding[];
+  react_trace?: AuditTraceStep[];
+  repair_draft?: { changes?: unknown[] } | null;
+};
+
+function messageFor(error: unknown) {
+  const detail = error as {
+    response?: { data?: { detail?: unknown } };
+    detail?: unknown;
+    message?: unknown;
+  };
+  const message =
+    detail.response?.data?.detail ||
+    detail.detail ||
+    detail.message;
+  return typeof message === "string" ? message : "请求失败";
 }
 
-const auditTaskKey = (oid: string) => `ontoprompt_last_audit_${oid}`
-
-type SavedAuditTask = { task_id?: string; status?: string; [key: string]: unknown }
-
-function loadSavedTask(oid: string): SavedAuditTask | null {
-  try {
-    const saved = localStorage.getItem(auditTaskKey(oid))
-    return saved ? JSON.parse(saved) : null
-  } catch { return null }
-}
-
-function saveTask(oid: string, data: SavedAuditTask) {
-  try { localStorage.setItem(auditTaskKey(oid), JSON.stringify(data)) } catch {}
-}
-
-const SEVERITY_STYLE: Record<string, { border: string; bg: string; text: string; badge: string; Icon: any }> = {
-  critical: { border: 'border-red-200', bg: 'bg-red-50', text: 'text-red-700', badge: 'bg-red-100 text-red-700', Icon: XCircle },
-  warning:  { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-700', badge: 'bg-amber-100 text-amber-700', Icon: AlertTriangle },
-  info:     { border: 'border-blue-200', bg: 'bg-blue-50', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-700', Icon: Info },
-}
-
-function FindingCard({ finding, t }: { finding: any; t: any }) {
-  const sev = finding.severity as string
-  const style = SEVERITY_STYLE[sev] ?? SEVERITY_STYLE.info
-  const Icon = style.Icon
-  const catKey = `audit.category_${finding.category}` as const
-
+function statusLabel(status: string) {
   return (
-    <div className={`rounded-lg border ${style.border} ${style.bg} p-4`}>
-      <div className="flex items-start gap-2">
-        <Icon size={15} className={`mt-0.5 flex-shrink-0 ${style.text}`} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-xs font-semibold ${style.text}`}>{finding.title}</span>
-            <span className={`text-xs px-1.5 py-0.5 rounded ${style.badge}`}>{t(catKey)}</span>
-          </div>
-          {finding.description && (
-            <p className={`text-xs mt-1 ${style.text} opacity-80`}>{finding.description}</p>
-          )}
-          {finding.affected_items?.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              <span className="text-xs text-gray-400 mr-1">{t('audit.affected_items')}:</span>
-              {finding.affected_items.map((item: string, i: number) => (
-                <span key={i} className="text-xs bg-white border border-gray-200 px-1.5 py-0.5 rounded text-gray-600">{item}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
+    {
+      queued: "排队中",
+      running: "审查中",
+      cancel_requested: "正在取消",
+      cancelled: "已取消",
+      completed: "已完成",
+      waiting_for_model: "等待本地模型",
+      failed: "失败",
+    }[status] || status
+  );
 }
 
-function FindingsReport({ findings, t }: { findings: any[]; t: any }) {
-  const [traceOpen, setTraceOpen] = useState(false)
-  const critical = findings.filter(f => f.severity === 'critical')
-  const warning  = findings.filter(f => f.severity === 'warning')
-  const info     = findings.filter(f => f.severity === 'info')
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ critical: true, warning: false, info: false })
-
-  const toggle = (key: string) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }))
-
-  if (findings.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border border-green-200 p-8 text-center">
-        <CheckCircle size={32} className="mx-auto text-green-500 mb-3" />
-        <p className="text-sm font-medium text-green-700">{t('audit.no_findings')}</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-white rounded-xl border p-6 space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        <h3 className="font-semibold">{t('audit.findings_title')}</h3>
-        <span className="ml-auto text-xs text-gray-500">
-          {t('audit.findings_summary', { total: findings.length, critical: critical.length, warning: warning.length, info: info.length })}
-        </span>
-      </div>
-
-      {(['critical', 'warning', 'info'] as const).map(sev => {
-        const group = sev === 'critical' ? critical : sev === 'warning' ? warning : info
-        if (!group.length) return null
-        const style = SEVERITY_STYLE[sev]
-        return (
-          <div key={sev} className={`rounded-lg border ${style.border}`}>
-            <button
-              className={`w-full flex items-center justify-between px-4 py-2.5 ${style.bg} rounded-lg`}
-              onClick={() => toggle(sev)}>
-              <span className={`text-sm font-semibold ${style.text}`}>
-                {t(`audit.severity_${sev}`)} · {group.length}
-              </span>
-              {openSections[sev] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
-            {openSections[sev] && (
-              <div className="p-3 space-y-2">
-                {group.map((f: any, i: number) => <FindingCard key={i} finding={f} t={t} />)}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
+function statusClass(status: string) {
+  if (status === "completed") return "wb-status-success";
+  if (status === "failed" || status === "cancelled") return "wb-status-danger";
+  return "wb-status-warning";
 }
 
-function TracePanel({
-  trace, open, onToggle, t, thinking,
-}: {
-  trace: any[]
-  open: boolean
-  onToggle: () => void
-  t: any
-  thinking?: boolean
-}) {
-  const bottomRef = useRef<HTMLDivElement>(null)
+function displayText(value: unknown, fallback = "") {
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(" · ");
+  return value === null || value === undefined ? fallback : String(value);
+}
 
-  useEffect(() => {
-    if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [trace.length, thinking, open])
-
+function ToolTrace({ trace, active }: { trace: AuditTraceStep[]; active: boolean }) {
+  const [open, setOpen] = useState(true);
+  const submittedSummary = (step: AuditTraceStep) => {
+    try {
+      const observation = typeof step.observation === "string" ? JSON.parse(step.observation) : step.observation;
+      if (observation && typeof observation === "object" && "grounded_count" in observation) {
+        const submitted = Number((observation as Record<string, unknown>).submitted_count || 0);
+        const grounded = Number((observation as Record<string, unknown>).grounded_count || 0);
+        if ((observation as Record<string, unknown>).status === "fallback") {
+          return "本地模型未返回结构化建议；已完成只读核验（0 项）";
+        }
+        return `模型提交 ${submitted} 项建议；证据核验后 ${grounded} 项有效`;
+      }
+    } catch {
+      // Older audit records only retain the original tool arguments.
+    }
+    return `模型提交 ${Array.isArray(step.tool_args?.findings) ? step.tool_args.findings.length : 0} 项建议`;
+  };
+  if (!trace.length && !active) return null;
   return (
-    <div className="bg-white rounded-xl border p-4">
+    <section className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <button
-        className="flex items-center gap-2 text-sm font-medium text-gray-600 w-full"
-        onClick={onToggle}>
-        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        {t('audit.trace_title')} ({trace.length}{thinking ? '+' : ''} steps)
+        type="button"
+        className="flex w-full items-center justify-between text-sm font-medium text-slate-700"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>工具轨迹</span>
+        <span className="text-xs font-normal text-slate-500">{trace.length} 步</span>
       </button>
       {open && (
-        <div className="mt-3 space-y-2 font-mono text-xs text-gray-500 max-h-96 overflow-y-auto">
-          {trace.map((step: any, i: number) => (
-            <div key={i} className="bg-gray-50 rounded p-2 border border-gray-100">
-              <span className="text-gray-400">Step {step.step + 1}</span>
-              {step.thought && <p className="mt-1 text-gray-600 whitespace-pre-wrap">{step.thought}</p>}
-              {step.tool_name && (
-                <p className="mt-1"><span className="text-purple-600">▶ {step.tool_name}</span>
-                  {step.tool_args && Object.keys(step.tool_args).length > 0 && (
-                    <span className="text-gray-400"> {JSON.stringify(step.tool_args)}</span>
-                  )}
+        <div className="mt-3 space-y-2">
+          {trace.map((step, index) => (
+            <article key={`${step.step ?? index}-${step.tool_name || "step"}`} className="rounded border border-slate-200 bg-white p-3 text-xs">
+              <p className="font-medium text-slate-700">
+                {String((step.step ?? index) + 1).padStart(2, "0")}
+                {step.tool_name ? ` · ${step.tool_name}` : " · 审查步骤"}
+              </p>
+              {step.tool_name === "submit_findings" ? (
+                <p className="mt-1 text-slate-500">
+                  结论：{submittedSummary(step)}
+                </p>
+              ) : step.tool_args && Object.keys(step.tool_args).length > 0 ? (
+                <p className="mt-1 break-words text-slate-500">
+                  参数：{JSON.stringify(step.tool_args)}
+                </p>
+              ) : null}
+              {step.observation && (
+                <p className="mt-1 whitespace-pre-wrap break-words text-slate-600">
+                  观察：{step.observation}
                 </p>
               )}
-              {step.observation && (
-                <p className="mt-1 text-green-700 whitespace-pre-wrap break-all line-clamp-4">{step.observation}</p>
-              )}
-              {step.text && <p className="mt-1 whitespace-pre-wrap">{step.text}</p>}
-              {step.error && <p className="mt-1 text-red-500">{step.error}</p>}
-            </div>
+              {step.error && <p className="mt-1 text-red-700">{step.error}</p>}
+            </article>
           ))}
-          {thinking && (
-            <div className="bg-gray-50 rounded p-2 border border-gray-100 flex items-center gap-2 text-gray-400">
-              <Loader2 size={12} className="animate-spin" />
-              {t('audit.trace_thinking')}
+          {active && (
+            <div className="flex items-center gap-2 rounded border border-dashed border-slate-300 bg-white px-3 py-2 text-xs text-slate-500">
+              <Loader2 size={13} className="animate-spin" />
+              等待下一步工具结果
             </div>
           )}
-          <div ref={bottomRef} />
         </div>
       )}
-    </div>
-  )
+    </section>
+  );
 }
 
 export default function AuditTab({ ontologyId }: { ontologyId: string }) {
-  const { t } = useTranslation()
-  const pollRef = useRef<(() => void) | null>(null)
+  const [task, setTask] = useState<AuditTask | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const activeTaskStatus = task?.status;
 
-  const [modelId, setModelId] = useState('')
-  const [modelName, setModelName] = useState('')
-  const [pollTimedOut, setPollTimedOut] = useState(false)
-  const [taskStatus, setTaskStatus] = useState<any>(() => loadSavedTask(ontologyId))
-  const [traceOpen, setTraceOpen] = useState(false)
-
-  const { data: models } = useQuery({ queryKey: ['models'], queryFn: () => modelApi.list() as any })
-  const selectedModel = (models as any[] | undefined)?.find((m: any) => m.id === modelId)
-
-  const auditMut = useMutation({
-    mutationFn: () => ontologyApi.startAudit(ontologyId, { model_id: modelId, model_name: modelName }),
-  })
-
-  const startPoll = (taskId: string) => {
-    pollRef.current?.()
-    setPollTimedOut(false)
-    let attempts = 0
-    let cancelled = false
-    pollRef.current = () => { cancelled = true }
-
-    const poll = async () => {
-      if (cancelled) return
-      if (attempts++ > 600) { setPollTimedOut(true); return }
-      try {
-        const status: any = await ontologyApi.getAuditStatus(ontologyId, taskId)
-        if (cancelled) return
-        const merged = { ...status, task_id: taskId }
-        setTaskStatus(merged)
-        saveTask(ontologyId, merged)
-        if (status.status === 'completed' || status.status === 'failed') {
-          setPollTimedOut(false)
-          return
-        }
-        setTimeout(poll, 2000)
-      } catch {
-        if (!cancelled) setTimeout(poll, 3000)
-      }
+  const load = useCallback(async () => {
+    try {
+      const result = await apiClientV2.get<{ tasks?: AuditTask[] }>("/audits", {
+        params: { ontology_id: ontologyId },
+      });
+      setTask(result.tasks?.[0] || null);
+    } catch (error) {
+      setMessage(messageFor(error));
     }
-    poll()
-  }
+  }, [ontologyId]);
 
   useEffect(() => {
-    const saved = loadSavedTask(ontologyId)
-    if (saved?.task_id && saved.status !== 'completed' && saved.status !== 'failed') {
-      setTraceOpen(true)
-      startPoll(saved.task_id as string)
-    }
-    return () => { pollRef.current?.() }
-  }, [ontologyId])
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+  useEffect(() => {
+    if (!activeTaskStatus || !["queued", "running", "cancel_requested"].includes(activeTaskStatus)) return;
+    const timer = window.setInterval(() => void load(), 1600);
+    return () => window.clearInterval(timer);
+  }, [activeTaskStatus, load, task?.id]);
 
-  const handleAudit = async () => {
-    setPollTimedOut(false)
-    setTraceOpen(true)
-    setTaskStatus({ status: 'running', progress: { stage: 'queued', pct: 0 }, error: null, react_trace: [] })
+  const start = async () => {
+    setBusy(true);
+    setMessage("");
     try {
-      const res: any = await auditMut.mutateAsync()
-      saveTask(ontologyId, { status: 'running', progress: { stage: 'queued', pct: 0 }, task_id: res.task_id })
-      startPoll(res.task_id)
-    } catch (e: any) {
-      setTaskStatus({ status: 'failed', progress: { stage: 'error', pct: 0 }, error: String(e?.detail || e?.message || e) })
+      setTask(await apiClientV2.post<AuditTask>("/audits", { ontology_id: ontologyId }));
+      setSelected([]);
+    } catch (error) {
+      setMessage(messageFor(error));
+    } finally {
+      setBusy(false);
     }
+  };
+
+  const cancel = async () => {
+    if (!task) return;
+    setBusy(true);
+    try {
+      setTask(await apiClientV2.post<AuditTask>(`/audits/${task.id}/cancel`));
+    } catch (error) {
+      setMessage(messageFor(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retry = async () => {
+    if (!task) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      setTask(await apiClientV2.post<AuditTask>(`/audits/${task.id}/retry`));
+      setSelected([]);
+    } catch (error) {
+      setMessage(messageFor(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const ignore = async (index: number) => {
+    if (!task) return;
+    setBusy(true);
+    try {
+      setTask(
+        await apiClientV2.post<AuditTask>(
+          `/audits/${task.id}/findings/${index}/ignore?note=${encodeURIComponent("人工确认后忽略")}`,
+        ),
+      );
+      setSelected((current) => current.filter((value) => value !== index));
+    } catch (error) {
+      setMessage(messageFor(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createRepairDraft = async () => {
+    if (!task || selected.length === 0) return;
+    setBusy(true);
+    try {
+      const result = await apiClientV2.post<{ draft?: AuditTask["repair_draft"] }>(
+        `/audits/${task.id}/repair-draft`,
+        {
+          finding_indices: selected,
+          note: "由质量审查页勾选生成",
+        },
+      );
+      setTask((current) =>
+        current ? { ...current, repair_draft: result.draft || null } : current,
+      );
+      setMessage("修订草案已生成");
+    } catch (error) {
+      setMessage(messageFor(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmRepairDraft = async () => {
+    if (!task?.repair_draft) return;
+    setBusy(true);
+    try {
+      await apiClientV2.post(`/audits/${task.id}/repair-draft/confirm`, {
+        note: "质量审查页确认修订",
+      });
+      setMessage("已创建新修订并排队复审");
+      await load();
+    } catch (error) {
+      setMessage(messageFor(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!task) {
+    return (
+      <section className="wb-surface p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="wb-section-kicker">自动审查</div>
+            <h2 className="wb-section-title mt-1">质量审查</h2>
+            <p className="mt-2 text-sm text-slate-500">当前本体尚无审查记录。</p>
+          </div>
+          <button type="button" className="wb-button-primary" disabled={busy} onClick={start}>
+            {busy && <Loader2 size={14} className="animate-spin" />}
+            开始本地审查
+          </button>
+        </div>
+        {message && <p className="mt-3 text-xs text-red-700">{message}</p>}
+      </section>
+    );
   }
 
-  const isAuditing = taskStatus && taskStatus.status !== 'completed' && taskStatus.status !== 'failed'
-  const currentPct = taskStatus?.progress?.pct ?? 0
-  const currentStage = taskStatus?.progress?.stage ?? ''
-  const trace = taskStatus?.react_trace ?? []
-  const showTrace = trace.length > 0 || (isAuditing && currentStage === 'running react agent')
-  const traceThinking = isAuditing && currentStage === 'running react agent'
-
+  const findings = Array.isArray(task.findings) ? task.findings : [];
+  const active = ["queued", "running", "cancel_requested"].includes(task.status);
+  const pct = task.progress?.pct ?? 0;
   return (
-    <div className="space-y-5">
-      {/* Config */}
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="font-semibold mb-1">{t('audit.title')}</h3>
-        <p className="text-xs text-gray-400 mb-4">{t('audit.description')}</p>
-
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">{t('audit.model_label')}</label>
-            <select value={modelId} onChange={e => { setModelId(e.target.value); setModelName('') }}
-              className="w-full border rounded-lg px-3 py-2 text-sm">
-              <option value="">— {t('audit.model_label')} —</option>
-              {(models as any[] || []).map((m: any) => (
-                <option key={m.id} value={m.id}>{m.name}（{m.provider}）</option>
-              ))}
-            </select>
-          </div>
-
-          {selectedModel && (
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t('audit.model_specific')}</label>
-              <select value={modelName} onChange={e => setModelName(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm">
-                <option value="">— {t('audit.model_specific')} —</option>
-                {(selectedModel.models || []).map((m: string) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="pt-1">
-            <button
-              onClick={handleAudit}
-              disabled={!modelId || !modelName || auditMut.isPending || !!isAuditing}
-              className="px-5 py-2 bg-black text-white rounded-lg text-sm disabled:opacity-40 flex items-center gap-2">
-              {isAuditing && <Loader2 size={14} className="animate-spin" />}
-              {isAuditing ? t('audit.auditing') : t('audit.start')}
-            </button>
-          </div>
+    <section className="wb-surface p-5 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="wb-section-kicker">自动审查 · {task.model_name || "qwen3.5:0.8b"}</div>
+          <h2 className="wb-section-title mt-1">质量审查</h2>
+          <p className="mt-1 text-xs text-slate-500">{task.progress?.stage || "等待任务开始"}</p>
         </div>
+        <span className={`wb-status ${statusClass(task.status)}`}>
+          {statusLabel(task.status)} · {pct}%
+        </span>
       </div>
 
-      {/* Progress */}
-      {taskStatus && (
-        <div className={`bg-white rounded-xl border p-6 ${taskStatus.status === 'failed' ? 'border-red-200 bg-red-50' : ''}`}>
-          <h3 className="font-semibold mb-4">{t('audit.progress')}</h3>
+      {active && (
+        <div className="space-y-2">
+          <div className="h-1.5 overflow-hidden rounded bg-slate-100">
+            <div className="h-full bg-blue-600 transition-all duration-500" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <Loader2 size={13} className="animate-spin" />
+            任务正在读取本体内容并执行检查
+          </div>
+        </div>
+      )}
+      {task.error && (
+        <div className="wb-alert wb-alert-warning text-xs">
+          <AlertCircle size={14} />
+          {task.error}
+        </div>
+      )}
 
-          {taskStatus.status === 'failed' ? (
-            <div className="flex items-start gap-2 text-red-600">
-              <XCircle size={16} className="mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-medium">{t('audit.failed')}</p>
-                <p className="text-xs mt-0.5 text-red-500">{taskStatus.error}</p>
-              </div>
-            </div>
+      <ToolTrace trace={task.react_trace || []} active={active} />
+
+      {task.status === "completed" && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">审查发现 · {findings.length}</span>
+            {findings.length === 0 && <CheckCircle2 size={17} className="text-emerald-600" />}
+          </div>
+          {findings.length === 0 ? (
+            <div className="wb-empty py-5">未发现需要处理的项目</div>
           ) : (
-            <>
-              <div className="flex items-center mb-5 overflow-x-auto pb-1">
-                {STAGE_KEYS.map((stage, i) => {
-                  const stagePct = STAGE_PCT[stage.key] ?? 0
-                  const passed = currentPct >= stagePct
-                  const done = taskStatus.status === 'completed'
-                  return (
-                    <div key={stage.key} className="flex items-center flex-shrink-0">
-                      <div className="flex flex-col items-center gap-1">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium transition-colors ${
-                          passed ? done ? 'bg-green-500 text-white' : 'bg-black text-white' : 'bg-gray-100 text-gray-400'
-                        }`}>
-                          {passed && done ? <CheckCircle size={14} /> : i + 1}
-                        </div>
-                        <span className={`text-xs whitespace-nowrap ${passed ? 'text-gray-700' : 'text-gray-400'}`}>
-                          {t(stage.i18nKey)}
-                        </span>
-                      </div>
-                      {i < STAGE_KEYS.length - 1 && (
-                        <ChevronRight size={14} className="text-gray-300 mx-2 flex-shrink-0 mb-4" />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="w-full bg-gray-100 rounded-full h-1.5 mb-2">
-                <div
-                  className={`h-1.5 rounded-full transition-all duration-700 ${
-                    taskStatus.status === 'completed' ? 'bg-green-500' : 'bg-black'
-                  }`}
-                  style={{ width: `${currentPct}%` }}
-                />
-              </div>
-              <p className="text-xs text-gray-400 text-right">{currentPct}%</p>
-
-              {pollTimedOut && (
-                <div className="mt-3 flex items-center gap-2 text-xs text-amber-600">
-                  <AlertCircle size={13} />
-                  <span>{t('audit.poll_timeout')}</span>
-                  <button onClick={() => taskStatus?.task_id && startPoll(taskStatus.task_id)}
-                    className="underline ml-1">{t('audit.resume_poll')}</button>
+            findings.map((finding, index) => (
+              <article
+                key={`${displayText(finding.title) || finding.category || "finding"}-${index}`}
+                className={`rounded border p-3 ${finding.disposition === "ignored" ? "border-slate-200 bg-slate-50 opacity-60" : "border-slate-200 bg-white"}`}
+              >
+                <div className="flex items-start gap-2">
+                  <input
+                    aria-label={`选择发现 ${index + 1}`}
+                    type="checkbox"
+                    disabled={busy || finding.disposition === "ignored"}
+                    checked={selected.includes(index)}
+                    onChange={() =>
+                      setSelected((current) =>
+                        current.includes(index)
+                          ? current.filter((value) => value !== index)
+                          : [...current, index],
+                      )
+                    }
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800">{displayText(finding.title, finding.category || `发现 ${index + 1}`)}</p>
+                    {finding.description && <p className="mt-1 text-xs text-slate-500">{displayText(finding.description)}</p>}
+                    {finding.affected_items?.length ? <p className="mt-2 text-xs text-slate-500">涉及：{finding.affected_items.join(" · ")}</p> : null}
+                  </div>
+                  {finding.disposition === "ignored" ? (
+                    <span className="text-xs text-slate-400">已忽略</span>
+                  ) : (
+                    <button type="button" disabled={busy} className="text-xs text-slate-500 underline" onClick={() => void ignore(index)}>忽略</button>
+                  )}
                 </div>
-              )}
-            </>
+              </article>
+            ))
           )}
         </div>
       )}
 
-      {/* Live trace during audit */}
-      {showTrace && (
-        <TracePanel
-          trace={trace}
-          open={traceOpen}
-          onToggle={() => setTraceOpen(o => !o)}
-          t={t}
-          thinking={traceThinking}
-        />
-      )}
-
-      {/* Findings */}
-      {taskStatus?.status === 'completed' && taskStatus?.findings != null && (
-        <FindingsReport findings={taskStatus.findings} t={t} />
-      )}
-    </div>
-  )
+      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+        {active && <button type="button" className="wb-button-secondary text-xs" disabled={busy} onClick={cancel}>取消审查</button>}
+        {["failed", "waiting_for_model", "cancelled"].includes(task.status) && <button type="button" className="wb-button-secondary text-xs" disabled={busy} onClick={retry}>重新审查</button>}
+        {task.status === "completed" && findings.length > 0 && (
+          <button type="button" className="wb-button-secondary text-xs" disabled={busy || selected.length === 0} onClick={createRepairDraft}>生成修订草案</button>
+        )}
+        {task.repair_draft && (
+          <button type="button" className="wb-button-primary text-xs" disabled={busy} onClick={confirmRepairDraft}>确认并复审</button>
+        )}
+        {task.status === "completed" && <button type="button" className="wb-button-secondary text-xs" disabled={busy} onClick={start}>再次审查</button>}
+      </div>
+      {message && <p className="text-xs text-emerald-700">{message}</p>}
+      {task.status === "failed" && <p className="flex items-center gap-1 text-xs text-red-700"><XCircle size={13} />任务未完成；修复模型服务后可重新审查。</p>}
+    </section>
+  );
 }

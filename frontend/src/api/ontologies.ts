@@ -1,4 +1,4 @@
-import { apiClient } from './client'
+import { apiClient, apiClientV2 } from './client'
 import type { OntologyListItem, OntologyDetail, Entity, LogicRule, Action, UploadedFile, Prompt, ModelConfig } from '@/types/ontology'
 
 export const ontologyApi = {
@@ -85,6 +85,11 @@ export const promptApi = {
 
 export const modelApi = {
   list: () => apiClient.get<ModelConfig[]>('/models'),
+  localProbe: () => apiClient.get<{ configured: boolean; provider: string; model: string; api_base: string; probe_endpoint: string; reachable: boolean; installed: boolean; ready: boolean; models: string[]; error?: string; install_command: string }>('/models/local/probe'),
+  // Refreshing the settings page must never make an implicit cloud-model
+  // request.  It only probes the local Ollama route; MiniMax stays in the
+  // explicit "待云端验证" state until an authorized operator tests it.
+  routeStatus: () => apiClientV2.get<{ gateway: { configured: boolean; reachable: boolean; models: string[]; error?: string }; routes: Array<{ alias: string; purpose: string; configured: boolean; gateway_reachable: boolean; upstream_authorized: boolean | null; available: boolean; provider?: string | null; error?: string | null }> }>('/model-routes/status?probe_local=true'),
   create: (body: Partial<ModelConfig> & { api_key?: string }) => apiClient.post<ModelConfig>('/models', body),
   get: (id: string) => apiClient.get<ModelConfig>(`/models/${id}`),
   update: (id: string, body: Partial<ModelConfig> & { api_key?: string }) => apiClient.put<ModelConfig>(`/models/${id}`, body),

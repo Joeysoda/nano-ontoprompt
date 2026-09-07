@@ -2,6 +2,10 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     environment: str = "development"  # development | production
+    # Authentication remains JWT by default.  The desktop compose overlay
+    # explicitly opts into ``local_single_user``; this keeps a plain backend
+    # start from silently changing the security boundary.
+    auth_mode: str = "jwt"  # local_single_user | jwt
     database_url: str = "sqlite:///./ontoprompt.db"
     redis_url: str = "redis://localhost:6379/0"
     secret_key: str = "dev-secret-key"

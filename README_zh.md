@@ -1,13 +1,18 @@
-# nano-ontoprompt
+# 本体构筑工作台（Nano-OntoPrompt）
+
+> 当前可验收分支：`factorynet-temporal-workbench`。本分支提供 C-MAPSS FD001、FactoryNet CNC、I-BADAS 三类构筑闭环，并使用 Docker Compose 启动本地工作台。
+>
+> 部署、端口、Ollama、Celery、LiteLLM、数据库和后端启动说明请先阅读：[Docker 与后端部署说明](./DEPLOYMENT_WORKBENCH_ZH.md)。
 
 **[English Documentation](./README.md)**
 
-一个轻量级、借鉴 Palantir Foundry 设计的领域本体构建平台。接入数据源,经过可视化转换管道处理,将清洗后的数据集映射为实体类型,最终生成可探索的知识图谱——包含实体、关系、逻辑规则与可执行动作。
+一个用于本地演示的领域本体构筑工作台。接入数据源后，经过数据选择、确定性处理、映射确认和后台构建，形成可查看的实体类型、真实实例、关系、逻辑规则与来源证据。
 
-支持两条构建路径:
+当前分支的主要构筑入口:
 
-- **Pipeline Mapping**(v2)— 完整数据集成链路:`数据接入 → 原始存储 → 转换 → Curated 数据集 → 本体映射`
-- **简易 LLM 提取**(v1)— 上传文档,选择提示词和模型,一键提取知识图谱
+- **常规数据** — NASA C-MAPSS FD001（5 台设备 × 每台前 20 个 cycle，共 100 条读数）
+- **时序数据** — FactoryNet CNC（`Ordinal + episode_id + time_s`）
+- **多模态数据** — I-BADAS（12 组样例，RGB、深度、掩码、点云和元数据）
 
 ---
 
@@ -22,7 +27,6 @@
 | **实体(Object Type)** | 从 Curated 数据集映射出的核心概念,每行数据一个节点 | `Supplier`、`PurchaseOrder` |
 | **关系(Link Type)** | 实体间的边,由外键检测与跨数据集值重叠推断 | `PurchaseOrder -[HAS_SUPPLIER]-> Supplier` |
 | **逻辑规则(Logic)** | 规则层:从 schema 约束、质量报告、状态字段和图关系中发现的映射/校验/状态/推断/自动化规则 | `amount > 0`、`库存状态` 状态机 |
-| **动作(Action)** | 可执行行为层:基于实体类型与关系生成的 CRUD、状态流转、链接维护动作,含提交校验与审计快照 | `Approve Record`、`Link Order to Supplier` |
 
 **典型场景:** 供应链知识建模、医疗概念提取、金融合规规则、法律文档结构化——任何需要把异构数据转化为结构化知识的领域。
 
@@ -36,16 +40,15 @@
 - **连接器** — 文件上传、MySQL/PostgreSQL、MongoDB、REST API(支持增量同步)
 - **Curated 数据集** — 质量评分、人工审核(仅管理员可审批)、版本管理
 
-### 本体(v2)
-- **自动映射引擎** — 数据集→实体类型、列→属性、外键→关系类型,自动推断基数
-- **跨数据集关系推断** — 精确外键匹配、值格式容错(`SUP-001` ↔ `SUP001`)、备用键匹配(如文档中提到的公司名直接连到 Supplier 实体)、可选 LLM 辅助语义链接(`ENABLE_LLM_FK_DETECTION=1`)
-- **Logic & Actions 发现机制** — 规则与动作从映射、schema 约束、状态字段和关系中自动发现,经 草稿 → 审核 → 发布 流程上线
-- **知识图谱** — Cytoscape.js 交互式网状视图,可一键隐藏孤立节点;Neo4j 可用时由其驱动,否则回退 SQLite
-- **搜索** — 关键词搜索(ChromaDB 不可用时回退 SQL)与语义搜索(ChromaDB)
+### 本体构筑(v2)
+- **五步工作流** — 数据集 → 内容选择 → 处理配置 → 本体映射 → 确认构建
+- **统一物化** — 实体类型、真实实例、关系、逻辑规则和来源证据在同一修订中发布
+- **本体查看** — 中央关系画布、右侧 Inspector、实体/属性/关系搜索和来源证据定位
+- **严格分类** — 常规、时序、多模态本体只能追加同类数据
 
 ### 质量审查(ReAct Agent)
-- **LLM 驱动多步审查** — AI Agent 系统检查本体质量:孤立实体、断链引用、缺失关系、低覆盖实体类型
-- **工具调用架构** — 8 个内置检查工具(摘要、覆盖率、引用校验、模式推断)可链式调用
+- **本地模型多步审查** — qwen3.5:0.8b 检查孤立实体、断链引用、缺失关系和低覆盖类型
+- **工具调用架构** — 只读检查工具记录摘要、覆盖率、引用校验和规则模式观察结果
 - **审查报告** — 按严重级别分类的问题及修复建议,持久化为审计任务
 
 ### 平台
@@ -84,18 +87,16 @@
 
 ## 快速开始
 
-### 方式一 — Docker Compose(完整 v2 栈)
+### 方式一 — Docker Compose（本地工作台）
 
 ```bash
-git clone https://github.com/jingw2/nano-ontoprompt.git
-cd nano-ontoprompt
-cp .env.example .env          # 生产环境务必修改密钥
-docker compose -f docker-compose.v2.yml up --build
+cp .env.example .env
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
-将启动 PostgreSQL、Redis、Neo4j、MinIO、ChromaDB、后端与前端。轻量 v1 栈可改用 `docker-compose.yml`。
+本地演示端口为前端 `15173`、后端 `18080`；同时启动 PostgreSQL、Redis、Neo4j、MinIO、ChromaDB、Celery worker/beat 和 LiteLLM。
 
-打开 [http://localhost:5173](http://localhost:5173),默认账号 `admin / admin123`。
+打开 [http://127.0.0.1:15173/overview](http://127.0.0.1:15173/overview)。Ollama 与 `qwen3.5:0.8b` 的安装、M3 凭证和安全配置见 [Docker 与后端部署说明](./DEPLOYMENT_WORKBENCH_ZH.md)。
 
 ### 方式二 — 手动启动(最小化,无需外部服务)
 
@@ -115,21 +116,17 @@ npm install
 npm run dev
 ```
 
-Neo4j / MinIO / ChromaDB / Redis 均为可选——缺失时系统自动使用 SQLite 图谱回退、本地文件存储与同步管道执行。
+完整本地栈建议直接使用 Docker；手动启动时外部服务地址必须在环境变量中显式配置。
 
 ---
 
-## 使用流程(Pipeline Mapping 路径)
+## 使用流程
 
-1. **配置模型** — *模型 → 添加模型*:填写提供商、API Key、Base URL,并标记用途(提取 / VLM / FK 检测)。
-2. **创建管道** — *数据管道 → 新建*:在画布上编排 连接器/存储器/转换器/输出 节点,挂载数据文件,选择转换路径,点击**运行**。
-3. **审核数据** — *数据管道 → Curated*:查看质量评分与预览,管理员审批通过。
-4. **创建本体** — *本体 → 新建*,构建方式选 **Pipeline Mapping**:选择已审批的 Curated 数据集,逐个映射为实体类型并指定主键。
-5. **构建** — 系统自动推断跨数据集关系,并发现 Logic 规则与 Actions 草稿。
-6. **探索** — *知识图谱* 标签页查看网状结构;*实体 / 逻辑规则 / 动作* 标签页查看详情、完成审核并发布。
-7. **导出** — 在 *基本信息* 标签页导出 JSON、YAML、CSV、Turtle (RDF) 或 HTML。
-
-**简易 LLM 提取**路径:新建本体时选 `simple_llm` 模式,在 *文件* 标签页上传文档,选择提示词与模型后运行提取。
+1. 打开“数据构筑”，选择常规、时序或多模态入口。
+2. 选择内置案例或导入来源，再选择字段、时间范围、样例和模态。
+3. 选择 `standard` 或 `private`，确认发送范围后生成映射。
+4. 逐项确认实体类型、属性、关系和逻辑规则。
+5. 启动构建任务；完成后进入“本体”查看关系、实例、证据和质量审查。
 
 ---
 
@@ -157,13 +154,13 @@ nano-ontoprompt/
 │   ├── scripts/                # 一次性调试/演示/测试脚本
 │   └── src/
 │       ├── pages/pipelines/    # 管道列表 + 画布构建器
-│       ├── pages/ontologies/   # 本体详情: 图谱 / 实体 / 逻辑 / 动作 / 审查
-│       ├── pages/data-management/  # 结构化数据浏览器 + Curated 详情面板
+│       ├── pages/ontologies/   # 本体关系 / 实体 / 逻辑规则 / 质量审查
+│       ├── pages/data-management/  # 常规 / 时序 / 多模态五步构筑
 │       └── api/                # Axios 客户端 (v1 + v2)
 ├── scripts/
 │   └── data/                   # 数据导入与实体关联脚本 (SNOMED、供应链)
-├── docker-compose.yml          # v1 轻量栈
-├── docker-compose.v2.yml       # 完整栈: Postgres + Redis + Neo4j + MinIO + Chroma + LiteLLM
+├── docker-compose.yml          # 基础服务定义
+├── docker-compose.local.yml    # 本地端口、单用户、Celery、LiteLLM 和 Ollama 配置
 ├── litellm_config.yaml         # LiteLLM 代理配置
 ├── ONTOLOGY.md                 # 架构设计指南
 └── test_data/                  # 示例数据集与 E2E 验收脚本
@@ -201,8 +198,12 @@ ENABLE_LLM_FK_DETECTION=0
 
 ## 故障排查
 
-**前端容器报 `AggregateError [ECONNREFUSED]`,登录失败。**
-拉取最新代码 — Vite 代理已通过 `VITE_API_PROXY_TARGET` 在 Docker 内指向 `http://backend:8000`。然后重建: `docker compose up -d --build frontend`。
+**前端容器报 `AggregateError [ECONNREFUSED]`。**
+确认使用 `docker-compose.yml` 与 `docker-compose.local.yml` 的组合，并重建：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build frontend backend
+```
 
 **已有部署用 `admin / admin123` 登录失败。**
 admin 用户用旧的默认密码 seed,需要重置:
@@ -224,7 +225,7 @@ cd backend && python scripts/reset_admin_password.py
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jingw2/nano-ontoprompt&type=Date)](https://star-history.com/#jingw2/nano-ontoprompt&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Joeysoda/nano-ontoprompt&type=Date)](https://star-history.com/#Joeysoda/nano-ontoprompt&Date)
 
 ---
 

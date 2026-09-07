@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -17,8 +17,10 @@ class ConstructionRun(Base):
     ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False)
     dataset_id: Mapped[str | None] = mapped_column(String, ForeignKey("v2_datasets.id", ondelete="SET NULL"), nullable=True)
     mode: Mapped[str] = mapped_column(String(40), nullable=False)  # temporal|multimodal|quality_benchmark
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="queued")
     model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    revision_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     progress: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     metrics: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -43,6 +45,8 @@ class EvidenceRef(Base):
     source_file: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_row_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     source_media_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_sample_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    revision_id: Mapped[str | None] = mapped_column(String, nullable=True)
     extractor: Mapped[str] = mapped_column(String(40), nullable=False)  # rule|llm|ocr|bridge_fallback
     model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)

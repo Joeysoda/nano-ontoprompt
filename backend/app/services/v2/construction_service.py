@@ -24,6 +24,8 @@ def serialize_run(run: ConstructionRun) -> dict[str, Any]:
         "mode": run.mode,
         "status": run.status,
         "model_name": run.model_name,
+        "revision_id": run.revision_id,
+        "cancel_requested": bool(run.cancel_requested),
         "config": run.config or {},
         "progress": run.progress or {},
         "metrics": run.metrics or {},
@@ -70,6 +72,7 @@ def update_run(
     metrics: dict[str, Any] | None = None,
     artifact_uri: str | None = None,
     error: str | None = None,
+    cancel_requested: bool | None = None,
 ) -> ConstructionRun:
     if status is not None:
         run.status = status
@@ -86,6 +89,8 @@ def update_run(
         run.artifact_uri = artifact_uri
     if error is not None:
         run.error = error
+    if cancel_requested is not None:
+        run.cancel_requested = cancel_requested
     run.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(run)
@@ -102,7 +107,9 @@ def add_evidence(
     source_file: str | None = None,
     source_row: int | None = None,
     source_media_id: str | None = None,
+    source_sample_id: str | None = None,
     source_dataset_version: str | None = None,
+    revision_id: str | None = None,
     model_name: str | None = None,
     confidence: float | None = None,
     confidence_method: str = "not_calibrated",
@@ -119,7 +126,9 @@ def add_evidence(
         source_file=source_file,
         source_row_id=str(source_row) if source_row is not None else None,
         source_media_id=source_media_id,
+        source_sample_id=source_sample_id,
         source_version=source_dataset_version,
+        revision_id=revision_id or getattr(run, "revision_id", None),
         extractor=extractor,
         model_name=model_name,
         confidence=confidence,
@@ -143,6 +152,8 @@ def serialize_evidence(ref: EvidenceRef) -> dict[str, Any]:
         "source_file": ref.source_file,
         "source_row": ref.source_row_id,
         "source_media_id": ref.source_media_id,
+        "source_sample_id": ref.source_sample_id,
+        "revision_id": ref.revision_id,
         "source_dataset_version": ref.source_version,
         "extractor": ref.extractor,
         "model_name": ref.model_name,

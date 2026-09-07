@@ -52,7 +52,12 @@ def install_factorynet_dataset(db: Session) -> dict:
         raise ValueError("FactoryNet 文件为空或没有列")
 
     svc = DatasetService(db)
-    dataset = svc.create_dataset(FACTORYNET_DATASET_NAME, "structured")
+    dataset = svc.create_dataset(
+        FACTORYNET_DATASET_NAME,
+        "structured",
+        data_class="temporal",
+        schema_json={"source_id": FACTORYNET_SOURCE_ID, "temporal_source": True},
+    )
     version = svc.create_version(dataset.id, raw, rowcount=records)
     # DatasetService assigns ``latest_version_id`` before the generated UUID
     # is materialized on some SQLAlchemy versions. Set it again after the
@@ -71,6 +76,7 @@ def install_factorynet_dataset(db: Session) -> dict:
         "records": records,
         "columns": columns,
         "row_groups": row_groups,
+        "temporal_source": True,
         "description": "CNC 三轴铣削的 FactoryNet S-E-F-C 工业时序文件",
     }
     dataset.schema_json = manifest

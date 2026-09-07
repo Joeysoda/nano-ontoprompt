@@ -9,6 +9,7 @@ class OntologyCreate(BaseModel):
     domain: str
     description: Optional[str] = None
     build_mode: Optional[str] = "simple_llm"
+    data_class: Optional[str] = None
 
     @field_validator("domain")
     @classmethod
@@ -24,6 +25,7 @@ class OntologyUpdate(BaseModel):
     status: Optional[str] = None
     version: Optional[str] = None
     build_mode: Optional[str] = None
+    data_class: Optional[str] = None
 
 class OntologyOut(BaseModel):
     id: str
@@ -33,6 +35,8 @@ class OntologyOut(BaseModel):
     version: str
     status: str
     build_mode: Optional[str] = "simple_llm"
+    data_class: str = "regular"
+    current_revision_id: Optional[str] = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -45,6 +49,8 @@ class OntologyListItem(BaseModel):
     version: str
     status: str
     build_mode: Optional[str] = "simple_llm"
+    data_class: str = "regular"
+    current_revision_id: Optional[str] = None
     entity_count: int = 0
     relation_count: int = 0
     created_by: str

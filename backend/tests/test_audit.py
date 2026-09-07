@@ -2,7 +2,8 @@
 审计服务单元测试 — 覆盖 ReAct agent 的所有工具执行逻辑（不依赖 LLM 调用）
 """
 import json
-from app.services.audit_service import _execute_tool, _tool_definitions, DOMAIN_RELATION_PATTERNS
+from app.services import audit_service
+from app.services.audit_service import _execute_tool, _ground_findings, _tool_definitions, DOMAIN_RELATION_PATTERNS, run_react_audit
 
 
 # ── 测试数据夹具 ──────────────────────────────────────────────────────────────
@@ -16,8 +17,8 @@ def _make_snapshot(entities=None, relations=None, logic_rules=None, actions=None
     }
 
 
-def _make_entity(id_="e1", name_cn="供应商", type_="Organization"):
-    return {"id": id_, "name_cn": name_cn, "type": type_}
+def _make_entity(id_="e1", name_cn="供应商", type_="Organization", **extra):
+    return {"id": id_, "name_cn": name_cn, "type": type_, **extra}
 
 
 def _make_relation(source_entity="e1", target_entity="e2", source_name="供应商", target_name="原材料", rel_type="supply"):
@@ -34,24 +35,16 @@ def _make_logic_rule(id_="l1", name_cn="超标检查", linked_entities=None):
     return {"id": id_, "name_cn": name_cn, "linked_entities": linked_entities or []}
 
 
-def _make_action(name_cn="发送预警", linked_entities=None, linked_logic_ids=None):
-    return {
-        "name_cn": name_cn,
-        "linked_entities": linked_entities or [],
-        "linked_logic_ids": linked_logic_ids or [],
-    }
-
-
 # ── Tool definitions ─────────────────────────────────────────────────────────
 
 def test_tool_definitions_count():
-    """应有 8 个工具定义"""
+    """本体审查只暴露实体、关系、规则和证据工具。"""
     tools = _tool_definitions()
-    assert len(tools) == 8
+    assert len(tools) == 7
     names = {t["name"] for t in tools}
     assert names == {
         "get_ontology_summary", "list_isolated_entities", "check_relation_refs",
-        "check_logic_refs", "check_action_refs", "get_entity_coverage",
+        "check_logic_refs", "get_entity_coverage",
         "find_missing_relations", "submit_findings",
     }
 
@@ -150,27 +143,63 @@ def test_check_logic_refs_detects_missing_entity():
     assert "预算" in result["broken_logic_refs"][0]["missing_entities"]
 
 
-# ── check_action_refs ────────────────────────────────────────────────────────
-
-def test_check_action_refs_valid():
-    e = _make_entity("e1", "供应商", "Organization")
-    rule = _make_logic_rule("l1", "检查")
-    action = _make_action("预警", linked_entities=["供应商"], linked_logic_ids=["l1"])
-    s = _make_snapshot([e], [], [rule], [action])
-
-    result = json.loads(_execute_tool("check_action_refs", {}, s))
+def test_check_logic_refs_accepts_english_display_alias_without_spacing():
+    entity = _make_entity("e1", "Sensor Readings", "EntityType", name_en="SensorReadings")
+    rule = _make_logic_rule("l1", "传感器引用", linked_entities=["SensorReadings"])
+    result = json.loads(_execute_tool("check_logic_refs", {}, _make_snapshot([entity], [], [rule])))
     assert result["count"] == 0
 
 
-def test_check_action_refs_detects_broken_both():
-    action = _make_action("预警", linked_entities=["不存在"], linked_logic_ids=["missing"])
-    s = _make_snapshot([], [], [], [action])
+def test_ground_findings_rejects_unproven_model_suggestion():
+    trace = [
+        {"tool_name": "get_ontology_summary", "observation": json.dumps({"evidence_count": 1})},
+        {"tool_name": "list_isolated_entities", "observation": json.dumps({"count": 0, "isolated_entities": []})},
+        {"tool_name": "check_relation_refs", "observation": json.dumps({"count": 0, "broken_relations": []})},
+        {"tool_name": "check_logic_refs", "observation": json.dumps({"count": 0, "broken_logic_refs": []})},
+        {"tool_name": "get_entity_coverage", "observation": json.dumps({"low_coverage_types": []})},
+    ]
+    proposed = [{"severity": "critical", "category": "broken_relation_refs", "title": "臆测", "description": "", "affected_items": []}]
+    assert _ground_findings(proposed, trace) == []
 
-    result = json.loads(_execute_tool("check_action_refs", {}, s))
-    assert result["count"] == 1
-    b = result["broken_action_refs"][0]
-    assert "不存在" in b["missing_entities"]
-    assert "missing" in b["missing_logic_ids"]
+
+def test_ground_findings_formats_observed_broken_logic_reference():
+    trace = [
+        {"tool_name": "get_ontology_summary", "observation": json.dumps({"evidence_count": 1})},
+        {"tool_name": "check_logic_refs", "observation": json.dumps({
+            "count": 1,
+            "broken_logic_refs": [{"rule_name": "转速校验", "missing_entities": ["缺失实体"]}],
+        }, ensure_ascii=False)},
+    ]
+    proposed = [{"severity": "info", "category": "broken_logic_refs", "title": "模型标题", "description": "模型描述", "affected_items": []}]
+    findings = _ground_findings(proposed, trace)
+    assert findings == [{
+        "severity": "critical",
+        "category": "broken_logic_ref",
+        "title": "发现 1 条逻辑规则引用无法解析",
+        "description": "逻辑规则引用了当前本体中不存在的实体；请修正规则绑定后重新审查。",
+        "affected_items": ["转速校验"],
+    }]
+
+
+def test_react_audit_records_a_bounded_fallback_for_unstructured_model_reply(monkeypatch):
+    """模型未调用工具时，审查仍应保留只读核验结果，而不是伪称模型不可用。"""
+    monkeypatch.setattr(
+        audit_service,
+        "_call_openai_with_tools",
+        lambda *_args, **_kwargs: {"type": "text", "content": "未检测到问题"},
+    )
+    findings, trace = run_react_audit(
+        _make_snapshot([_make_entity("e1", "设备")]),
+        {"provider": "openai", "api_key": "test-key"},
+        "qwen3.5:0.8b",
+        max_steps=6,
+    )
+    assert findings == []
+    assert len(trace) == 6
+    fallback = json.loads(trace[-1]["observation"])
+    assert trace[-1]["tool_name"] == "submit_findings"
+    assert fallback["status"] == "fallback"
+    assert fallback["grounded_count"] == 0
 
 
 # ── get_entity_coverage ──────────────────────────────────────────────────────

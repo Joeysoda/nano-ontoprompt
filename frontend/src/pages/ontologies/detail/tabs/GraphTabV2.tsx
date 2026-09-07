@@ -1,291 +1,724 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import { apiClientV2 } from '@/api/client'
-import { Loader2, RefreshCw, Search } from 'lucide-react'
-import OntologySearchBox from '@/components/search/OntologySearchBox'
-import cytoscape from 'cytoscape'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import cytoscape from "cytoscape";
+import {
+  CircleAlert,
+  Database,
+  Loader2,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
+import { apiClientV2 } from "@/api/client";
 
-type ViewMode = 'schema' | 'instances'
-type QueryMode = 'natural' | 'cypher'
+type PropertyDefinition = {
+  id?: string;
+  name?: string;
+  label?: string;
+  type?: string;
+  isIdentifier?: boolean;
+  is_identifier?: boolean;
+  unit?: string;
+  values?: unknown[];
+  description?: string;
+  source_field?: string;
+  example?: unknown;
+};
+type OntologyNode = {
+  id: string;
+  labels: string[];
+  properties: {
+    name?: string;
+    name_cn?: string;
+    name_en?: string;
+    description?: string;
+    confidence?: number;
+    source_fields?: string[];
+    property_definitions?: PropertyDefinition[];
+    instance_count?: number;
+    instance_examples?: Array<Record<string, unknown>>;
+    evidence_count?: number;
+    evidence?: Record<string, unknown>;
+  };
+};
+type OntologyEdge = {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  label?: string;
+  properties?: {
+    name?: string;
+    description?: string;
+    cardinality?: string;
+    attributes?: PropertyDefinition[];
+    source_fields?: string[];
+    confidence?: number;
+    evidence?: Record<string, unknown>;
+  };
+};
+type Rule = {
+  id: string;
+  name: string;
+  description?: string;
+  formula?: string;
+  condition?: unknown;
+  effect?: unknown;
+};
+type GraphData = {
+  nodes: OntologyNode[];
+  edges: OntologyEdge[];
+  logic_rules: Rule[];
+  summary: {
+    entity_type_count: number;
+    property_count: number;
+    relationship_count: number;
+    logic_rule_count: number;
+    instance_count: number;
+    evidence_count: number;
+  };
+  error?: string;
+};
+type SearchItem = {
+  kind: string;
+  id: string;
+  entity_id?: string;
+  source?: string;
+  target?: string;
+  label?: string;
+  description?: string;
+};
+type SearchResult = {
+  groups?: Record<string, SearchItem[]>;
+  results?: SearchItem[];
+};
 
-interface GraphNode {
-  id: string
-  labels: string[]
-  properties: Record<string, unknown>
-  entity_type?: string
-  event_seq?: number | null
-  event_time?: string | null
-  node_kind?: string
-}
-interface GraphEdge {
-  id: string
-  source: string
-  target: string
-  type: string
-  label?: string
-  properties?: Record<string, unknown>
-  valid_from?: string | null
-  valid_to?: string | null
-}
-
-interface GraphData {
-  nodes: GraphNode[]
-  edges: GraphEdge[]
-  graph_backend?: string
-  available?: boolean
-  error?: string
-  neo4j_available?: boolean
-  fallback?: string
-  total_instances?: number
-  time_kind?: string
-}
-
-interface GraphQuality {
-  quality_score: number
-  isolated_node_count: number
-  duplicate_display_name_count?: number
-  orphan_relation_count: number
-  node_count?: number
-  edge_count?: number
-}
-
-interface CoverageData {
-  available: boolean
-  current: Array<{ equipment_id: string; valid_from?: string | null }>
-  history: Array<{ equipment_id: string; valid_from?: string | null; valid_to?: string | null }>
-}
-
-interface IntegrationStatus {
-  falkordb?: { available: boolean; host?: string; port?: number }
-  chroma?: { available: boolean; entity_count: number }
-}
-
-const TYPE_COLORS: Record<string, string> = {
-  Equipment: '#2563eb', SensorReading: '#059669', AnomalyEvent: '#dc2626',
-  ProductionLine: '#7c3aed', Supplier: '#2563eb', Product: '#059669',
-  Material: '#d97706', Organization: '#7c3aed', Order: '#dc2626',
-  Building: '#1d4ed8', Zone: '#7c3aed', Point: '#0891b2', Observation: '#059669',
-}
-const FALLBACK_COLORS = ['#2563eb', '#059669', '#dc2626', '#7c3aed', '#d97706', '#0891b2', '#db2777']
-
+const colors = [
+  "#0f4c81",
+  "#087f5b",
+  "#7d5a00",
+  "#7c3aed",
+  "#b42318",
+  "#0e7490",
+];
 function stableColor(value: string) {
-  let hash = 0
-  for (let i = 0; i < value.length; i += 1) hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0
-  return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length]
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1)
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  return colors[Math.abs(hash) % colors.length];
+}
+function stringify(value: unknown) {
+  if (value == null || value === "") return "—";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  )
+    return String(value);
+  return JSON.stringify(value, null, 2);
 }
 
-function nodeColor(node: GraphNode) {
-  const type = node.entity_type || node.labels?.[0] || 'Entity'
-  return TYPE_COLORS[type] || stableColor(type)
+function PropertyRows({ properties }: { properties: PropertyDefinition[] }) {
+  if (!properties.length)
+    return <p className="text-xs text-slate-400">暂无属性定义</p>;
+  return (
+    <div className="space-y-2">
+      {properties.map((property, index) => (
+        <div
+          key={property.id || `${property.name}-${index}`}
+          className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs"
+        >
+          <div className="flex items-center gap-2">
+            <strong className="font-medium text-slate-800">
+              {property.label || property.name || "未命名属性"}
+            </strong>
+            <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+              {property.type || "string"}
+            </span>
+            {(property.isIdentifier || property.is_identifier) && (
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800">
+                标识符
+              </span>
+            )}
+          </div>
+          <div className="mt-1 grid gap-1 text-slate-500">
+            {property.source_field && (
+              <span>来源字段：{property.source_field}</span>
+            )}
+            {property.unit && <span>单位：{property.unit}</span>}
+            {property.values && property.values.length > 0 && (
+              <span>枚举：{property.values.map(stringify).join("、")}</span>
+            )}
+            {property.description && <span>{property.description}</span>}
+            {property.example !== undefined && (
+              <span>实例样例：{stringify(property.example)}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
-  const navigate = useNavigate()
-  const { i18n } = useTranslation()
-  const containerRef = useRef<HTMLDivElement>(null)
-  const cyRef = useRef<cytoscape.Core | null>(null)
-  const [view, setView] = useState<ViewMode>('schema')
-  const [graphData, setGraphData] = useState<GraphData | null>(null)
-  const [quality, setQuality] = useState<GraphQuality | null>(null)
-  const [integrations, setIntegrations] = useState<IntegrationStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [entityType, setEntityType] = useState('')
-  const [seqFrom, setSeqFrom] = useState('')
-  const [seqTo, setSeqTo] = useState('')
-  const [relationState, setRelationState] = useState<'all' | 'current'>('all')
-  const [hideIsolated, setHideIsolated] = useState(false)
-  const [selected, setSelected] = useState<{ kind: 'node' | 'edge'; value: GraphNode | GraphEdge } | null>(null)
-  const [coverageLine, setCoverageLine] = useState('PL001')
-  const [coverage, setCoverage] = useState<CoverageData | null>(null)
-  const [coverageLoading, setCoverageLoading] = useState(false)
-  const [queryMode, setQueryMode] = useState<QueryMode>('natural')
-  const [query, setQuery] = useState('')
-  const [queryResult, setQueryResult] = useState<unknown[]>([])
-  const [queryLoading, setQueryLoading] = useState(false)
-
-  const loadGraph = () => {
-    setLoading(true)
-    setError('')
-    const params: Record<string, unknown> = { view, limit: 300, relation_state: relationState }
-    if (entityType) params.entity_type = entityType
-    if (seqFrom !== '') params.seq_from = Number(seqFrom)
-    if (seqTo !== '') params.seq_to = Number(seqTo)
-    Promise.all([
-      apiClientV2.get(`/ontologies/${ontologyId}/graph`, { params }).catch((err: any) => ({
-        nodes: [], edges: [], available: false, graph_backend: view === 'instances' ? 'falkordb' : 'sqlite-schema',
-        error: err?.detail || err?.message || '图谱加载失败',
-      })),
-      apiClientV2.get(`/ontologies/${ontologyId}/graph/quality`, { params: { source: view === 'instances' ? 'instances' : 'schema' } }).catch(() => null),
-    ]).then(([graph, q]: any[]) => {
-      setGraphData(graph)
-      setQuality(q)
-      if (graph?.error) setError(graph.error)
-    }).finally(() => setLoading(false))
-  }
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cyRef = useRef<cytoscape.Core | null>(null);
+  const [searchParams] = useSearchParams();
+  const [data, setData] = useState<GraphData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState<
+    | { kind: "node"; value: OntologyNode }
+    | { kind: "edge"; value: OntologyEdge }
+    | null
+  >(null);
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  const [hitIds, setHitIds] = useState<Set<string>>(new Set());
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await apiClientV2.get<GraphData>(
+        `/ontologies/${ontologyId}/graph`,
+        { params: { view: "ontology", limit: 1000 } },
+      );
+      setData(result);
+      if (result.error) setError(result.error);
+    } catch (err: any) {
+      setData(null);
+      setError(
+        err?.response?.data?.detail ||
+          err?.detail ||
+          err?.message ||
+          "本体关系加载失败",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [ontologyId]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const selectedNode = selected?.kind === "node" ? selected.value : null;
+  const selectedEdge = selected?.kind === "edge" ? selected.value : null;
+  const nodeById = useMemo(
+    () => new Map((data?.nodes || []).map((node) => [node.id, node])),
+    [data],
+  );
+  const relatedEdges = useMemo(
+    () =>
+      selectedNode
+        ? (data?.edges || []).filter(
+            (edge) =>
+              edge.source === selectedNode.id ||
+              edge.target === selectedNode.id,
+          )
+        : [],
+    [data, selectedNode],
+  );
 
   useEffect(() => {
-    loadGraph()
-    apiClientV2.get(`/ontologies/${ontologyId}/integrations/status`)
-      .then((status: any) => setIntegrations(status))
-      .catch(() => setIntegrations(null))
-  }, [ontologyId, view, entityType, seqFrom, seqTo, relationState])
-
-  useEffect(() => {
-    if (!graphData || !containerRef.current) return
-    const allNodes = graphData.nodes || []
-    const allEdges = graphData.edges || []
-    const degree = new Map<string, number>()
-    allNodes.forEach(n => degree.set(n.id, 0))
-    allEdges.forEach(e => {
-      degree.set(e.source, (degree.get(e.source) || 0) + 1)
-      degree.set(e.target, (degree.get(e.target) || 0) + 1)
-    })
-    const visibleNodes = hideIsolated ? allNodes.filter(n => (degree.get(n.id) || 0) > 0) : allNodes
-    const ids = new Set(visibleNodes.map(n => n.id))
-    const visibleEdges = allEdges.filter(e => ids.has(e.source) && ids.has(e.target))
+    if (!data || !containerRef.current) return;
     const elements = [
-      ...visibleNodes.map(n => {
-        const label = String(n.properties?.name || n.properties?.reading_id || n.properties?.equipment_id || n.entity_type || n.id)
-        return { data: { id: n.id, label: label.slice(0, 24), color: nodeColor(n), size: 66, degree: degree.get(n.id) || 0, entityId: String(n.properties?.source_id || n.properties?.id || n.id), raw: n } }
-      }),
-      ...visibleEdges.map(e => ({ data: { id: e.id, source: e.source, target: e.target, label: e.type, raw: e } })),
-    ]
-    cyRef.current?.destroy()
+      ...data.nodes.map((node) => ({
+        data: {
+          id: node.id,
+          label: String(
+            node.properties.name ||
+              node.properties.name_cn ||
+              node.properties.name_en ||
+              node.id,
+          ).slice(0, 28),
+          color: stableColor(String(node.properties.name || node.id)),
+          raw: node,
+        },
+      })),
+      ...data.edges.map((edge) => ({
+        data: {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          label: `${edge.label || edge.type}${edge.properties?.cardinality ? ` · ${edge.properties.cardinality}` : ""}`,
+          raw: edge,
+        },
+      })),
+    ];
+    cyRef.current?.destroy();
     const cy = cytoscape({
       container: containerRef.current,
       elements,
       style: [
-        { selector: 'node', style: { label: 'data(label)', 'background-color': 'data(color)', color: '#fff', 'font-size': '10px', 'font-weight': 'bold', 'text-valign': 'center', 'text-halign': 'center', width: 'data(size)', height: 'data(size)', 'text-wrap': 'wrap', 'text-max-width': '56px', 'text-outline-width': 2, 'text-outline-color': 'data(color)' } },
-        { selector: 'edge', style: { label: 'data(label)', 'font-size': '9px', color: '#374151', 'line-color': '#9ca3af', 'target-arrow-color': '#9ca3af', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'text-background-color': '#fff', 'text-background-opacity': 0.9, 'text-background-padding': '2px' } },
-        { selector: '.dimmed', style: { opacity: 0.18 } },
-        { selector: '.highlighted', style: { 'line-color': '#1d4ed8', 'target-arrow-color': '#1d4ed8', 'background-color': '#1d4ed8', 'border-width': 3, 'border-color': '#fff' } },
+        {
+          selector: "node",
+          style: {
+            label: "data(label)",
+            "background-color": "data(color)",
+            color: "#ffffff",
+            "font-size": "11px",
+            "font-weight": "bold",
+            "text-valign": "center",
+            "text-halign": "center",
+            width: "82px",
+            height: "52px",
+            shape: "round-rectangle",
+            "text-wrap": "wrap",
+            "text-max-width": "68px",
+            "text-outline-width": "2px",
+            "text-outline-color": "data(color)",
+            "border-width": "1px",
+            "border-color": "#ffffff",
+          },
+        },
+        {
+          selector: "edge",
+          style: {
+            label: "data(label)",
+            "font-size": "9px",
+            color: "#475569",
+            width: 1.5,
+            "line-color": "#94a3b8",
+            "target-arrow-color": "#94a3b8",
+            "target-arrow-shape": "triangle",
+            "curve-style": "bezier",
+            "text-background-color": "#f8fafc",
+            "text-background-opacity": 0.96,
+            "text-background-padding": "2px",
+            "text-rotation": "autorotate",
+          },
+        },
+        {
+          selector: ".active",
+          style: {
+            "background-color": "#0f172a",
+            "text-outline-color": "#0f172a",
+            "border-width": 3,
+            "border-color": "#e2e8f0",
+            "line-color": "#0f4c81",
+            "target-arrow-color": "#0f4c81",
+            width: 2.5,
+          },
+        },
+        { selector: ".muted", style: { opacity: 0.15 } },
+        {
+          selector: ".search-hit",
+          style: {
+            "background-color": "#d97706",
+            "text-outline-color": "#d97706",
+            "line-color": "#d97706",
+            "target-arrow-color": "#d97706",
+            width: 2.5,
+          },
+        },
       ],
-      layout: { name: 'cose', animate: false, randomize: true, numIter: elements.length > 150 ? 400 : 1000, idealEdgeLength: 130, nodeRepulsion: 9000, componentSpacing: 100 } as any,
-    })
-    cy.on('tap', 'node', evt => {
-      const node = evt.target
-      cy.elements().removeClass('highlighted dimmed')
-      node.addClass('highlighted')
-      node.neighborhood().addClass('highlighted')
-      cy.elements().not('.highlighted').addClass('dimmed')
-      setSelected({ kind: 'node', value: node.data('raw') })
-    })
-    cy.on('tap', 'edge', evt => setSelected({ kind: 'edge', value: evt.target.data('raw') }))
-    cy.on('tap', evt => {
-      if (evt.target === cy) {
-        cy.elements().removeClass('highlighted dimmed')
-        setSelected(null)
+      layout: {
+        name: "cose",
+        animate: false,
+        randomize: false,
+        componentSpacing: 100,
+        idealEdgeLength: 160,
+        nodeRepulsion: 8500,
+        numIter: 1400,
+      } as any,
+    });
+    cy.on("tap", "node", (event) =>
+      setSelected({
+        kind: "node",
+        value: event.target.data("raw") as OntologyNode,
+      }),
+    );
+    cy.on("tap", "edge", (event) =>
+      setSelected({
+        kind: "edge",
+        value: event.target.data("raw") as OntologyEdge,
+      }),
+    );
+    cy.on("tap", (event) => {
+      if (event.target === cy) setSelected(null);
+    });
+    cyRef.current = cy;
+    const entityFromUrl = searchParams.get("entity");
+    if (entityFromUrl && data.nodes.some((node) => node.id === entityFromUrl))
+      setSelected({
+        kind: "node",
+        value: data.nodes.find((node) => node.id === entityFromUrl)!,
+      });
+    return () => {
+      cy.destroy();
+      cyRef.current = null;
+    };
+  }, [data, searchParams]);
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.elements().removeClass("active muted search-hit");
+    if (selected?.kind === "node") {
+      const focus = cy.getElementById(selected.value.id);
+      focus.addClass("active");
+      focus.neighborhood().addClass("active");
+      cy.elements().not(".active").addClass("muted");
+    } else if (selected?.kind === "edge") {
+      const focus = cy.getElementById(selected.value.id);
+      focus.addClass("active");
+      focus.connectedNodes().addClass("active");
+      cy.elements().not(".active").addClass("muted");
+    }
+    if (hitIds.size) {
+      let hits = cy.collection();
+      hitIds.forEach((id) => {
+        hits = hits.merge(cy.getElementById(id));
+      });
+      hits.addClass("search-hit");
+      cy.elements().not(hits).addClass("muted");
+    }
+  }, [selected, hitIds]);
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setSearchResult(null);
+      setHitIds(new Set());
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      try {
+        const result = await apiClientV2.get<SearchResult>(
+          `/ontologies/${ontologyId}/search`,
+          { params: { q: trimmed, entity_id: selectedNode?.id } },
+        );
+        setSearchResult(result);
+        const ids = new Set<string>();
+        for (const item of result.results || []) {
+          if (item.kind === "relationship") {
+            ids.add(item.id);
+            ids.add(item.source || "");
+            ids.add(item.target || "");
+          } else ids.add(item.entity_id || item.id);
+        }
+        ids.delete("");
+        setHitIds(ids);
+      } catch {
+        setSearchResult({ groups: { 搜索: [] }, results: [] });
+        setHitIds(new Set());
+      } finally {
+        setSearching(false);
       }
-    })
-    cy.on('dblclick', 'node', evt => {
-      const node = evt.target.data('raw') as GraphNode
-      const id = String(node.properties?.source_id || node.properties?.id || '')
-      if (view === 'schema' && id) navigate(`/ontologies/${ontologyId}/entities/${id}`)
-    })
-    cyRef.current = cy
-    return () => { cy.destroy(); cyRef.current = null }
-  }, [graphData, hideIsolated, ontologyId, navigate, view, i18n.language])
-
-  const entityTypes = useMemo(() => {
-    const values = new Set<string>(['Equipment', 'SensorReading', 'AnomalyEvent', 'ProductionLine'])
-    ;(graphData?.nodes || []).forEach(n => values.add(n.entity_type || n.labels?.[0] || 'Entity'))
-    return Array.from(values).sort()
-  }, [graphData])
-
-  const handleQuery = async () => {
-    if (!query.trim()) return
-    setQueryLoading(true)
-    try {
-      const endpoint = queryMode === 'natural' ? `/ontologies/${ontologyId}/graph/ask` : `/ontologies/${ontologyId}/graph/cypher`
-      const payload = queryMode === 'natural' ? { question: query } : { query }
-      const result: any = await apiClientV2.post(endpoint, payload)
-      setQueryResult(result.results || [])
-    } catch (err: any) {
-      setQueryResult([{ error: err?.detail || err?.message || '查询失败' }])
-    } finally {
-      setQueryLoading(false)
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [ontologyId, query, selectedNode?.id]);
+  const locate = (item: SearchItem) => {
+    const entityId =
+      item.entity_id || (item.kind === "relationship" ? item.source : item.id);
+    const node = nodeById.get(entityId || "");
+    if (node) {
+      setSelected({ kind: "node", value: node });
+      const cy = cyRef.current;
+      if (cy)
+        cy.animate({
+          center: { eles: cy.getElementById(node.id) },
+          duration: 220,
+        });
+    } else if (item.kind === "relationship") {
+      const edge = data?.edges.find((value) => value.id === item.id);
+      if (edge) setSelected({ kind: "edge", value: edge });
     }
-  }
-
-  const loadCoverage = async () => {
-    setCoverageLoading(true)
-    try {
-      const data = await apiClientV2.get(`/ontologies/${ontologyId}/graph/temporal/coverage`, { params: { production_line_id: coverageLine } })
-      setCoverage(data)
-    } catch {
-      setCoverage({ available: false, current: [], history: [] })
-    } finally {
-      setCoverageLoading(false)
-    }
-  }
-
-  if (loading) return <div className="text-gray-400 text-sm py-8 text-center">加载中...</div>
-  const nodes = graphData?.nodes || []
-  const edges = graphData?.edges || []
-  const degree = new Map<string, number>()
-  nodes.forEach(n => degree.set(n.id, 0))
-  edges.forEach(e => { degree.set(e.source, (degree.get(e.source) || 0) + 1); degree.set(e.target, (degree.get(e.target) || 0) + 1) })
-  const isolatedCount = Array.from(degree.values()).filter(v => v === 0).length
-  const labels = new Map<string, string>()
-  nodes.forEach(n => (n.labels || [n.entity_type || 'Entity']).forEach(l => labels.set(l, TYPE_COLORS[l] || stableColor(l))))
-  const graphOk = view === 'instances' ? Boolean(graphData?.available) : Boolean(graphData && !graphData.error)
-  const sourceLabel = view === 'instances'
-    ? (graphOk ? 'FalkorDB 实例图' : 'FalkorDB 未连接')
-    : (graphData?.graph_backend === 'neo4j-legacy' ? 'Neo4j（兼容模式）' : 'Nano Schema 图')
-  const selectedValue = selected?.value as any
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white border rounded-xl p-4 space-y-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex border rounded-lg overflow-hidden text-xs">
-            <button onClick={() => { setView('schema'); setSelected(null) }} className={`px-3 py-1.5 ${view === 'schema' ? 'bg-black text-white' : 'bg-white text-gray-600'}`}>本体结构</button>
-            <button onClick={() => { setView('instances'); setSelected(null) }} className={`px-3 py-1.5 ${view === 'instances' ? 'bg-black text-white' : 'bg-white text-gray-600'}`}>数据实例</button>
-          </div>
-          <button onClick={loadGraph} className="px-2 py-1.5 border rounded-lg text-gray-600 hover:bg-gray-50" title="刷新图谱"><RefreshCw size={14} /></button>
-          <span className="text-xs text-gray-500">{view === 'instances' ? 'FalkorDB 时序实例' : 'Nano 自动生成的类型图'}</span>
+  };
+  if (loading)
+    return (
+      <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500">
+        <Loader2 size={17} className="mr-2 animate-spin" />
+        正在加载本体
+      </div>
+    );
+  if (error && !data)
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+        <div className="flex items-center gap-2 font-medium">
+          <CircleAlert size={16} />
+          {error}
         </div>
-        {view === 'instances' && (
-          <div className="flex flex-wrap gap-2 items-center text-xs">
-            <label>实体类型
-              <select value={entityType} onChange={e => setEntityType(e.target.value)} className="ml-1 border rounded px-2 py-1">
-                <option value="">全部</option>{entityTypes.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </label>
-            <label>cycle 从 <input value={seqFrom} onChange={e => setSeqFrom(e.target.value)} type="number" min="0" className="ml-1 w-20 border rounded px-2 py-1" /></label>
-            <label>到 <input value={seqTo} onChange={e => setSeqTo(e.target.value)} type="number" min="0" className="ml-1 w-20 border rounded px-2 py-1" /></label>
-            <label>关系
-              <select value={relationState} onChange={e => setRelationState(e.target.value as 'all' | 'current')} className="ml-1 border rounded px-2 py-1">
-                <option value="all">全部历史</option><option value="current">当前有效</option>
-              </select>
-            </label>
+        <button
+          className="mt-3 rounded border border-red-200 bg-white px-3 py-1.5 text-xs"
+          onClick={load}
+        >
+          重试
+        </button>
+      </div>
+    );
+  const summary = data?.summary || {
+    entity_type_count: 0,
+    property_count: 0,
+    relationship_count: 0,
+    logic_rule_count: 0,
+    instance_count: 0,
+    evidence_count: 0,
+  };
+  return (
+    <div
+      className="grid min-h-[650px] gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"
+      data-testid="ontology-canvas"
+    >
+      <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">本体关系</p>
+            <p className="mt-0.5 text-xs text-slate-500">实体类型与关系</p>
+          </div>
+          <button
+            onClick={load}
+            className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+            title="刷新本体"
+          >
+            <RefreshCw size={15} />
+          </button>
+        </div>
+        {error && (
+          <div className="mx-4 mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {error}
           </div>
         )}
-      </div>
-
-      <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-        <span className={`px-2 py-1 rounded-full border ${graphOk ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700'}`}>{sourceLabel}</span>
-        <span>节点 {nodes.length}{view === 'instances' && graphData?.total_instances ? ` / ${graphData.total_instances}` : ''}</span><span>边 {edges.length}</span>
-        {quality && <><span>质量 {(quality.quality_score * 100).toFixed(0)}%</span><span>孤立 {quality.isolated_node_count}</span><span>孤儿关系 {quality.orphan_relation_count}</span></>}
-        {integrations?.falkordb && <span className={`px-2 py-1 rounded-full border ${integrations.falkordb.available ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-50'}`}>FalkorDB {integrations.falkordb.available ? '已连接' : '未连接'}</span>}
-        {integrations?.chroma && <span>Chroma {integrations.chroma.available ? integrations.chroma.entity_count : '未连接'}</span>}
-        {isolatedCount > 0 && <button onClick={() => setHideIsolated(v => !v)} className="px-2 py-1 rounded border bg-white hover:bg-gray-50">{hideIsolated ? `显示 ${isolatedCount} 个孤立节点` : `隐藏 ${isolatedCount} 个孤立节点`}</button>}
-      </div>
-
-      {error && <div className="border border-red-200 bg-red-50 text-red-700 rounded-xl p-4 text-sm">{error}</div>}
-      {labels.size > 0 && <div className="flex flex-wrap gap-2">{Array.from(labels.entries()).map(([label, color]) => <span key={label} className="flex items-center gap-1 text-xs bg-white border rounded-full px-2 py-0.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />{label}</span>)}</div>}
-
-      {nodes.length > 0 ? <div ref={containerRef} data-testid="ontology-graph-canvas" className="border rounded-xl bg-white" style={{ height: 500 }} /> : <div className="border rounded-xl bg-gray-50 h-64 flex items-center justify-center"><p className="text-sm text-gray-400">{graphOk ? '暂无图谱数据' : '请先启动对应图数据库服务'}</p></div>}
-
-      {selected && <div className="bg-white border rounded-xl p-4"><div className="flex items-center justify-between mb-2"><h3 className="text-sm font-semibold">{selected.kind === 'node' ? '节点详情' : '关系详情'}</h3><button onClick={() => setSelected(null)} className="text-xs text-gray-400">关闭</button></div><pre className="text-xs bg-gray-50 rounded p-3 overflow-auto max-h-56">{JSON.stringify(selectedValue, null, 2)}</pre></div>}
-
-      {view === 'instances' && <div className="bg-white border rounded-xl p-4 space-y-3"><h3 className="text-sm font-semibold">生产线覆盖关系时序</h3><div className="flex gap-2"><input value={coverageLine} onChange={e => setCoverageLine(e.target.value)} placeholder="ProductionLine ID，例如 PL001" className="flex-1 border rounded-lg px-3 py-2 text-sm" /><button onClick={loadCoverage} disabled={coverageLoading} className="px-3 py-2 bg-black text-white rounded-lg text-sm">{coverageLoading ? <Loader2 size={14} className="animate-spin" /> : '查询历史'}</button></div>{coverage && (coverage.available ? <div className="grid md:grid-cols-2 gap-3 text-xs"><div className="border rounded-lg p-3"><p className="font-medium mb-2">当前有效</p>{coverage.current.length ? coverage.current.map((x, i) => <div key={i} className="py-1">{x.equipment_id} · {x.valid_from || '未记录'}</div>) : <p className="text-gray-400">无当前关系</p>}</div><div className="border rounded-lg p-3"><p className="font-medium mb-2">历史记录</p>{coverage.history.length ? coverage.history.map((x, i) => <div key={i} className="py-1">{x.equipment_id} · {x.valid_from || '—'} → {x.valid_to || '当前'}</div>) : <p className="text-gray-400">无历史关系</p>}</div></div> : <p className="text-red-600 text-xs">FalkorDB 未连接或该生产线不存在</p>)}</div>}
-
-      {view === 'schema' && graphData?.neo4j_available && <div className="bg-white border rounded-xl p-4 space-y-3"><div className="flex items-center gap-2"><div className="flex border rounded overflow-hidden text-xs"><button onClick={() => { setQueryMode('natural'); setQueryResult([]) }} className={`px-3 py-1.5 ${queryMode === 'natural' ? 'bg-black text-white' : 'bg-white text-gray-500'}`}>自然语言</button><button onClick={() => { setQueryMode('cypher'); setQueryResult([]) }} className={`px-3 py-1.5 ${queryMode === 'cypher' ? 'bg-black text-white' : 'bg-white text-gray-500'}`}>Cypher</button></div><span className="text-xs text-gray-400">兼容模式查询</span></div><div className="flex gap-2"><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleQuery()} placeholder={queryMode === 'natural' ? '输入自然语言问题' : '输入只读 Cypher'} className="flex-1 border rounded-lg px-3 py-2 text-sm" /><button onClick={handleQuery} disabled={queryLoading} className="px-3 py-2 bg-black text-white rounded-lg text-sm flex items-center gap-1">{queryLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}查询</button></div>{queryResult.length > 0 && <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-40">{JSON.stringify(queryResult, null, 2)}</pre>}</div>}
-
-      {view === 'schema' && <div className="bg-white border rounded-xl p-4"><p className="text-xs font-medium text-gray-600 mb-3">语义搜索</p><OntologySearchBox ontologyId={ontologyId} /></div>}
+        {!data?.nodes.length ? (
+          <div className="flex h-[560px] flex-col items-center justify-center text-slate-400">
+            <Database size={24} />
+            <p className="mt-3 text-sm">尚未发布实体类型与关系</p>
+          </div>
+        ) : (
+          <div ref={containerRef} className="h-[590px] w-full" />
+        )}
+      </section>
+      <aside className="flex min-h-[650px] flex-col rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 px-4 py-3">
+          <p className="text-sm font-semibold text-slate-900">详细信息</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {selectedNode ? "当前实体" : selectedEdge ? "当前关系" : "本体概览"}
+          </p>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          {!selected && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {[
+                  ["实体类型", summary.entity_type_count],
+                  ["属性", summary.property_count],
+                  ["关系", summary.relationship_count],
+                  ["逻辑规则", summary.logic_rule_count],
+                  ["真实实例", summary.instance_count],
+                  ["证据", summary.evidence_count],
+                ].map(([label, value]) => (
+                  <div
+                    key={String(label)}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  >
+                    <span className="block text-slate-500">{label}</span>
+                    <strong className="mt-1 block text-base text-slate-800">
+                      {value}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+              <p className="pt-2 text-xs leading-5 text-slate-500">
+                点击画布中的实体或关系，查看属性、关联关系和来源证据。
+              </p>
+            </div>
+          )}
+          {selectedNode && (
+            <div className="space-y-5">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {selectedNode.properties.name}
+                </h3>
+                {selectedNode.properties.name_en &&
+                  selectedNode.properties.name_en !==
+                    selectedNode.properties.name && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {selectedNode.properties.name_en}
+                    </p>
+                  )}
+                <p className="mt-2 text-sm leading-5 text-slate-600">
+                  {selectedNode.properties.description || "暂无说明"}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                  <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
+                    置信度{" "}
+                    {Number(selectedNode.properties.confidence ?? 1).toFixed(2)}
+                  </span>
+                  <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
+                    真实实例 {selectedNode.properties.instance_count || 0}
+                  </span>
+                  <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
+                    证据 {selectedNode.properties.evidence_count || 0}
+                  </span>
+                </div>
+              </div>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  属性
+                </h4>
+                <PropertyRows
+                  properties={
+                    selectedNode.properties.property_definitions || []
+                  }
+                />
+              </section>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  关系
+                </h4>
+                {relatedEdges.length ? (
+                  <div className="space-y-2">
+                    {relatedEdges.map((edge) => {
+                      const other = nodeById.get(
+                        edge.source === selectedNode.id
+                          ? edge.target
+                          : edge.source,
+                      );
+                      return (
+                        <button
+                          key={edge.id}
+                          onClick={() =>
+                            setSelected({ kind: "edge", value: edge })
+                          }
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-xs hover:border-slate-400"
+                        >
+                          <strong className="block text-slate-800">
+                            {edge.label || edge.type}
+                          </strong>
+                          <span className="mt-1 block text-slate-500">
+                            {edge.source === selectedNode.id ? "指向" : "来自"}{" "}
+                            {other?.properties.name ||
+                              other?.id ||
+                              "未解析实体"}{" "}
+                            · {edge.properties?.cardinality || "one-to-many"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">暂无关联关系</p>
+                )}
+              </section>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  来源证据
+                </h4>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  来源字段：
+                  {selectedNode.properties.source_fields?.length
+                    ? selectedNode.properties.source_fields.join("、")
+                    : "—"}
+                </div>
+              </section>
+            </div>
+          )}
+          {selectedEdge && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {selectedEdge.label || selectedEdge.type}
+                </h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  {selectedEdge.properties?.description || "暂无说明"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                <p>
+                  起点：
+                  {nodeById.get(selectedEdge.source)?.properties.name ||
+                    selectedEdge.source}
+                </p>
+                <p className="mt-1">
+                  终点：
+                  {nodeById.get(selectedEdge.target)?.properties.name ||
+                    selectedEdge.target}
+                </p>
+                <p className="mt-1">
+                  基数：{selectedEdge.properties?.cardinality || "one-to-many"}
+                </p>
+              </div>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  关系属性
+                </h4>
+                <PropertyRows
+                  properties={selectedEdge.properties?.attributes || []}
+                />
+              </section>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  来源证据
+                </h4>
+                <p className="text-xs text-slate-600">
+                  来源字段：
+                  {selectedEdge.properties?.source_fields?.join("、") || "—"}
+                </p>
+              </section>
+            </div>
+          )}
+        </div>
+        <div className="border-t border-slate-200 p-3">
+          <div className="relative">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={selectedNode ? "搜索当前实体的属性" : "搜索本体"}
+              className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-8 text-sm outline-none focus:border-slate-700"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+          {searching && (
+            <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
+              <Loader2 size={12} className="animate-spin" />
+              正在搜索
+            </p>
+          )}
+          {query && !searching && (
+            <div className="mt-2 max-h-40 space-y-2 overflow-y-auto">
+              {Object.entries(searchResult?.groups || {}).map(
+                ([group, items]) => (
+                  <div key={group}>
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      {group}
+                    </p>
+                    {items.map((item, index) => (
+                      <button
+                        key={`${item.kind}-${item.id}-${index}`}
+                        onClick={() => locate(item)}
+                        className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-slate-50"
+                      >
+                        <strong className="block text-slate-700">
+                          {item.label || item.id}
+                        </strong>
+                        {item.description && (
+                          <span className="block truncate text-slate-500">
+                            {item.description}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ),
+              )}
+              {!(searchResult?.results || []).length && (
+                <p className="text-xs text-slate-400">无匹配结果</p>
+              )}
+            </div>
+          )}
+        </div>
+      </aside>
     </div>
-  )
+  );
 }
