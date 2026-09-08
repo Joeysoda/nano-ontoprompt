@@ -6,9 +6,10 @@ import StatusBadge from "@/components/StatusBadge";
 import EntitiesTab from "./tabs/EntitiesTab";
 import LogicTab from "./tabs/LogicTab";
 import AuditTab from "./tabs/AuditTab";
+import ReasoningTab from "./tabs/ReasoningTab";
 
 const GraphTab = lazy(() => import("./tabs/GraphTabV2"));
-type Tab = "graph" | "entities" | "logic" | "audit";
+type Tab = "graph" | "entities" | "logic" | "audit" | "reasoning";
 
 class OntologyCanvasBoundary extends React.Component<
   { children: React.ReactNode },
@@ -45,12 +46,12 @@ export default function OntologyDetailPage() {
   const [searchParams] = useSearchParams();
   const requested = searchParams.get("tab") || "graph";
   const initialTab: Tab =
-    requested === "entities" || requested === "logic" || requested === "audit"
+    requested === "entities" || requested === "logic" || requested === "audit" || requested === "reasoning"
       ? requested
       : "graph";
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   useEffect(() => {
-    if (!id || ["graph", "entities", "logic", "audit"].includes(requested))
+    if (!id || ["graph", "entities", "logic", "audit", "reasoning"].includes(requested))
       return;
     const entity = searchParams.get("entity");
     navigate(
@@ -72,6 +73,7 @@ export default function OntologyDetailPage() {
     { key: "entities", label: "实体" },
     { key: "logic", label: "逻辑规则" },
     { key: "audit", label: "质量审查" },
+    { key: "reasoning", label: "推理验证" },
   ];
   const select = (tab: Tab) => {
     setActiveTab(tab);
@@ -123,6 +125,7 @@ export default function OntologyDetailPage() {
       {activeTab === "entities" && <EntitiesTab ontologyId={id!} />}
       {activeTab === "logic" && <LogicTab ontologyId={id!} />}
       {activeTab === "audit" && <AuditTab ontologyId={id!} />}
+      {activeTab === "reasoning" && <ReasoningTab ontologyId={id!} />}
     </div>
   );
 }

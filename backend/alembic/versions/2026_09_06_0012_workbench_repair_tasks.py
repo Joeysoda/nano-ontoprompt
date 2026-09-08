@@ -54,7 +54,8 @@ def upgrade() -> None:
             END
             WHERE data_class IS NULL OR data_class NOT IN ('regular', 'temporal', 'multimodal')
         """))
-        op.alter_column("ontology_projects", "data_class", existing_type=sa.String(length=30), nullable=False, server_default="regular")
+        with op.batch_alter_table("ontology_projects") as batch:
+            batch.alter_column("data_class", existing_type=sa.String(length=30), nullable=False, server_default="regular")
 
     if "v2_datasets" in tables:
         _add_column("v2_datasets", sa.Column("readiness", sa.String(length=30), nullable=True))
@@ -91,7 +92,8 @@ def upgrade() -> None:
     if "v2_construction_drafts" in tables:
         # Old drafts retain their target.  New "create" drafts intentionally
         # defer ontology creation until the final build transaction.
-        op.alter_column("v2_construction_drafts", "ontology_id", existing_type=sa.String(), nullable=True)
+        with op.batch_alter_table("v2_construction_drafts") as batch:
+            batch.alter_column("ontology_id", existing_type=sa.String(), nullable=True)
         _add_column("v2_construction_drafts", sa.Column("target_mode", sa.String(length=20), nullable=True))
         _add_column("v2_construction_drafts", sa.Column("new_ontology_name", sa.String(length=200), nullable=True))
         _add_column("v2_construction_drafts", sa.Column("new_ontology_domain", sa.String(length=100), nullable=True))
@@ -99,13 +101,15 @@ def upgrade() -> None:
         op.execute(sa.text("UPDATE v2_construction_drafts SET target_mode = CASE WHEN ontology_id IS NULL THEN 'create' ELSE 'append' END WHERE target_mode IS NULL"))
 
     if "v2_multimodal_samples" in tables and not _has_unique(bind, "v2_multimodal_samples", {"dataset_version_id", "sample_key"}):
-        op.create_unique_constraint("uq_v2_multimodal_samples_version_key", "v2_multimodal_samples", ["dataset_version_id", "sample_key"])
+        with op.batch_alter_table("v2_multimodal_samples") as batch:
+            batch.create_unique_constraint("uq_v2_multimodal_samples_version_key", ["dataset_version_id", "sample_key"])
 
     if "v2_media_items" in tables:
         _add_column("v2_media_items", sa.Column("source_path", sa.Text(), nullable=True))
         op.execute(sa.text("UPDATE v2_media_items SET source_path = storage_uri WHERE source_path IS NULL"))
         if not _has_unique(bind, "v2_media_items", {"dataset_version_id", "sample_id", "asset_role", "source_path"}):
-            op.create_unique_constraint("uq_v2_media_items_sample_asset_source", "v2_media_items", ["dataset_version_id", "sample_id", "asset_role", "source_path"])
+            with op.batch_alter_table("v2_media_items") as batch:
+                batch.create_unique_constraint("uq_v2_media_items_sample_asset_source", ["dataset_version_id", "sample_id", "asset_role", "source_path"])
 
     if "v2_mapping_tasks" not in tables:
         op.create_table(

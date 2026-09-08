@@ -1,0 +1,5 @@
+# Install with --no-deps: only the pure-Python reasoning module is used.
+# The full distribution's NLP extras conflict with the existing application.
+semantica @ https://github.com/semantica-agi/semantica/archive/3a69721abf72d7188a0d6fd72c8462261b2c44eb.zip
+scipy>=1.13.0
+networkx>=2.8.0
