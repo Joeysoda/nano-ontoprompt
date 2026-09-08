@@ -36,10 +36,12 @@ from app.models import (  # noqa: E402, F401
     relation,
     extraction_task,
     rules_config,
+    ontology_revision,
 )
-from app.models.v2 import connection, dataset, pipeline, curated, mapping  # noqa: E402, F401
+from app.models.v2 import connection, dataset, pipeline, curated, mapping, temporal_profile, construction, multimodal, multimodal_install, construction_draft  # noqa: E402, F401
 
 target_metadata = Base.metadata
+from app.models.v2 import reasoning  # noqa: E402, F401
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

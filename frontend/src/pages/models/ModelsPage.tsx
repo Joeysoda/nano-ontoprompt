@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { modelApi } from '@/api/ontologies'
+import { apiClientV2 } from '@/api/client'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import type { ModelConfig } from '@/types/ontology'
-import { Trash2, TestTube2, Plus, Pencil, X, Loader2 } from 'lucide-react'
+import { Trash2, TestTube2, Plus, Pencil, X, Loader2, Server, CheckCircle2, CircleAlert, Copy } from 'lucide-react'
 
 const CONFIG_TYPES = [
   { value: 'llm', label: 'LLM配置' },
@@ -86,6 +87,21 @@ export default function ModelsPage() {
   const { data: models = [], isLoading } = useQuery({
     queryKey: ['models'], queryFn: () => modelApi.list() as any,
   })
+  const localProbe = useQuery({ queryKey: ['local-model-probe'], queryFn: () => modelApi.localProbe() as any, refetchInterval: 15000 })
+  const routeStatus = useQuery({ queryKey: ['model-route-status'], queryFn: () => modelApi.routeStatus() as any, refetchInterval: 30000 })
+  const invocationQuery = useQuery({ queryKey: ['model-invocations'], queryFn: () => apiClientV2.get<{ items?: any[] }>('/model-invocations?limit=20') as any, refetchInterval: 15000 })
+  const [expandedInvocation, setExpandedInvocation] = useState<string | null>(null)
+  const visibleModels = useMemo(() => {
+    const all = models as ModelConfig[]
+    // Legacy migrations left several compatible qwen slots pointing at
+    // host.docker.internal.  Keep them in storage for history, but show the
+    // explicit local slot as the one users can operate.
+    return all.filter(item => {
+      const isQwen = (item.models || []).some(name => String(name).toLowerCase() === 'qwen3.5:0.8b')
+      const provider = String(item.provider || '').toLowerCase()
+      return !isQwen || provider === 'ollama' || provider === 'local'
+    })
+  }, [models])
 
   const [createError, setCreateError] = useState('')
   const createMut = useMutation({
@@ -105,7 +121,7 @@ export default function ModelsPage() {
       const data = res?.data || res
       setTestResult(prev => ({ ...prev, [id]: data?.ok === false ? `未启用：${data.response || ''}` : '连接成功' }))
     },
-    onError: (err: any, id) => setTestResult(prev => ({ ...prev, [id]: `❌ ${err?.detail || '连接失败'}` })),
+    onError: (err: any, id) => setTestResult(prev => ({ ...prev, [id]: `连接失败：${err?.detail || '请检查服务地址'}` })),
   })
 
   // ── 编辑 ──
@@ -117,6 +133,16 @@ export default function ModelsPage() {
     mutationFn: ({ id, data }: { id: string; data: any }) => modelApi.update(id, buildPayload(data, editTags)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['models'] }); setEditTarget(null); setEditTags([]) },
   })
+
+  const deleteInvocation = async (id: string) => {
+    if (!window.confirm('确认删除这条模型调用日志？删除后不可恢复。')) return
+    try {
+      await apiClientV2.delete(`/model-invocations/${id}?confirm=true`)
+      qc.invalidateQueries({ queryKey: ['model-invocations'] })
+    } catch (err: any) {
+      window.alert(err?.detail || err?.message || '删除失败')
+    }
+  }
 
   const openEdit = (m: ModelConfig) => {
     const options = m.options || {}
@@ -135,19 +161,41 @@ export default function ModelsPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold">{t('model.title')}</h2>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div><p className="wb-eyebrow">模型与审查</p><h1 className="wb-page-title mt-2">模型配置</h1><p className="wb-page-subtitle">云端构建、本地审查和能力检测</p></div>
         <button onClick={() => { setShowCreate(true); reset({ config_type: 'llm', provider: 'openai', ocr_enabled: 'false', ocr_lang: 'ch', ocr_device: 'cpu' }); setFormTags([]) }}
-          className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm">
+          className="wb-button-primary">
           <Plus size={14} /> {t('model.create')}
         </button>
       </div>
 
+      <section className="wb-surface p-5">
+        <div className="flex items-start justify-between gap-4"><div className="flex items-start gap-3"><span className="wb-icon-box"><Server size={17} /></span><div><h2 className="text-base font-semibold">本地审查槽 · qwen3.5:0.8b</h2><p className="mt-1 text-xs text-gray-500">Ollama · 127.0.0.1:11434 · audit / build / vision</p></div></div><button onClick={() => localProbe.refetch()} className="wb-button-secondary text-xs">重新探测</button></div>
+        <div className="mt-4 grid md:grid-cols-3 gap-3"><div className="rounded-lg bg-gray-50 p-3"><p className="text-[11px] text-gray-500">模型槽</p><p className="mt-2 flex items-center gap-1.5 text-sm font-medium">{localProbe.data?.configured ? <CheckCircle2 size={14} className="text-emerald-600" /> : <CircleAlert size={14} className="text-amber-600" />}{localProbe.data?.configured ? '已配置' : '未配置'}</p></div><div className="rounded-lg bg-gray-50 p-3"><p className="text-[11px] text-gray-500">Ollama 服务</p><p className={`mt-2 text-sm font-medium ${localProbe.data?.reachable ? 'text-emerald-700' : 'text-amber-700'}`}>{localProbe.isLoading ? '探测中…' : localProbe.data?.reachable ? '在线' : '未连接'}</p></div><div className="rounded-lg bg-gray-50 p-3"><p className="text-[11px] text-gray-500">模型状态</p><p className={`mt-2 text-sm font-medium ${localProbe.data?.ready ? 'text-emerald-700' : 'text-amber-700'}`}>{localProbe.data?.ready ? '可用于审查' : '待启动或安装'}</p></div></div>
+        {!localProbe.data?.ready && <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><span>{localProbe.data?.error || '请先启动 Ollama，并在终端执行安装命令'}</span><button onClick={() => navigator.clipboard?.writeText(localProbe.data?.install_command || 'ollama pull qwen3.5:0.8b')} className="inline-flex items-center gap-1 rounded border border-amber-300 bg-white px-2 py-1 text-amber-800"><Copy size={12} />复制命令</button></div>}
+      </section>
+
+      <section className="wb-surface p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div><p className="wb-eyebrow">网关路由</p><h2 className="mt-1 text-base font-semibold">模型调用状态</h2><p className="mt-1 text-xs text-gray-500">本地路线可直接探测；云端模型需显式验证后才显示“可用”</p></div>
+          <button onClick={() => routeStatus.refetch()} className="wb-button-secondary text-xs">重新探测</button>
+        </div>
+        <div className="mt-4 grid md:grid-cols-3 gap-3">
+          <div className="rounded-lg bg-gray-50 p-3"><p className="text-[11px] text-gray-500">LiteLLM 网关</p><p className={`mt-2 text-sm font-medium ${routeStatus.data?.gateway?.reachable ? 'text-emerald-700' : 'text-amber-700'}`}>{routeStatus.isLoading ? '探测中…' : routeStatus.data?.gateway?.reachable ? '可达' : routeStatus.data?.gateway?.configured ? '未连接' : '未配置'}</p></div>
+          {(routeStatus.data?.routes || []).map((route: any) => <div key={route.alias} className="rounded-lg bg-gray-50 p-3"><p className="text-[11px] text-gray-500">{route.alias} · {route.purpose}</p><p className={`mt-2 flex items-center gap-1.5 text-sm font-medium ${route.available ? 'text-emerald-700' : 'text-amber-700'}`}>{route.available ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}{route.available ? '可用' : route.configured ? (route.upstream_authorized === false ? '上游未授权' : route.alias === 'MiniMax-M3' ? '待云端验证' : '待探测') : '未配置'}</p>{route.error && <p className="mt-1 text-[11px] text-amber-700 break-words">{route.error}</p>}</div>)}
+        </div>
+      </section>
+
+      <section className="wb-surface p-5">
+        <div className="flex items-start justify-between gap-4"><div><p className="wb-eyebrow">调用留痕</p><h2 className="mt-1 text-base font-semibold">最近模型调用</h2><p className="mt-1 text-xs text-gray-500">保存可见请求与响应、路由和哈希；不保存隐藏思维或未发送的二进制内容</p></div><button onClick={() => invocationQuery.refetch()} className="wb-button-secondary text-xs">刷新日志</button></div>
+        {invocationQuery.isLoading ? <p className="mt-4 text-xs text-gray-400">加载日志…</p> : (invocationQuery.data?.items || []).length === 0 ? <div className="wb-empty mt-4 py-5">暂无模型调用记录</div> : <div className="mt-4 space-y-2">{(invocationQuery.data?.items || []).map((item: any) => <div key={item.id} className="rounded-lg border border-gray-200 bg-white"><button type="button" className="w-full px-3 py-2.5 text-left" onClick={() => setExpandedInvocation(expandedInvocation === item.id ? null : item.id)}><div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${item.status === 'completed' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-red-500' : 'bg-amber-500'}`} /><span className="text-sm font-medium">{item.model_name || item.route_alias}</span><span className="text-xs text-gray-500">{item.metadata?.purpose || '模型调用'} · {item.status}</span><span className="ml-auto text-[11px] text-gray-400">{item.duration_ms == null ? '—' : `${item.duration_ms} ms`}</span></div><p className="mt-1 text-[11px] text-gray-400">{item.created_at || ''}{item.construction_run_id ? ` · run ${String(item.construction_run_id).slice(0, 8)}` : ''}{item.audit_task_id ? ` · audit ${String(item.audit_task_id).slice(0, 8)}` : ''}</p></button>{expandedInvocation === item.id && <div className="border-t bg-slate-50 p-3 space-y-2"><div><p className="text-[11px] text-gray-500 mb-1">可见请求</p><pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border bg-white p-2 text-[11px] text-gray-700">{item.request || '（未记录）'}</pre></div><div><p className="text-[11px] text-gray-500 mb-1">可见响应</p><pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border bg-white p-2 text-[11px] text-gray-700">{item.response || item.error || '（未返回）'}</pre></div><div className="flex items-center justify-between"><span className="text-[11px] text-gray-400">request {item.request_hash?.slice(0, 12) || '—'} · response {item.response_hash?.slice(0, 12) || '—'}</span><button type="button" onClick={() => deleteInvocation(item.id)} className="text-[11px] text-red-600 hover:underline">确认删除</button></div></div>}</div>)}</div>}
+      </section>
+
       <div className="grid gap-4">
         {isLoading ? <p className="text-gray-400 text-sm">{t('common.loading')}</p> :
-          (models as ModelConfig[]).map(m => (
-            <div key={m.id} className="bg-white border rounded-lg p-4">
+          visibleModels.map(m => (
+            <div key={m.id} className="wb-surface p-4">
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="font-semibold">{m.name}</h3>
@@ -175,9 +223,10 @@ export default function ModelsPage() {
             </div>
           ))
         }
-        {!isLoading && (models as ModelConfig[]).length === 0 && (
+        {!isLoading && visibleModels.length === 0 && (
           <div className="bg-white border rounded-lg p-8 text-center text-gray-400">{t('model.empty')}</div>
         )}
+        {!isLoading && visibleModels.length < (models as ModelConfig[]).length && <p className="text-xs text-gray-400">已隐藏 {(models as ModelConfig[]).length - visibleModels.length} 个历史/重复 Ollama 配置，可在数据库中保留并通过接口查询。</p>}
       </div>
 
       {/* 新建弹窗 */}

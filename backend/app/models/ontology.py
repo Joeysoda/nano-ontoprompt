@@ -12,8 +12,12 @@ class OntologyProject(Base):
     domain: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     version: Mapped[str] = mapped_column(String(20), default="v0.1")
+    current_revision_id: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="draft")
     build_mode: Mapped[str] = mapped_column(String(30), default="simple_llm", nullable=True)
+    # Build mode describes a UI implementation; data class is the compatibility
+    # boundary for revisions and must not be inferred from a display name.
+    data_class: Mapped[str] = mapped_column(String(30), default="regular", nullable=False)
     created_by: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

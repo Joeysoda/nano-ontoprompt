@@ -2,6 +2,10 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     environment: str = "development"  # development | production
+    # Authentication remains JWT by default.  The desktop compose overlay
+    # explicitly opts into ``local_single_user``; this keeps a plain backend
+    # start from silently changing the security boundary.
+    auth_mode: str = "jwt"  # local_single_user | jwt
     database_url: str = "sqlite:///./ontoprompt.db"
     redis_url: str = "redis://localhost:6379/0"
     secret_key: str = "dev-secret-key"
@@ -16,12 +20,21 @@ class Settings(BaseSettings):
 
     # 上传限制
     max_upload_mb: int = 200
-    allowed_upload_extensions: str = "csv,xlsx,xls,json,xml,pdf,docx,doc,pptx,ppt,md,txt"
+    # Structured files plus evidence-bearing multimodal assets.  Video files
+    # are registered as media; the current prototype does not claim semantic
+    # video understanding until a dedicated processor is configured.
+    allowed_upload_extensions: str = "csv,tsv,xlsx,xls,json,jsonl,parquet,xml,pdf,docx,doc,pptx,ppt,md,txt,png,jpg,jpeg,webp,mp4,mov"
 
     # v2 — Neo4j
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "ontoprompt123"
+
+    # Industrial demonstrator graph backend. The platform-side Compose stack
+    # exposes FalkorDB on the host; Dockerized Nano reaches it through
+    # host.docker.internal on macOS/Windows.
+    falkordb_host: str = "host.docker.internal"
+    falkordb_port: int = 6379
 
     # v2 — MinIO
     minio_endpoint: str = "localhost:9000"

@@ -97,6 +97,23 @@ def llm_call_kwargs(model_config) -> dict | None:
     encrypted = getattr(model_config, "api_key_encrypted", None)
     if encrypted:
         api_key = encryption_service.decrypt(encrypted)
+    # Ollama's OpenAI-compatible endpoint ignores the bearer value, but the
+    # OpenAI SDK still requires a non-empty key at client construction time.
+    if not api_key and str(getattr(model_config, "provider", "")).lower() in {"ollama", "local"}:
+        api_key = "ollama"
+    # In the workbench runtime every model request goes through the local
+    # LiteLLM gateway. A direct provider URL remains available for lightweight
+    # unit tests and legacy deployments that do not configure the gateway.
+    import os
+    gateway_base = os.getenv("LITELLM_API_BASE", "").strip()
+    if gateway_base:
+        gateway_key = os.getenv("LITELLM_API_KEY", "").strip() or api_key or "local-gateway"
+        return {
+            "provider": "openai",
+            "api_key": gateway_key,
+            "api_base": gateway_base.rstrip("/"),
+            "model": model_name,
+        }
     return {
         "provider": getattr(model_config, "provider", None),
         "api_key": api_key,

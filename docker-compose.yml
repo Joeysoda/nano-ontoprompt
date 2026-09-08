@@ -7,7 +7,9 @@ services:
       POSTGRES_PASSWORD: ontoprompt
     ports: ["5432:5432"]
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Keep the established project database volume; changing this name
+      # would silently boot an empty database after a container recreation.
+      - pg_data:/var/lib/postgresql/data
       - ./docker/postgres/init-litellm-db.sql:/docker-entrypoint-initdb.d/02-litellm-db.sql
 
   redis:
@@ -19,6 +21,10 @@ services:
     build: ./backend
     ports: ["8000:8000"]
     env_file: .env
+    environment:
+      FALKORDB_HOST: ${FALKORDB_HOST:-host.docker.internal}
+      FALKORDB_PORT: ${FALKORDB_PORT:-6379}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
     depends_on: [db, redis]
     volumes: [./backend:/app, ./uploads:/uploads]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -26,6 +32,10 @@ services:
   celery_worker:
     build: ./backend
     env_file: .env
+    environment:
+      FALKORDB_HOST: ${FALKORDB_HOST:-host.docker.internal}
+      FALKORDB_PORT: ${FALKORDB_PORT:-6379}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
     depends_on: [db, redis]
     volumes: [./backend:/app, ./uploads:/uploads]
     command: celery -A app.tasks.celery_app worker --loglevel=info
@@ -85,7 +95,7 @@ services:
 
   celery_beat:
     build: ./backend
-    command: celery -A app.tasks.extraction beat --loglevel=info
+    command: celery -A app.tasks.celery_app beat --loglevel=info
     env_file: .env
     depends_on: [db, redis]
     volumes:
@@ -93,7 +103,9 @@ services:
       - ./uploads:/uploads
 
 volumes:
-  postgres_data:
+  pg_data:
+    external: true
+    name: nano-ontoprompt_pg_data
   neo4j_data:
   minio_data:
   chroma_data:

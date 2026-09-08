@@ -2,6 +2,91 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light;
+  --workbench-canvas: #f3f5f7;
+  --workbench-surface: #ffffff;
+  --workbench-ink: #172027;
+  --workbench-muted: #66717d;
+  --workbench-subtle: #8a95a1;
+  --workbench-border: #d9e0e7;
+  --workbench-border-strong: #c4cdd6;
+  --workbench-graphite: #18232b;
+  --workbench-blue: #2563eb;
+  --workbench-teal: #0f766e;
+  --workbench-amber: #a16207;
+  --workbench-red: #b42318;
+  font-family: Inter, "SF Pro Display", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, sans-serif; }
-#root { min-height: 100vh; }
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0;
+  min-width: 1024px;
+  background: var(--workbench-canvas);
+  color: var(--workbench-ink);
+}
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+::selection { background: #dbeafe; color: #172027; }
+
+@layer components {
+  .wb-surface { @apply rounded-xl border bg-white; border-color: var(--workbench-border); }
+  .wb-eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.16em]; color: var(--workbench-subtle); }
+  .wb-button-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium text-white transition-colors; background: var(--workbench-graphite); }
+  .wb-button-primary:hover { background: #27343d; }
+  .wb-button-primary:disabled { opacity: .45; }
+  .wb-button-secondary { @apply inline-flex items-center justify-center gap-2 rounded-lg border bg-white px-3.5 py-2 text-sm font-medium transition-colors; border-color: var(--workbench-border-strong); color: var(--workbench-ink); }
+  .wb-button-secondary:hover { background: #f8fafc; border-color: #9aa7b3; }
+  .wb-button-secondary:disabled { opacity: .45; }
+  .wb-input { @apply w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-shadow; border-color: var(--workbench-border-strong); }
+  .wb-input:focus { box-shadow: 0 0 0 3px rgba(37, 99, 235, .13); border-color: var(--workbench-blue); }
+  .wb-page-title { @apply text-[25px] font-semibold tracking-[-0.02em]; }
+  .wb-page-subtitle { @apply mt-1 text-sm; color: var(--workbench-muted); }
+  .wb-page { @apply space-y-5; }
+  .wb-page-header { @apply flex items-start justify-between gap-4; }
+  .wb-section-kicker { @apply text-[11px] font-semibold uppercase tracking-[0.14em]; color: var(--workbench-subtle); }
+  .wb-section-title { @apply text-lg font-semibold tracking-[-0.01em] text-gray-900; }
+  .wb-label { @apply block text-xs font-medium text-gray-600; }
+  .wb-status { @apply inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-medium; border-color: var(--workbench-border); color: var(--workbench-muted); background: #f8fafc; }
+  .wb-status-success { @apply border-emerald-200 bg-emerald-50 text-emerald-700; }
+  .wb-status-warning { @apply border-amber-200 bg-amber-50 text-amber-700; }
+  .wb-status-danger { @apply border-red-200 bg-red-50 text-red-700; }
+  .wb-alert { @apply flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm; }
+  .wb-alert-danger { @apply border-red-200 bg-red-50 text-red-700; }
+  .wb-stepper { @apply flex items-center gap-1 overflow-x-auto p-2; }
+  .wb-step { @apply flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-gray-400 transition-colors; }
+  .wb-step-active { @apply bg-gray-900 text-white; }
+  .wb-step-done { @apply text-gray-700; }
+  .wb-step-index { @apply inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px]; border-color: currentColor; }
+  .wb-choice-card { @apply rounded-xl border bg-white p-4 transition-colors; border-color: var(--workbench-border); }
+  .wb-choice-card:hover, .wb-sample-card:hover { @apply border-gray-400; }
+  .wb-choice-selected { @apply border-blue-400 bg-blue-50/40; box-shadow: inset 0 0 0 1px rgba(37,99,235,.2); }
+  .wb-icon-box { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600; }
+  .wb-tag { @apply inline-flex rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-500; }
+  .wb-empty { @apply flex min-h-[130px] items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 text-sm text-gray-500; }
+  .wb-filter-chip { @apply rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-500; }
+  .wb-filter-chip-active { @apply border-blue-300 bg-blue-50 text-blue-700; }
+  .wb-sample-card { @apply rounded-lg border bg-white p-3 transition-colors; border-color: var(--workbench-border); }
+  .wb-radio-card { @apply flex items-start gap-3 rounded-lg border bg-white p-3 text-left text-gray-700; border-color: var(--workbench-border); }
+  .wb-radio-card p { @apply mt-1 text-xs font-normal text-gray-500; }
+  .wb-config-row { @apply flex items-center justify-between border-t border-gray-100 pt-3 text-sm; }
+  .wb-mapping-card { @apply flex cursor-pointer items-start gap-3 rounded-lg border bg-white p-3; border-color: var(--workbench-border); }
+  .wb-mapping-card strong { @apply text-sm text-gray-800; }
+  .wb-mapping-card p { @apply mt-1 text-xs text-gray-500; }
+  .wb-mapping-card span { @apply mt-2 inline-flex text-[10px] text-gray-400; }
+  .wb-summary-grid { @apply grid grid-cols-2 gap-3 rounded-lg bg-gray-50 p-3 md:grid-cols-4; }
+  .wb-summary-grid span { @apply block text-[11px] text-gray-400; }
+  .wb-summary-grid strong { @apply mt-1 block truncate text-sm text-gray-800; }
+  .wb-task-card { @apply rounded-lg border border-gray-200 bg-gray-50 p-3; }
+  /* Reserve a predictable lower-right interaction lane for the fixed FAQ. */
+  .wb-wizard-actions { @apply flex items-center justify-between pb-4; }
+}
+
+.workbench-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.workbench-scrollbar::-webkit-scrollbar-thumb { background: #c8d0d8; border-radius: 999px; }
+.workbench-scrollbar::-webkit-scrollbar-track { background: transparent; }

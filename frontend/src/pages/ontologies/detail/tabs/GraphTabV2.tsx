@@ -1,465 +1,724 @@
-import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import { apiClientV2 } from '@/api/client'
-import { Search, Loader2 } from 'lucide-react'
-import OntologySearchBox from '@/components/search/OntologySearchBox'
-import cytoscape from 'cytoscape'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import cytoscape from "cytoscape";
+import {
+  CircleAlert,
+  Database,
+  Loader2,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
+import { apiClientV2 } from "@/api/client";
 
-interface GraphData {
-  nodes: Array<{ id: string; labels: string[]; properties: Record<string, unknown> }>
-  edges: Array<{ id: string; source: string; target: string; type: string }>
-  neo4j_available: boolean
-  fallback?: string
+type PropertyDefinition = {
+  id?: string;
+  name?: string;
+  label?: string;
+  type?: string;
+  isIdentifier?: boolean;
+  is_identifier?: boolean;
+  unit?: string;
+  values?: unknown[];
+  description?: string;
+  source_field?: string;
+  example?: unknown;
+};
+type OntologyNode = {
+  id: string;
+  labels: string[];
+  properties: {
+    name?: string;
+    name_cn?: string;
+    name_en?: string;
+    description?: string;
+    confidence?: number;
+    source_fields?: string[];
+    property_definitions?: PropertyDefinition[];
+    instance_count?: number;
+    instance_examples?: Array<Record<string, unknown>>;
+    evidence_count?: number;
+    evidence?: Record<string, unknown>;
+  };
+};
+type OntologyEdge = {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  label?: string;
+  properties?: {
+    name?: string;
+    description?: string;
+    cardinality?: string;
+    attributes?: PropertyDefinition[];
+    source_fields?: string[];
+    confidence?: number;
+    evidence?: Record<string, unknown>;
+  };
+};
+type Rule = {
+  id: string;
+  name: string;
+  description?: string;
+  formula?: string;
+  condition?: unknown;
+  effect?: unknown;
+};
+type GraphData = {
+  nodes: OntologyNode[];
+  edges: OntologyEdge[];
+  logic_rules: Rule[];
+  summary: {
+    entity_type_count: number;
+    property_count: number;
+    relationship_count: number;
+    logic_rule_count: number;
+    instance_count: number;
+    evidence_count: number;
+  };
+  error?: string;
+};
+type SearchItem = {
+  kind: string;
+  id: string;
+  entity_id?: string;
+  source?: string;
+  target?: string;
+  label?: string;
+  description?: string;
+};
+type SearchResult = {
+  groups?: Record<string, SearchItem[]>;
+  results?: SearchItem[];
+};
+
+const colors = [
+  "#0f4c81",
+  "#087f5b",
+  "#7d5a00",
+  "#7c3aed",
+  "#b42318",
+  "#0e7490",
+];
+function stableColor(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1)
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  return colors[Math.abs(hash) % colors.length];
+}
+function stringify(value: unknown) {
+  if (value == null || value === "") return "—";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  )
+    return String(value);
+  return JSON.stringify(value, null, 2);
 }
 
-interface GraphQuality {
-  quality_score: number
-  isolated_node_count: number
-  duplicate_display_name_count: number
-  orphan_relation_count: number
-}
-
-interface IntegrationStatus {
-  neo4j: { available: boolean }
-  chroma: { available: boolean; entity_count: number }
-}
-
-type QueryMode = 'natural' | 'cypher'
-
-const TYPE_COLORS: Record<string, string> = {
-  Supplier: '#2563eb', supplier: '#2563eb', SupplierDatabase: '#2563eb', 供应商: '#2563eb',
-  Product: '#059669', product: '#059669', 产品: '#059669',
-  Material: '#d97706', material: '#d97706', InventoryTransactions: '#f59e0b', 物料: '#d97706',
-  Organization: '#7c3aed', organization: '#7c3aed', 组织: '#7c3aed',
-  Order: '#dc2626', order: '#dc2626', SupplierOrders: '#dc2626', 订单: '#dc2626',
-  Customer: '#0891b2', customer: '#0891b2', 客户: '#0891b2',
-  Process: '#db2777', process: '#db2777', LogisticsPerformance: '#db2777', 流程: '#db2777',
-  Document: '#ea580c', document: '#ea580c', ProcurementPolicy: '#7c3aed', SupplyChainReview: '#14b8a6', SupplyChainStrategy: '#65a30d', WarehouseManagement: '#64748b', 文档: '#ea580c',
-  Disease: '#ef4444', 疾病: '#ef4444',
-  Drug: '#10b981', 药物: '#10b981',
-}
-
-const FALLBACK_COLORS = [
-  '#2563eb', '#059669', '#dc2626', '#7c3aed', '#d97706',
-  '#0891b2', '#db2777', '#4f46e5', '#65a30d', '#be123c',
-]
-
-function stableColor(value: string): string {
-  let hash = 0
-  for (let i = 0; i < value.length; i += 1) hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0
-  return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length]
-}
-
-function nodeColor(labels: string[]): string {
-  for (const l of labels) {
-    if (TYPE_COLORS[l]) return TYPE_COLORS[l]
-  }
-  return stableColor(labels[0] || 'Entity')
+function PropertyRows({ properties }: { properties: PropertyDefinition[] }) {
+  if (!properties.length)
+    return <p className="text-xs text-slate-400">暂无属性定义</p>;
+  return (
+    <div className="space-y-2">
+      {properties.map((property, index) => (
+        <div
+          key={property.id || `${property.name}-${index}`}
+          className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs"
+        >
+          <div className="flex items-center gap-2">
+            <strong className="font-medium text-slate-800">
+              {property.label || property.name || "未命名属性"}
+            </strong>
+            <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+              {property.type || "string"}
+            </span>
+            {(property.isIdentifier || property.is_identifier) && (
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800">
+                标识符
+              </span>
+            )}
+          </div>
+          <div className="mt-1 grid gap-1 text-slate-500">
+            {property.source_field && (
+              <span>来源字段：{property.source_field}</span>
+            )}
+            {property.unit && <span>单位：{property.unit}</span>}
+            {property.values && property.values.length > 0 && (
+              <span>枚举：{property.values.map(stringify).join("、")}</span>
+            )}
+            {property.description && <span>{property.description}</span>}
+            {property.example !== undefined && (
+              <span>实例样例：{stringify(property.example)}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
-  const navigate = useNavigate()
-  const { i18n } = useTranslation()
-  const containerRef = useRef<HTMLDivElement>(null)
-  const cyRef = useRef<cytoscape.Core | null>(null)
-
-  const [graphData, setGraphData] = useState<GraphData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [hideIsolated, setHideIsolated] = useState(false)
-  const [queryMode, setQueryMode] = useState<QueryMode>('natural')
-  const [query, setQuery] = useState('')
-  const [queryLoading, setQueryLoading] = useState(false)
-  const [queryResult, setQueryResult] = useState<unknown[]>([])
-  const [quality, setQuality] = useState<GraphQuality | null>(null)
-  const [integrations, setIntegrations] = useState<IntegrationStatus | null>(null)
-
-  useEffect(() => {
-    // 图谱与质量报告决定首屏, 优先加载; 集成状态徽章 (Neo4j/Chroma 探测)
-    // 单独异步, 不阻塞图谱渲染 — 否则服务不可用时 heartbeat 超时会拖慢整页数秒。
-    Promise.all([
-      apiClientV2.get(`/ontologies/${ontologyId}/graph?limit=300`).catch(() => ({ nodes: [], edges: [], neo4j_available: false })),
-      apiClientV2.get(`/ontologies/${ontologyId}/graph/quality`).catch(() => null),
-    ])
-      .then(([graph, q]: any[]) => {
-        setGraphData(graph)
-        setQuality(q)
-      })
-      .finally(() => setLoading(false))
-
-    apiClientV2.get(`/ontologies/${ontologyId}/integrations/status`)
-      .then((status: any) => setIntegrations(status))
-      .catch(() => setIntegrations(null))
-  }, [ontologyId])
-
-  // Build and render Cytoscape graph whenever data or toggle changes
-  useEffect(() => {
-    if (!graphData || !containerRef.current) return
-
-    const allNodes = graphData.nodes
-    const allEdges = graphData.edges
-
-    // Compute degree per node
-    const degreeMap = new Map<string, number>()
-    for (const n of allNodes) degreeMap.set(n.id, 0)
-    for (const e of allEdges) {
-      degreeMap.set(e.source, (degreeMap.get(e.source) ?? 0) + 1)
-      degreeMap.set(e.target, (degreeMap.get(e.target) ?? 0) + 1)
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cyRef = useRef<cytoscape.Core | null>(null);
+  const [searchParams] = useSearchParams();
+  const [data, setData] = useState<GraphData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState<
+    | { kind: "node"; value: OntologyNode }
+    | { kind: "edge"; value: OntologyEdge }
+    | null
+  >(null);
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  const [hitIds, setHitIds] = useState<Set<string>>(new Set());
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await apiClientV2.get<GraphData>(
+        `/ontologies/${ontologyId}/graph`,
+        { params: { view: "ontology", limit: 1000 } },
+      );
+      setData(result);
+      if (result.error) setError(result.error);
+    } catch (err: any) {
+      setData(null);
+      setError(
+        err?.response?.data?.detail ||
+          err?.detail ||
+          err?.message ||
+          "本体关系加载失败",
+      );
+    } finally {
+      setLoading(false);
     }
+  }, [ontologyId]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const selectedNode = selected?.kind === "node" ? selected.value : null;
+  const selectedEdge = selected?.kind === "edge" ? selected.value : null;
+  const nodeById = useMemo(
+    () => new Map((data?.nodes || []).map((node) => [node.id, node])),
+    [data],
+  );
+  const relatedEdges = useMemo(
+    () =>
+      selectedNode
+        ? (data?.edges || []).filter(
+            (edge) =>
+              edge.source === selectedNode.id ||
+              edge.target === selectedNode.id,
+          )
+        : [],
+    [data, selectedNode],
+  );
 
-    const isolatedCount = Array.from(degreeMap.values()).filter(d => d === 0).length
-
-    // Filter nodes if hiding isolated
-    const visibleNodes = hideIsolated
-      ? allNodes.filter(n => (degreeMap.get(n.id) ?? 0) > 0)
-      : allNodes
-
-    const visibleNodeIds = new Set(visibleNodes.map(n => n.id))
-
-    // Only keep edges whose both endpoints are visible
-    const visibleEdges = allEdges.filter(
-      e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
-    )
-
-    const cytoscapeNodes = visibleNodes.map(n => {
-      const color = nodeColor(n.labels)
-      const localizedName = i18n.language?.startsWith('zh')
-        ? (n.properties?.name_cn || n.properties?.display_name || n.properties?.name)
-        : (n.properties?.name_en || n.properties?.display_name || n.properties?.name_cn || n.properties?.name)
-      const degree = degreeMap.get(n.id) ?? 0
-      const label = String(localizedName || n.labels[0] || n.id).slice(0, degree === 0 ? 12 : 20)
-      const labelLen = label.length
-      const size = degree === 0 ? 34 : labelLen > 8 ? 88 : labelLen > 5 ? 72 : 60
-      return {
+  useEffect(() => {
+    if (!data || !containerRef.current) return;
+    const elements = [
+      ...data.nodes.map((node) => ({
         data: {
-          id: n.id,
-          label,
-          color,
-          size,
-          textMaxWidth: size - 12,
-          degree,
-          entityId: String(n.properties?.source_id || n.properties?.id || ''),
-        }
-      }
-    })
-
-    const cytoscapeEdges = visibleEdges.map(e => ({
-      data: {
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        label: e.type,
-      }
-    }))
-
-    cyRef.current?.destroy()
-
-    // cose 是 O(n²)/迭代的力导向布局, 固定 1600 次迭代在数百节点时要等数秒。
-    // 按可见节点数自适应迭代次数: 大图大幅减少, 小图保持高质量。
-    const nodeCount = cytoscapeNodes.length
-    const layoutIterations = nodeCount > 400 ? 200
-      : nodeCount > 150 ? 400
-      : nodeCount > 60 ? 800
-      : 1600
-
+          id: node.id,
+          label: String(
+            node.properties.name ||
+              node.properties.name_cn ||
+              node.properties.name_en ||
+              node.id,
+          ).slice(0, 28),
+          color: stableColor(String(node.properties.name || node.id)),
+          raw: node,
+        },
+      })),
+      ...data.edges.map((edge) => ({
+        data: {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          label: `${edge.label || edge.type}${edge.properties?.cardinality ? ` · ${edge.properties.cardinality}` : ""}`,
+          raw: edge,
+        },
+      })),
+    ];
+    cyRef.current?.destroy();
     const cy = cytoscape({
       container: containerRef.current,
-      elements: [...cytoscapeNodes, ...cytoscapeEdges],
+      elements,
       style: [
         {
-          selector: 'node',
+          selector: "node",
           style: {
-            label: 'data(label)',
-            'background-color': 'data(color)',
-            color: '#fff',
-            'font-size': '11px',
-            'font-weight': 'bold',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            width: 'data(size)' as any,
-            height: 'data(size)' as any,
-            'text-wrap': 'wrap',
-            'text-max-width': 'data(textMaxWidth)' as any,
-            'border-width': '0px',
-            'text-outline-width': '2px',
-            'text-outline-color': 'data(color)',
-          }
+            label: "data(label)",
+            "background-color": "data(color)",
+            color: "#ffffff",
+            "font-size": "11px",
+            "font-weight": "bold",
+            "text-valign": "center",
+            "text-halign": "center",
+            width: "82px",
+            height: "52px",
+            shape: "round-rectangle",
+            "text-wrap": "wrap",
+            "text-max-width": "68px",
+            "text-outline-width": "2px",
+            "text-outline-color": "data(color)",
+            "border-width": "1px",
+            "border-color": "#ffffff",
+          },
         },
         {
-          selector: 'node[degree = 0]',
+          selector: "edge",
           style: {
-            opacity: 0.7,
-            'font-size': '10px',
-            'border-width': '1.5px',
-            'border-color': 'data(color)',
-            'border-opacity': 0.5,
-          }
-        },
-        {
-          selector: 'edge',
-          style: {
-            label: 'data(label)',
-            'font-size': '10px',
-            color: '#374151',
-            'line-color': '#9ca3af',
-            'target-arrow-color': '#9ca3af',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier',
-            'text-background-color': '#ffffff',
-            'text-background-opacity': 0.9,
-            'text-background-padding': '2px',
+            label: "data(label)",
+            "font-size": "9px",
+            color: "#475569",
             width: 1.5,
-          }
+            "line-color": "#94a3b8",
+            "target-arrow-color": "#94a3b8",
+            "target-arrow-shape": "triangle",
+            "curve-style": "bezier",
+            "text-background-color": "#f8fafc",
+            "text-background-opacity": 0.96,
+            "text-background-padding": "2px",
+            "text-rotation": "autorotate",
+          },
         },
         {
-          selector: ':selected',
+          selector: ".active",
           style: {
-            'background-color': '#1d4ed8',
-            'line-color': '#1d4ed8',
-            'target-arrow-color': '#1d4ed8',
-            'border-width': '3px',
-            'border-color': '#fff',
-          }
+            "background-color": "#0f172a",
+            "text-outline-color": "#0f172a",
+            "border-width": 3,
+            "border-color": "#e2e8f0",
+            "line-color": "#0f4c81",
+            "target-arrow-color": "#0f4c81",
+            width: 2.5,
+          },
+        },
+        { selector: ".muted", style: { opacity: 0.15 } },
+        {
+          selector: ".search-hit",
+          style: {
+            "background-color": "#d97706",
+            "text-outline-color": "#d97706",
+            "line-color": "#d97706",
+            "target-arrow-color": "#d97706",
+            width: 2.5,
+          },
         },
       ],
       layout: {
-        name: 'cose',
+        name: "cose",
         animate: false,
-        randomize: true,
-        nodeRepulsion: () => 12000,
-        nodeOverlap: 18,
-        idealEdgeLength: () => 150,
-        edgeElasticity: () => 80,
-        nestingFactor: 1.15,
-        gravity: 0.08,
-        componentSpacing: 120,
-        numIter: layoutIterations,
-        initialTemp: 180,
-        coolingFactor: 0.95,
-        minTemp: 1.0,
-        nodeDimensionsIncludeLabels: true,
+        randomize: false,
+        componentSpacing: 100,
+        idealEdgeLength: 160,
+        nodeRepulsion: 8500,
+        numIter: 1400,
       } as any,
-    })
-
-    const spreadIsolatedNodes = () => {
-      const isolated = cy.nodes().filter(node => (node.data('degree') ?? 0) === 0)
-      if (isolated.length > 0 && containerRef.current) {
-        const width = Math.max(containerRef.current.clientWidth * 2.4, 1800)
-        const height = Math.max(containerRef.current.clientHeight * 2.2, 1100)
-        const center = { x: width / 2, y: height / 2 }
-        const radius = Math.min(width, height) * 0.46
-        const xScale = width / height
-        const goldenAngle = Math.PI * (3 - Math.sqrt(5))
-        isolated.forEach((node, i) => {
-          const t = (i + 1) / isolated.length
-          const r = Math.sqrt(t) * radius
-          const a = i * goldenAngle
-          node.position({
-            x: center.x + Math.cos(a) * r * xScale,
-            y: center.y + Math.sin(a) * r,
-          })
-        })
-        cy.fit(cy.elements(), 28)
-      }
-    }
-
-    const spreadTimeout = window.setTimeout(spreadIsolatedNodes, 100)
-    cy.one('layoutstop', () => {
-      window.clearTimeout(spreadTimeout)
-      spreadIsolatedNodes()
-    })
-
-    cy.on('tap', 'node', evt => {
-      const nodeData = evt.target.data()
-      cy.elements().removeClass('highlighted dimmed')
-      evt.target.addClass('highlighted')
-      evt.target.neighborhood().addClass('highlighted')
-      evt.target.neighborhood().edges().addClass('highlighted')
-      cy.elements().not('.highlighted').addClass('dimmed')
-    })
-
-    cy.on('tap', function(evt) {
-      if (evt.target === cy) cy.elements().removeClass('highlighted dimmed')
-    })
-
-    // 双击节点 → 跳转实体详情页
-    cy.on('dblclick', 'node', evt => {
-      const nodeData = evt.target.data()
-      const nid = nodeData.entityId || nodeData.id
-      if (nid) navigate(`/ontologies/${ontologyId}/entities/${nid}`)
-    })
-
-    cyRef.current = cy
-
+    });
+    cy.on("tap", "node", (event) =>
+      setSelected({
+        kind: "node",
+        value: event.target.data("raw") as OntologyNode,
+      }),
+    );
+    cy.on("tap", "edge", (event) =>
+      setSelected({
+        kind: "edge",
+        value: event.target.data("raw") as OntologyEdge,
+      }),
+    );
+    cy.on("tap", (event) => {
+      if (event.target === cy) setSelected(null);
+    });
+    cyRef.current = cy;
+    const entityFromUrl = searchParams.get("entity");
+    if (entityFromUrl && data.nodes.some((node) => node.id === entityFromUrl))
+      setSelected({
+        kind: "node",
+        value: data.nodes.find((node) => node.id === entityFromUrl)!,
+      });
     return () => {
-      window.clearTimeout(spreadTimeout)
-      cy.destroy()
-      cyRef.current = null
-    }
-  }, [graphData, hideIsolated, ontologyId, navigate, i18n.language])
+      cy.destroy();
+      cyRef.current = null;
+    };
+  }, [data, searchParams]);
 
-  const handleQuery = async () => {
-    if (!query.trim()) return
-    setQueryLoading(true)
-    setQueryResult([])
-    try {
-      if (queryMode === 'natural') {
-        const res: any = await apiClientV2.post(`/ontologies/${ontologyId}/graph/ask`, { question: query })
-        setQueryResult(res.results || [])
-      } else {
-        const res: any = await apiClientV2.post(`/ontologies/${ontologyId}/graph/cypher`, { query })
-        setQueryResult(res.results || [])
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.elements().removeClass("active muted search-hit");
+    if (selected?.kind === "node") {
+      const focus = cy.getElementById(selected.value.id);
+      focus.addClass("active");
+      focus.neighborhood().addClass("active");
+      cy.elements().not(".active").addClass("muted");
+    } else if (selected?.kind === "edge") {
+      const focus = cy.getElementById(selected.value.id);
+      focus.addClass("active");
+      focus.connectedNodes().addClass("active");
+      cy.elements().not(".active").addClass("muted");
+    }
+    if (hitIds.size) {
+      let hits = cy.collection();
+      hitIds.forEach((id) => {
+        hits = hits.merge(cy.getElementById(id));
+      });
+      hits.addClass("search-hit");
+      cy.elements().not(hits).addClass("muted");
+    }
+  }, [selected, hitIds]);
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setSearchResult(null);
+      setHitIds(new Set());
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      try {
+        const result = await apiClientV2.get<SearchResult>(
+          `/ontologies/${ontologyId}/search`,
+          { params: { q: trimmed, entity_id: selectedNode?.id } },
+        );
+        setSearchResult(result);
+        const ids = new Set<string>();
+        for (const item of result.results || []) {
+          if (item.kind === "relationship") {
+            ids.add(item.id);
+            ids.add(item.source || "");
+            ids.add(item.target || "");
+          } else ids.add(item.entity_id || item.id);
+        }
+        ids.delete("");
+        setHitIds(ids);
+      } catch {
+        setSearchResult({ groups: { 搜索: [] }, results: [] });
+        setHitIds(new Set());
+      } finally {
+        setSearching(false);
       }
-    } catch (err: any) {
-      setQueryResult([{ error: err?.detail || err?.message || '查询失败' }])
-    } finally {
-      setQueryLoading(false)
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [ontologyId, query, selectedNode?.id]);
+  const locate = (item: SearchItem) => {
+    const entityId =
+      item.entity_id || (item.kind === "relationship" ? item.source : item.id);
+    const node = nodeById.get(entityId || "");
+    if (node) {
+      setSelected({ kind: "node", value: node });
+      const cy = cyRef.current;
+      if (cy)
+        cy.animate({
+          center: { eles: cy.getElementById(node.id) },
+          duration: 220,
+        });
+    } else if (item.kind === "relationship") {
+      const edge = data?.edges.find((value) => value.id === item.id);
+      if (edge) setSelected({ kind: "edge", value: edge });
     }
-  }
-
-  if (loading) return <div className="text-gray-400 text-sm py-8 text-center">加载中...</div>
-
-  const neo4jOk = graphData?.neo4j_available
-  const graphSource = neo4jOk ? 'Neo4j 已连接' : graphData?.fallback === 'sqlite' ? 'SQLite 图谱' : 'Neo4j 未连接'
-  const graphSourceOk = Boolean(neo4jOk || graphData?.fallback === 'sqlite')
-  const nodes = graphData?.nodes ?? []
-  const edges = graphData?.edges ?? []
-
-  // Count isolated nodes for toggle label
-  const degreeMap = new Map<string, number>()
-  for (const n of nodes) degreeMap.set(n.id, 0)
-  for (const e of edges) {
-    degreeMap.set(e.source, (degreeMap.get(e.source) ?? 0) + 1)
-    degreeMap.set(e.target, (degreeMap.get(e.target) ?? 0) + 1)
-  }
-  const isolatedCount = Array.from(degreeMap.values()).filter(d => d === 0).length
-
-  // Build legend from visible node labels
-  const labelColorMap = new Map<string, string>()
-  for (const n of nodes) {
-    for (const l of n.labels) {
-      if (!labelColorMap.has(l)) labelColorMap.set(l, nodeColor([l]))
-    }
-  }
-
-  const hasData = nodes.length > 0
-
-  return (
-    <div className="space-y-4">
-      {/* 状态栏 */}
-      <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-        <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full border ${graphSourceOk ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-50'}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${graphSourceOk ? 'bg-green-500' : 'bg-gray-300'}`} />
-          {graphSource}
-        </span>
-        <span>节点 {nodes.length}</span>
-        <span>边 {edges.length}</span>
-        {quality && (
-          <>
-            <span className={`px-2 py-1 rounded-full border ${quality.quality_score >= 0.8 ? 'border-green-200 bg-green-50 text-green-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
-              图质量 {(quality.quality_score * 100).toFixed(0)}%
-            </span>
-            <span>重复名 {quality.duplicate_display_name_count}</span>
-            <span>孤立 {quality.isolated_node_count}</span>
-            <span>孤儿关系 {quality.orphan_relation_count}</span>
-          </>
-        )}
-        {integrations && (
-          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full border ${integrations.chroma.available ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-50'}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${integrations.chroma.available ? 'bg-green-500' : 'bg-gray-300'}`} />
-            {integrations.chroma.available ? `Chroma ${integrations.chroma.entity_count}` : 'Chroma 未连接'}
-          </span>
-        )}
-        {isolatedCount > 0 && (
-          <button
-            onClick={() => setHideIsolated(h => !h)}
-            className="px-2 py-1 rounded border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors"
-          >
-            {hideIsolated ? `显示 ${isolatedCount} 个孤立节点` : `隐藏 ${isolatedCount} 个孤立节点`}
-          </button>
-        )}
+  };
+  if (loading)
+    return (
+      <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500">
+        <Loader2 size={17} className="mr-2 animate-spin" />
+        正在加载本体
       </div>
-
-      {/* 图例 */}
-      {labelColorMap.size > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {Array.from(labelColorMap.entries()).map(([label, color]) => (
-            <span key={label} className="flex items-center gap-1 text-xs text-gray-600 bg-white border rounded-full px-2 py-0.5">
-              <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-              {label}
-            </span>
-          ))}
+    );
+  if (error && !data)
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+        <div className="flex items-center gap-2 font-medium">
+          <CircleAlert size={16} />
+          {error}
         </div>
-      )}
-
-      {/* Cytoscape 图谱画布 */}
-      {hasData ? (
-        <div ref={containerRef} data-testid="ontology-graph-canvas" className="border rounded-xl bg-white" style={{ height: 500 }} />
-      ) : (
-        <div className="border rounded-xl bg-gray-50 h-64 flex items-center justify-center">
-          <p className="text-sm text-gray-400">
-            {graphSourceOk ? '该本体暂无图谱数据' : '启动 Neo4j 服务后图谱将在此显示'}
+        <button
+          className="mt-3 rounded border border-red-200 bg-white px-3 py-1.5 text-xs"
+          onClick={load}
+        >
+          重试
+        </button>
+      </div>
+    );
+  const summary = data?.summary || {
+    entity_type_count: 0,
+    property_count: 0,
+    relationship_count: 0,
+    logic_rule_count: 0,
+    instance_count: 0,
+    evidence_count: 0,
+  };
+  return (
+    <div
+      className="grid min-h-[650px] gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"
+      data-testid="ontology-canvas"
+    >
+      <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">本体关系</p>
+            <p className="mt-0.5 text-xs text-slate-500">实体类型与关系</p>
+          </div>
+          <button
+            onClick={load}
+            className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+            title="刷新本体"
+          >
+            <RefreshCw size={15} />
+          </button>
+        </div>
+        {error && (
+          <div className="mx-4 mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {error}
+          </div>
+        )}
+        {!data?.nodes.length ? (
+          <div className="flex h-[560px] flex-col items-center justify-center text-slate-400">
+            <Database size={24} />
+            <p className="mt-3 text-sm">尚未发布实体类型与关系</p>
+          </div>
+        ) : (
+          <div ref={containerRef} className="h-[590px] w-full" />
+        )}
+      </section>
+      <aside className="flex min-h-[650px] flex-col rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 px-4 py-3">
+          <p className="text-sm font-semibold text-slate-900">详细信息</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {selectedNode ? "当前实体" : selectedEdge ? "当前关系" : "本体概览"}
           </p>
         </div>
-      )}
-
-      {/* 查询区域 */}
-      {neo4jOk && (
-        <div className="bg-white border rounded-xl p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <div className="flex border rounded overflow-hidden text-xs">
-              {(['natural', 'cypher'] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => { setQueryMode(m); setQueryResult([]) }}
-                  className={`px-3 py-1.5 font-medium transition-colors ${
-                    queryMode === m ? 'bg-black text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  {m === 'natural' ? '自然语言' : 'Cypher'}
-                </button>
-              ))}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          {!selected && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {[
+                  ["实体类型", summary.entity_type_count],
+                  ["属性", summary.property_count],
+                  ["关系", summary.relationship_count],
+                  ["逻辑规则", summary.logic_rule_count],
+                  ["真实实例", summary.instance_count],
+                  ["证据", summary.evidence_count],
+                ].map(([label, value]) => (
+                  <div
+                    key={String(label)}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  >
+                    <span className="block text-slate-500">{label}</span>
+                    <strong className="mt-1 block text-base text-slate-800">
+                      {value}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+              <p className="pt-2 text-xs leading-5 text-slate-500">
+                点击画布中的实体或关系，查看属性、关联关系和来源证据。
+              </p>
             </div>
-            <span className="text-xs text-gray-400">
-              {queryMode === 'natural' ? '用中文提问，自动转为图查询' : '直接输入 Cypher 语句'}
-            </span>
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleQuery()}
-              placeholder={queryMode === 'natural'
-                ? '例: 华为的供应链上下游有哪些？'
-                : 'MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n LIMIT 10'}
-              className={`flex-1 border rounded-lg px-3 py-2 text-sm ${queryMode === 'cypher' ? 'font-mono' : ''}`}
-            />
-            <button
-              onClick={handleQuery}
-              disabled={queryLoading}
-              className="px-3 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1.5"
-            >
-              {queryLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-              <span className="text-sm">查询</span>
-            </button>
-          </div>
-
-          {queryResult.length > 0 && (
-            <pre className="text-xs bg-gray-50 border rounded-lg p-3 overflow-auto max-h-40">
-              {JSON.stringify(queryResult, null, 2)}
-            </pre>
+          )}
+          {selectedNode && (
+            <div className="space-y-5">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {selectedNode.properties.name}
+                </h3>
+                {selectedNode.properties.name_en &&
+                  selectedNode.properties.name_en !==
+                    selectedNode.properties.name && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {selectedNode.properties.name_en}
+                    </p>
+                  )}
+                <p className="mt-2 text-sm leading-5 text-slate-600">
+                  {selectedNode.properties.description || "暂无说明"}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                  <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
+                    置信度{" "}
+                    {Number(selectedNode.properties.confidence ?? 1).toFixed(2)}
+                  </span>
+                  <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
+                    真实实例 {selectedNode.properties.instance_count || 0}
+                  </span>
+                  <span className="rounded bg-slate-100 px-2 py-1 text-slate-600">
+                    证据 {selectedNode.properties.evidence_count || 0}
+                  </span>
+                </div>
+              </div>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  属性
+                </h4>
+                <PropertyRows
+                  properties={
+                    selectedNode.properties.property_definitions || []
+                  }
+                />
+              </section>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  关系
+                </h4>
+                {relatedEdges.length ? (
+                  <div className="space-y-2">
+                    {relatedEdges.map((edge) => {
+                      const other = nodeById.get(
+                        edge.source === selectedNode.id
+                          ? edge.target
+                          : edge.source,
+                      );
+                      return (
+                        <button
+                          key={edge.id}
+                          onClick={() =>
+                            setSelected({ kind: "edge", value: edge })
+                          }
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-xs hover:border-slate-400"
+                        >
+                          <strong className="block text-slate-800">
+                            {edge.label || edge.type}
+                          </strong>
+                          <span className="mt-1 block text-slate-500">
+                            {edge.source === selectedNode.id ? "指向" : "来自"}{" "}
+                            {other?.properties.name ||
+                              other?.id ||
+                              "未解析实体"}{" "}
+                            · {edge.properties?.cardinality || "one-to-many"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">暂无关联关系</p>
+                )}
+              </section>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  来源证据
+                </h4>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  来源字段：
+                  {selectedNode.properties.source_fields?.length
+                    ? selectedNode.properties.source_fields.join("、")
+                    : "—"}
+                </div>
+              </section>
+            </div>
+          )}
+          {selectedEdge && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  {selectedEdge.label || selectedEdge.type}
+                </h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  {selectedEdge.properties?.description || "暂无说明"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                <p>
+                  起点：
+                  {nodeById.get(selectedEdge.source)?.properties.name ||
+                    selectedEdge.source}
+                </p>
+                <p className="mt-1">
+                  终点：
+                  {nodeById.get(selectedEdge.target)?.properties.name ||
+                    selectedEdge.target}
+                </p>
+                <p className="mt-1">
+                  基数：{selectedEdge.properties?.cardinality || "one-to-many"}
+                </p>
+              </div>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  关系属性
+                </h4>
+                <PropertyRows
+                  properties={selectedEdge.properties?.attributes || []}
+                />
+              </section>
+              <section>
+                <h4 className="mb-2 text-xs font-semibold tracking-wide text-slate-500">
+                  来源证据
+                </h4>
+                <p className="text-xs text-slate-600">
+                  来源字段：
+                  {selectedEdge.properties?.source_fields?.join("、") || "—"}
+                </p>
+              </section>
+            </div>
           )}
         </div>
-      )}
-
-      {/* 语义搜索 */}
-      {neo4jOk && (
-        <div className="bg-white border rounded-xl p-4">
-          <p className="text-xs font-medium text-gray-600 mb-3">语义搜索</p>
-          <OntologySearchBox ontologyId={ontologyId} />
+        <div className="border-t border-slate-200 p-3">
+          <div className="relative">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={selectedNode ? "搜索当前实体的属性" : "搜索本体"}
+              className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-8 text-sm outline-none focus:border-slate-700"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+          {searching && (
+            <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
+              <Loader2 size={12} className="animate-spin" />
+              正在搜索
+            </p>
+          )}
+          {query && !searching && (
+            <div className="mt-2 max-h-40 space-y-2 overflow-y-auto">
+              {Object.entries(searchResult?.groups || {}).map(
+                ([group, items]) => (
+                  <div key={group}>
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      {group}
+                    </p>
+                    {items.map((item, index) => (
+                      <button
+                        key={`${item.kind}-${item.id}-${index}`}
+                        onClick={() => locate(item)}
+                        className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-slate-50"
+                      >
+                        <strong className="block text-slate-700">
+                          {item.label || item.id}
+                        </strong>
+                        {item.description && (
+                          <span className="block truncate text-slate-500">
+                            {item.description}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ),
+              )}
+              {!(searchResult?.results || []).length && (
+                <p className="text-xs text-slate-400">无匹配结果</p>
+              )}
+            </div>
+          )}
         </div>
-      )}
+      </aside>
     </div>
-  )
+  );
 }

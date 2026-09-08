@@ -1,0 +1,63 @@
+services:
+  db:
+    ports: !override
+      - "127.0.0.1:15432:5432"
+  redis:
+    ports: !override
+      - "127.0.0.1:16379:6379"
+  neo4j:
+    ports: !override
+      - "127.0.0.1:17474:7474"
+      - "127.0.0.1:17687:7687"
+  minio:
+    ports: !override
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+  chromadb:
+    ports: !override
+      - "127.0.0.1:18001:8000"
+  backend:
+    ports: !override
+      - "127.0.0.1:18080:8000"
+    environment:
+      AUTH_MODE: local_single_user
+      CELERY_ENABLED: "true"
+      LITELLM_API_BASE: http://litellm:4000/v1
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-local-gateway}
+      # The backend runs in Docker while Ollama runs on the host.
+      OLLAMA_API_BASE: http://host.docker.internal:11434/v1
+      CMAPSS_FD001_DEMO_DIR: /teacher-cmapss
+    volumes:
+      - /Users/nihou/Desktop/pku_security/proj4（ontology）/worktrees/teacher-delivery-completion/data/cmapss_fd001_demo:/teacher-cmapss:ro
+  frontend:
+    ports: !override
+      - "127.0.0.1:15173:5173"
+    environment:
+      VITE_AUTH_MODE: local_single_user
+  celery_worker:
+    environment:
+      AUTH_MODE: local_single_user
+      CELERY_ENABLED: "true"
+      LITELLM_API_BASE: http://litellm:4000/v1
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-local-gateway}
+      OLLAMA_API_BASE: http://host.docker.internal:11434/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  celery_beat:
+    environment:
+      AUTH_MODE: local_single_user
+      CELERY_ENABLED: "true"
+      LITELLM_API_BASE: http://litellm:4000/v1
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-local-gateway}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  litellm:
+    ports: !override
+      - "127.0.0.1:14000:4000"
+    environment:
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-ollama}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-local-gateway}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:-local-salt-key}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -96,6 +96,17 @@ def infer_relations(entities: list, existing_relations: list, text: str,
 
 
 def _call_llm(provider: str, api_key: str, api_base: str | None, model: str, messages: list, json_mode: bool = True) -> str:
+    # Keep every application call on the same local LiteLLM boundary when the
+    # workbench runtime enables it.  Older callers still pass their provider
+    # URL directly, so the override belongs here as the final guard rather
+    # than relying on every legacy call site to remember the selector helper.
+    import os as _os
+    _gateway_base = _os.getenv("LITELLM_API_BASE", "").strip()
+    if _gateway_base:
+        provider = "openai"
+        api_base = _gateway_base.rstrip("/")
+        api_key = _os.getenv("LITELLM_API_KEY", "").strip() or api_key or "local-gateway"
+
     # Stable seed for reproducibility: derived from message content so same input → same seed.
     import hashlib as _hashlib, json as _json
     try:
@@ -119,15 +130,36 @@ def _call_llm(provider: str, api_key: str, api_base: str | None, model: str, mes
         if api_base:
             kwargs["base_url"] = api_base
         client = openai.OpenAI(**kwargs)
-        create_kwargs: dict = {"model": model, "messages": messages, "timeout": 300, "max_tokens": 65536,
-                               "temperature": 0, "seed": _seed}
-        if json_mode:
-            create_kwargs["response_format"] = {"type": "json_object"}
+        is_minimax = model == "MiniMax-M3" or "api.minimaxi.com" in str(api_base or "")
+        create_kwargs: dict = {"model": model, "messages": messages, "timeout": 300,
+                               "temperature": 0}
+        if is_minimax:
+            # MiniMax M3's OpenAI-compatible endpoint uses its own reasoning
+            # controls.  It rejects seed/response_format, so do not send
+            # those fields even when the caller requested JSON mode.
+            create_kwargs["max_completion_tokens"] = 65536
+            create_kwargs["extra_body"] = {"thinking": {"type": "adaptive"}, "reasoning_split": True}
+        else:
+            create_kwargs["max_tokens"] = 65536
+            create_kwargs["seed"] = _seed
+            if "qwen3.5" in str(model).lower():
+                # qwen3.5 exposes its internal reasoning in a separate
+                # Ollama field and can consume the entire token budget before
+                # producing visible content.  Disable that mode for the
+                # compact audit helper so callers receive an actual answer.
+                create_kwargs["extra_body"] = {"think": False}
+            elif provider == "compatible":
+                create_kwargs["extra_body"] = {"reasoning_effort": "none"}
+            if json_mode:
+                create_kwargs["response_format"] = {"type": "json_object"}
         try:
             resp = client.chat.completions.create(**create_kwargs)
         except Exception:
-            # seed not supported by all providers — retry without it
+            # seed/extra_body are not supported by all providers — retry with
+            # the portable OpenAI-compatible subset
             create_kwargs.pop("seed", None)
+            create_kwargs.pop("extra_body", None)
+            create_kwargs.pop("response_format", None)
             resp = client.chat.completions.create(**create_kwargs)
         return resp.choices[0].message.content or ""
 

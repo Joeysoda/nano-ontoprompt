@@ -97,6 +97,12 @@ class StorageService:
     def ensure_bucket(self, bucket: str) -> None:
         """桶不存在则创建。"""
         self._require_available()
+        # The local filesystem fallback does not have a MinIO client.  Keep
+        # the bucket contract by letting ``_local_path`` create directories
+        # on first write instead of dereferencing ``None`` here.
+        if not self._available or self._client is None:
+            os.makedirs(os.path.join(self._LOCAL_BASE, bucket), exist_ok=True)
+            return
         if not self._client.bucket_exists(bucket):
             self._client.make_bucket(bucket)
 
@@ -157,12 +163,19 @@ class StorageService:
     def get_stream(self, uri: str) -> BinaryIO:
         """按 s3://bucket/key URI 返回流。"""
         bucket, key = self._parse_uri(uri)
-        return self._client.get_object(bucket, key)
+        if self._available and self._client:
+            return self._client.get_object(bucket, key)
+        local = self._local_path(bucket, key)
+        if os.path.exists(local):
+            return open(local, "rb")
+        raise FileNotFoundError(f"Object not found locally: {uri}")
 
     def presigned_get(self, uri: str, expires_seconds: int = 3600) -> str:
         """生成下载用 presigned URL。"""
         from datetime import timedelta
         bucket, key = self._parse_uri(uri)
+        if not self._available or not self._client:
+            raise RuntimeError("对象存储未连接，无法生成下载链接")
         url = self._client.presigned_get_object(
             bucket, key, expires=timedelta(seconds=expires_seconds)
         )
@@ -171,7 +184,14 @@ class StorageService:
     def delete_object(self, uri: str) -> None:
         """删除对象。"""
         bucket, key = self._parse_uri(uri)
-        self._client.remove_object(bucket, key)
+        if self._available and self._client:
+            self._client.remove_object(bucket, key)
+            return
+        # Keep the same deletion contract when the local filesystem fallback
+        # is active (used by tests and offline development).
+        local = os.path.join(self._LOCAL_BASE, bucket, key)
+        if os.path.exists(local):
+            os.remove(local)
 
     def list_prefix(self, bucket: str, prefix: str) -> list[str]:
         """返回 prefix 下的对象键列表。"""
@@ -185,7 +205,7 @@ class StorageService:
             try:
                 self._client.stat_object(bucket, key)
                 return True
-            except S3Error:
+            except Exception:
                 return False
         return os.path.exists(os.path.join(self._LOCAL_BASE, bucket, key))
 

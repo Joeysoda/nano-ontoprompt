@@ -33,14 +33,14 @@ interface DatasetRow {
 
 // Human Review 已移除 — 用户可在本体详情页自行修改
 const BUILD_PHASES = [
-  { key: 'entity',    label: '① Entity Type 识别',  icon: '🧩' },
-  { key: 'property',  label: '② Property Mapping',   icon: '📋' },
-  { key: 'relation',  label: '③ Relation 推断',      icon: '🔗' },
-  { key: 'logic',     label: '④ Logic Discovery',    icon: '⚖️' },
-  { key: 'action',    label: '⑤ Action Discovery',   icon: '⚡' },
-  { key: 'neo4j',     label: '⑥ 写入 Neo4j',         icon: '🕸️' },
-  { key: 'chroma',    label: '⑦ 写入 ChromaDB',      icon: '📊' },
-  { key: 'publish',   label: '⑧ 完成',               icon: '🚀' },
+  { key: 'entity',    label: '① Entity Type 识别',  icon: '01' },
+  { key: 'property',  label: '② Property Mapping',   icon: '02' },
+  { key: 'relation',  label: '③ Relation 推断',      icon: '03' },
+  { key: 'logic',     label: '④ Logic Discovery',    icon: '04' },
+  { key: 'action',    label: '⑤ Action Discovery',   icon: '05' },
+  { key: 'neo4j',     label: '⑥ 写入 Neo4j',         icon: '06' },
+  { key: 'chroma',    label: '⑦ 写入 ChromaDB',      icon: '07' },
+  { key: 'publish',   label: '⑧ 完成',               icon: '08' },
 ]
 
 const STATUS_ICON = (status: string) => {
@@ -321,7 +321,7 @@ export default function OntologyCreateWizard() {
         <ArrowLeft size={14} /> 返回选择方式
       </button>
       <h2 className="text-xl font-semibold mb-1">新建本体</h2>
-      <p className="text-sm text-gray-400 mb-2">{mode === 'simple_llm' ? '⚡ 简易 LLM 提取' : '🔄 Pipeline Mapping'}</p>
+      <p className="text-sm text-gray-400 mb-2">{mode === 'simple_llm' ? '简易 LLM 提取' : 'Pipeline Mapping'}</p>
       {mode === 'pipeline_mapping' && <StepIndicator current={0} />}
       <div className="bg-white rounded-xl border p-6 space-y-4">
         <div>
@@ -355,7 +355,7 @@ export default function OntologyCreateWizard() {
   if (step === 'select_datasets') return (
     <div>
       <h2 className="text-xl font-semibold mb-1">选择数据集</h2>
-      <p className="text-sm text-gray-400 mb-4">🔄 Pipeline Mapping</p>
+      <p className="text-sm text-gray-400 mb-4">Pipeline Mapping</p>
       <StepIndicator current={1} />
 
       <div className="bg-white rounded-xl border p-6">
@@ -563,7 +563,7 @@ export default function OntologyCreateWizard() {
   if (step === 'mapping_config') return (
     <div>
       <h2 className="text-xl font-semibold mb-1">Mapping 配置</h2>
-      <p className="text-sm text-gray-400 mb-4">🔄 Pipeline Mapping — LLM 辅助建议，可修改后确认</p>
+      <p className="text-sm text-gray-400 mb-4">Pipeline Mapping · LLM 辅助建议，可修改后确认</p>
       <StepIndicator current={2} />
       <div className="space-y-4">
         {[...selectedDatasetIds].map(dsId => {
@@ -656,7 +656,7 @@ export default function OntologyCreateWizard() {
                   <p className={`text-sm font-medium ${st === 'done' ? 'text-green-700' : st === 'running' ? 'text-blue-700' : ''}`}>{phase.label}</p>
                   <p className="text-xs text-gray-400">{st === 'done' ? '完成' : st === 'running' ? '进行中...' : st === 'failed' ? '失败' : '等待中'}</p>
                 </div>
-                {st === 'done' && <span className="text-green-500 text-xs">✅</span>}
+                {st === 'done' && <span className="text-green-500 text-xs">已完成</span>}
               </div>
             )
           })}
@@ -671,7 +671,7 @@ export default function OntologyCreateWizard() {
 
         {buildDone && (
           <div className="mt-5 p-5 bg-white border rounded-xl">
-            <p className="text-sm font-semibold text-gray-800 mb-1">🎉 构建完成</p>
+            <p className="text-sm font-semibold text-gray-800 mb-1">构建完成</p>
             <p className="text-xs text-gray-500 mb-3">
               实体、关系、Logic 与 Actions 已生成。你可以在本体详情页自由查看和修改每一项。
             </p>

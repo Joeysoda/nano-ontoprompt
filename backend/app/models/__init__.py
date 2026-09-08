@@ -11,6 +11,7 @@ from app.models.extraction_task import ExtractionTask
 from app.models.rules_config import RulesConfig
 from app.models.audit_task import AuditTask
 from app.models.entity_instance import EntityInstance
+from app.models.ontology_revision import OntologyRevision
 
 __all__ = [
     "User",
@@ -26,4 +27,5 @@ __all__ = [
     "RulesConfig",
     "AuditTask",
     "EntityInstance",
+    "OntologyRevision",
 ]

@@ -7,8 +7,40 @@ from app.models.user import User
 from app.schemas.model_config import ModelConfigCreate, ModelConfigUpdate, ModelConfigOut
 from app.services.encryption_service import encrypt
 import uuid
+import json
+import os
+import urllib.request
 
 router = APIRouter()
+
+@router.get("/local/probe")
+def probe_local_model(db: Session = Depends(get_db), _=Depends(get_current_user)):
+    """Probe Ollama tags; the response distinguishes slot/config from runtime."""
+    from app.services.local_model_bootstrap import LOCAL_API_BASE, LOCAL_MODEL_NAME, LOCAL_CONFIG_NAME
+    config = db.query(ModelConfig).filter(ModelConfig.name == LOCAL_CONFIG_NAME).first()
+    api_base = (config.api_base if config else None) or os.getenv("OLLAMA_API_BASE", LOCAL_API_BASE)
+    root = api_base.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[:-3]
+    endpoint = f"{root}/api/tags"
+    reachable = False
+    models: list[str] = []
+    error = None
+    try:
+        request = urllib.request.Request(endpoint, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(request, timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        models = [str(item.get("name") or item.get("model")) for item in (payload.get("models") or []) if isinstance(item, dict)]
+        reachable = True
+    except Exception as exc:
+        error = str(exc)[:240]
+    installed = any(name == LOCAL_MODEL_NAME or name.startswith(f"{LOCAL_MODEL_NAME}:") for name in models)
+    return {
+        "configured": bool(config), "provider": "ollama", "model": LOCAL_MODEL_NAME,
+        "api_base": api_base, "probe_endpoint": endpoint, "reachable": reachable,
+        "installed": installed, "ready": reachable and installed, "models": models,
+        "error": error, "install_command": f"ollama pull {LOCAL_MODEL_NAME}",
+    }
 
 @router.get("")
 def list_models(db: Session = Depends(get_db), _=Depends(get_current_user)):
@@ -77,6 +109,17 @@ def test_model(model_id: str, db: Session = Depends(get_db), _=Depends(get_curre
     if not c:
         raise HTTPException(404, "Not found")
     try:
+        if str(c.provider).lower() in {"ollama", "local"}:
+            from app.services.local_model_bootstrap import LOCAL_MODEL_NAME
+            root = (c.api_base or "http://127.0.0.1:11434/v1").rstrip("/")
+            if root.endswith("/v1"):
+                root = root[:-3]
+            request = urllib.request.Request(f"{root}/api/tags", headers={"Accept": "application/json"})
+            with urllib.request.urlopen(request, timeout=3) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            names = [str(item.get("name") or item.get("model")) for item in (payload.get("models") or []) if isinstance(item, dict)]
+            ready = any(name == LOCAL_MODEL_NAME or name.startswith(f"{LOCAL_MODEL_NAME}:") for name in names)
+            return {"data": {"ok": ready, "response": "Ollama 可用，已发现 qwen3.5:0.8b" if ready else "Ollama 在线但未发现 qwen3.5:0.8b"}}
         if (c.config_type or "llm") == "ocr":
             if c.provider == "easyocr":
                 import os
@@ -123,7 +166,14 @@ def test_model(model_id: str, db: Session = Depends(get_db), _=Depends(get_curre
                 kwargs["base_url"] = call_kwargs["api_base"]
             client = openai.OpenAI(**kwargs)
             model = call_kwargs["model"]
-            resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": "ping"}], max_tokens=10)
-            return {"data": {"ok": True, "response": resp.choices[0].message.content}}
+            create_kwargs = {"model": model, "messages": [{"role": "user", "content": "ping"}]}
+            if model == "MiniMax-M3" or "api.minimaxi.com" in str(call_kwargs["api_base"] or ""):
+                create_kwargs.update({"max_completion_tokens": 10, "extra_body": {"thinking": {"type": "adaptive"}, "reasoning_split": True}})
+            else:
+                create_kwargs["max_tokens"] = 10
+            resp = client.chat.completions.create(**create_kwargs)
+            message = resp.choices[0].message
+            content = getattr(message, "content", None) or getattr(message, "reasoning_content", None)
+            return {"data": {"ok": True, "response": content or "MiniMax M3 endpoint reachable"}}
     except Exception as e:
         raise HTTPException(400, f"Connection failed: {e}")

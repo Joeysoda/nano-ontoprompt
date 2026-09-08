@@ -181,12 +181,12 @@ export default function CuratedTab() {
                           onClick={() => handleReview(ds.id, 'approve')}
                           disabled={reviewing === ds.id}
                           className="text-xs px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100 disabled:opacity-50"
-                        >✅ 批准</button>
+                        >批准</button>
                         <button
                           onClick={() => handleReview(ds.id, 'reject')}
                           disabled={reviewing === ds.id}
                           className="text-xs px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 disabled:opacity-50"
-                        >❌ 拒绝</button>
+                        >拒绝</button>
                       </>
                     )}
                     <button onClick={() => handleExpand(ds.id)} className="p-1 rounded hover:bg-gray-100 text-gray-500">
@@ -285,13 +285,13 @@ export default function CuratedTab() {
                               <span>行数：{report.row_count}</span>
                               <span>列数：{report.column_count}</span>
                               {report.duplicate_count > 0 && (
-                                <span className="text-yellow-600">⚠️ 重复：{report.duplicate_count}</span>
+                                <span className="text-yellow-600">重复：{report.duplicate_count}</span>
                               )}
                             </div>
                             {report.issues.length > 0 && (
                               <div className="space-y-1">
                                 {report.issues.map((iss, i) => (
-                                  <div key={i} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded">⚠️ {iss}</div>
+                                  <div key={i} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded">{iss}</div>
                                 ))}
                               </div>
                             )}

@@ -342,7 +342,7 @@ export default function TransformsTab() {
                       </span>
                     )}
                     <span className={`text-xs ${pl.status === 'success' ? 'text-green-600' : pl.status === 'failed' ? 'text-red-500' : 'text-gray-400'}`}>
-                      {pl.status === 'success' ? '✅' : pl.status === 'failed' ? '❌' : '⏳'}
+                      {pl.status === 'success' ? '完成' : pl.status === 'failed' ? '失败' : '处理中'}
                     </span>
                     <button
                       onClick={() => handleRun(pl.id)}

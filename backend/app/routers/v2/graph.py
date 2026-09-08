@@ -1,7 +1,12 @@
-"""v2 Graph API — 基于 Neo4j"""
+"""v2 Graph API — Nano schema compatibility plus FalkorDB instances"""
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException
+from collections import Counter, defaultdict
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 from app.deps import get_current_user
 from app.database import SessionLocal
 
@@ -13,6 +18,11 @@ def get_neo4j():
     return Neo4jService()
 
 
+def get_falkordb():
+    from app.services.v2.graph.falkordb_service import FalkorDBService
+    return FalkorDBService()
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -21,28 +31,249 @@ def get_db():
         db.close()
 
 
+def _property_definitions(entity: Any) -> list[dict[str, Any]]:
+    """Read both the v2 property contract and legacy entity JSON safely."""
+    raw = entity.properties or {}
+    if isinstance(raw, list):
+        return [item for item in raw if isinstance(item, dict)]
+    if isinstance(raw, dict):
+        definitions = raw.get("property_definitions") or raw.get("properties")
+        if isinstance(definitions, list):
+            return [item for item in definitions if isinstance(item, dict)]
+        # Legacy schemas use a {field: type/value} object.  Keep it visible
+        # rather than rendering an empty inspector for older ontologies.
+        return [
+            {"id": str(key), "name": str(key), "label": str(key), "type": "string", "example": value}
+            for key, value in raw.items()
+            if key not in {"schema_version", "source_fields", "evidence", "color", "icon", "data_class"}
+        ]
+    return []
+
+
+def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200) -> dict[str, Any]:
+    """Return the published ontology vocabulary and inspector data.
+
+    The workbench intentionally reads this plane directly instead of choosing
+    a graph-store implementation.  FalkorDB remains useful for dense internal
+    traversal, but the user-visible ontology must be complete whenever its
+    construction transaction has been published.
+    """
+    from app.models.entity import Entity
+    from app.models.entity_instance import EntityInstance
+    from app.models.logic import LogicRule
+    from app.models.relation import Relation
+    from app.models.v2.construction import EvidenceRef
+
+    entities = (
+        db.query(Entity)
+        .filter(Entity.ontology_id == ontology_id)
+        .order_by(Entity.name_cn.asc(), Entity.name_en.asc())
+        .limit(limit)
+        .all()
+    )
+    entity_ids = [item.id for item in entities]
+    instance_rows = []
+    if entity_ids:
+        instance_rows = db.query(EntityInstance).filter(
+            EntityInstance.ontology_id == ontology_id,
+            EntityInstance.entity_id.in_(entity_ids),
+        ).all()
+    instances_by_entity: dict[str, list[Any]] = defaultdict(list)
+    instance_ids: list[str] = []
+    for item in instance_rows:
+        instances_by_entity[item.entity_id].append(item)
+        instance_ids.append(item.id)
+    evidence_by_assertion: Counter[str] = Counter()
+    if instance_ids:
+        for assertion_id, count in (
+            db.query(EvidenceRef.assertion_id, func.count(EvidenceRef.id))
+            .filter(EvidenceRef.ontology_id == ontology_id, EvidenceRef.assertion_id.in_(instance_ids))
+            .group_by(EvidenceRef.assertion_id)
+            .all()
+        ):
+            evidence_by_assertion[str(assertion_id)] = int(count)
+
+    relations = db.query(Relation).filter(Relation.ontology_id == ontology_id).all()
+    rules = db.query(LogicRule).filter(LogicRule.ontology_id == ontology_id).order_by(LogicRule.name_cn.asc()).all()
+    node_ids = set(entity_ids)
+    nodes: list[dict[str, Any]] = []
+    for entity in entities:
+        raw = entity.properties or {}
+        properties = _property_definitions(entity)
+        examples = [item.row_data or {} for item in instances_by_entity.get(entity.id, [])[:3]]
+        evidence_count = sum(evidence_by_assertion.get(item.id, 0) for item in instances_by_entity.get(entity.id, []))
+        nodes.append({
+            "id": entity.id,
+            "labels": ["EntityType"],
+            "entity_type": "EntityType",
+            "properties": {
+                "id": entity.id,
+                "name": entity.name_cn or entity.name_en or entity.id,
+                "name_cn": entity.name_cn or "",
+                "name_en": entity.name_en or "",
+                "description": entity.description or "",
+                "confidence": entity.confidence if entity.confidence is not None else 1.0,
+                "source_fields": raw.get("source_fields", []) if isinstance(raw, dict) else [],
+                "evidence": raw.get("evidence", {}) if isinstance(raw, dict) else {},
+                "property_definitions": properties,
+                "instance_count": len(instances_by_entity.get(entity.id, [])),
+                "instance_examples": examples,
+                "evidence_count": evidence_count,
+            },
+        })
+    edges = [
+        {
+            "id": relation.id,
+            "source": relation.source_entity,
+            "target": relation.target_entity,
+            "type": relation.type or "关联",
+            "label": (relation.properties or {}).get("name") or relation.type or "关联",
+            "properties": {
+                **(relation.properties or {}),
+                "name": (relation.properties or {}).get("name") or relation.type or "关联",
+                "cardinality": (relation.properties or {}).get("cardinality") or "one-to-many",
+                "confidence": relation.confidence if relation.confidence is not None else 1.0,
+            },
+        }
+        for relation in relations
+        if relation.source_entity in node_ids and relation.target_entity in node_ids
+    ]
+    property_count = sum(len(_property_definitions(entity)) for entity in entities)
+    total_evidence = db.query(EvidenceRef).filter(EvidenceRef.ontology_id == ontology_id).count()
+    return {
+        "ontology_id": ontology_id,
+        "nodes": nodes,
+        "edges": edges,
+        "logic_rules": [
+            {
+                "id": rule.id,
+                "name": rule.name_cn or rule.name_en or rule.id,
+                "name_cn": rule.name_cn or "",
+                "name_en": rule.name_en or "",
+                "description": rule.description or "",
+                "formula": rule.formula or "",
+                "condition": getattr(rule, "condition_json", None) or {},
+                "effect": getattr(rule, "effect_json", None) or {},
+                "linked_entities": rule.linked_entities or [],
+                "evidence": getattr(rule, "evidence_json", None) or {},
+                "confidence": rule.confidence if rule.confidence is not None else 1.0,
+                "model_invocation_id": getattr(rule, "model_invocation_id", None),
+            }
+            for rule in rules
+        ],
+        "summary": {
+            "entity_type_count": len(nodes),
+            "property_count": property_count,
+            "relationship_count": len(edges),
+            "logic_rule_count": len(rules),
+            "instance_count": len(instance_rows),
+            "evidence_count": total_evidence,
+        },
+        "available": True,
+        "graph_backend": "published-ontology",
+    }
+
+
 class CypherRequest(BaseModel):
     query: str
     params: dict = {}
 
 
+class TemporalImportRequest(BaseModel):
+    rows: list[dict] = []
+    adapter: str | None = None
+    construction_run_id: str | None = None
+    time_kind: str = "ordinal"
+    sequence_column: str | None = "event_seq"
+    event_time_column: str | None = None
+    valid_from_column: str | None = None
+    valid_to_column: str | None = None
+    entity_id_column: str = "unit_id"
+    entity_type: str = "Equipment"
+    observation_type: str = "SensorReading"
+    reading_id_prefix: str = "reading"
+
+
 @router.get("/{ontology_id}/graph")
-def get_graph(ontology_id: str, limit: int = 200, label_filter: str | None = None):
-    """返回本体图谱数据 (Neovis.js 兼容格式)"""
+def get_graph(
+    ontology_id: str,
+    # Keep a plain default so direct service-level callers/tests do not receive
+    # FastAPI's ``Query`` object; clamp explicitly for both HTTP and Python use.
+    limit: int = 200,
+    label_filter: str | None = None,
+    view: str = Query("ontology", pattern="^(ontology|schema|instances)$"),
+    entity_type: str | None = None,
+    seq_from: int | None = Query(None, ge=0),
+    seq_to: int | None = Query(None, ge=0),
+    relation_state: str = Query("all", pattern="^(all|current)$"),
+    db: Session = Depends(get_db),
+):
+    """Return the published ontology, legacy schema graph, or internal instances.
+
+    ``view=instances`` is the teacher-facing path and is served exclusively
+    from the per-ontology FalkorDB graph. The default schema view preserves
+    existing Nano behavior for older ontologies.
+    """
+    limit = max(1, min(int(limit), 1000))
+    if view == "ontology":
+        if not hasattr(db, "query"):
+            owned_db = SessionLocal()
+            try:
+                return _canonical_ontology_data(owned_db, ontology_id, limit=limit)
+            finally:
+                owned_db.close()
+        return _canonical_ontology_data(db, ontology_id, limit=limit)
+    if view == "instances":
+        from app.models.ontology import OntologyProject
+        # Direct Python callers/tests do not have FastAPI dependency
+        # resolution and therefore pass the default ``Depends`` sentinel.
+        # HTTP requests still receive a real Session and keep the stale-tab
+        # protection that prevents a read from creating a phantom graph.
+        if hasattr(db, "query") and not db.query(OntologyProject.id).filter(OntologyProject.id == ontology_id).first():
+            # Do not let a stale browser tab create an empty FalkorDB graph
+            # for a deleted ontology merely by reading the instances view.
+            raise HTTPException(404, "Ontology not found")
+        svc = get_falkordb()
+        if not svc.available:
+            return {
+                "nodes": [], "edges": [], "graph_backend": "falkordb",
+                "available": False, "error": "FalkorDB unavailable",
+            }
+        try:
+            return svc.get_graph_data(
+                ontology_id,
+                limit=limit,
+                entity_type=entity_type or label_filter,
+                seq_from=seq_from,
+                seq_to=seq_to,
+                relation_state=relation_state,
+            )
+        except Exception as exc:
+            return {
+                "nodes": [], "edges": [], "graph_backend": "falkordb",
+                "available": False, "error": str(exc),
+            }
     svc = get_neo4j()
     if not svc.available:
-        return _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data = _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data["graph_backend"] = "sqlite-schema"
+        return data
     try:
         data = svc.get_graph_data(ontology_id, limit=limit, label_filter=label_filter)
     except Exception:
         # 共享 driver 缓存期间 Neo4j 宕机 → 回退 SQLite 而非 500
         svc.close()
-        return _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data = _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data["graph_backend"] = "sqlite-schema"
+        return data
     svc.close()
     # Neo4j 可用但该 ontology 无数据（如简易 LLM 路线未同步写入）→ 回退 SQLite
     if not data.get("nodes"):
-        return _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data = _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
+        data["graph_backend"] = "sqlite-schema"
+        return data
     data["neo4j_available"] = True
+    data["graph_backend"] = "neo4j-legacy"
     return data
 
 
@@ -99,8 +330,134 @@ def _sqlite_graph_data(ontology_id: str, limit: int = 200, label_filter: str | N
         db.close()
 
 
+@router.get("/{ontology_id}/search")
+def search_ontology(
+    ontology_id: str,
+    q: str = Query("", max_length=200),
+    entity_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Search the published ontology without exposing graph query syntax.
+
+    Supplying ``entity_id`` deliberately narrows the scope to the selected
+    entity's attributes; otherwise names, attributes, relations, rules and
+    provenance are searchable across the ontology.
+    """
+    data = _canonical_ontology_data(db, ontology_id, limit=1000)
+    needle = q.strip().casefold()
+    if not needle:
+        return {"query": q, "scope": "entity_properties" if entity_id else "ontology", "results": [], "groups": {}}
+
+    def matches(*values: Any) -> bool:
+        return any(needle in str(value or "").casefold() for value in values)
+
+    groups: dict[str, list[dict[str, Any]]] = {"实体": [], "属性": [], "关系": [], "逻辑规则": [], "来源": []}
+    nodes_by_id = {node["id"]: node for node in data["nodes"]}
+    scoped = [nodes_by_id[entity_id]] if entity_id and entity_id in nodes_by_id else data["nodes"]
+    for node in scoped:
+        props = node["properties"]
+        if not entity_id and matches(props.get("name"), props.get("name_cn"), props.get("name_en"), props.get("description")):
+            groups["实体"].append({"kind": "entity", "id": node["id"], "label": props.get("name"), "description": props.get("description")})
+        for prop in props.get("property_definitions", []):
+            if matches(prop.get("name"), prop.get("label"), prop.get("description"), prop.get("source_field"), prop.get("type")):
+                groups["属性"].append({"kind": "property", "id": prop.get("id") or prop.get("name"), "entity_id": node["id"], "label": prop.get("label") or prop.get("name"), "description": prop.get("description") or prop.get("source_field") or ""})
+        if not entity_id:
+            for source in props.get("source_fields", []):
+                if matches(source):
+                    groups["来源"].append({"kind": "source", "id": node["id"], "entity_id": node["id"], "label": str(source), "description": props.get("name")})
+    if not entity_id:
+        for edge in data["edges"]:
+            props = edge.get("properties") or {}
+            if matches(edge.get("label"), edge.get("type"), props.get("description"), props.get("cardinality"), props.get("source_fields")):
+                groups["关系"].append({"kind": "relationship", "id": edge["id"], "source": edge["source"], "target": edge["target"], "label": edge.get("label"), "description": props.get("description") or ""})
+        for rule in data["logic_rules"]:
+            if matches(rule.get("name"), rule.get("description"), rule.get("formula"), rule.get("condition"), rule.get("effect"), rule.get("evidence")):
+                groups["逻辑规则"].append({"kind": "logic_rule", "id": rule["id"], "label": rule.get("name"), "description": rule.get("description") or rule.get("formula") or ""})
+    groups = {key: value[:40] for key, value in groups.items() if value}
+    results = [item for value in groups.values() for item in value]
+    return {"query": q, "scope": "entity_properties" if entity_id else "ontology", "results": results, "groups": groups}
+
+
+@router.get("/{ontology_id}/entities")
+def list_ontology_entities(ontology_id: str, db: Session = Depends(get_db)):
+    """Read-only entity-type catalogue with real instance counts."""
+    data = _canonical_ontology_data(db, ontology_id, limit=1000)
+    relation_counts: Counter[str] = Counter()
+    for edge in data["edges"]:
+        relation_counts[edge["source"]] += 1
+        relation_counts[edge["target"]] += 1
+    return {
+        "entities": [
+            {
+                "id": node["id"],
+                "name": node["properties"].get("name"),
+                "name_cn": node["properties"].get("name_cn"),
+                "name_en": node["properties"].get("name_en"),
+                "description": node["properties"].get("description"),
+                "properties": node["properties"].get("property_definitions", []),
+                "property_count": len(node["properties"].get("property_definitions", [])),
+                "relationship_count": relation_counts.get(node["id"], 0),
+                "instance_count": node["properties"].get("instance_count", 0),
+                "evidence_count": node["properties"].get("evidence_count", 0),
+                "confidence": node["properties"].get("confidence", 1.0),
+                "source_fields": node["properties"].get("source_fields", []),
+            }
+            for node in data["nodes"]
+        ],
+        "summary": data["summary"],
+    }
+
+
+@router.get("/{ontology_id}/entities/{entity_id}/instances")
+def list_entity_instances(
+    ontology_id: str,
+    entity_id: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    from app.models.entity import Entity
+    from app.models.entity_instance import EntityInstance
+    from app.models.v2.construction import EvidenceRef
+
+    entity = db.query(Entity).filter(Entity.id == entity_id, Entity.ontology_id == ontology_id).first()
+    if not entity:
+        raise HTTPException(404, "本体实体不存在")
+    query = db.query(EntityInstance).filter(EntityInstance.ontology_id == ontology_id, EntityInstance.entity_id == entity_id).order_by(EntityInstance.created_at.desc())
+    total = query.count()
+    rows = query.offset(offset).limit(limit).all()
+    instance_ids = [row.id for row in rows]
+    evidence: dict[str, int] = {}
+    if instance_ids:
+        evidence = dict(
+            db.query(EvidenceRef.assertion_id, func.count(EvidenceRef.id))
+            .filter(EvidenceRef.ontology_id == ontology_id, EvidenceRef.assertion_id.in_(instance_ids))
+            .group_by(EvidenceRef.assertion_id)
+            .all()
+        )
+    return {
+        "entity": {"id": entity.id, "name": entity.name_cn or entity.name_en or entity.id},
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "instances": [
+            {
+                "id": row.id,
+                "row_identity": row.row_identity,
+                "row_data": row.row_data or {},
+                "revision_id": getattr(row, "revision_id", None),
+                "evidence_count": int(evidence.get(row.id, 0)),
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ],
+    }
+
+
 @router.get("/{ontology_id}/graph/quality")
-def graph_quality(ontology_id: str):
+def graph_quality(ontology_id: str, source: str = Query("schema", pattern="^(schema|instances)$")):
+    if source == "instances":
+        return get_falkordb().quality(ontology_id)
     from app.models.entity import Entity
     from app.models.relation import Relation
     from collections import Counter
@@ -131,6 +488,8 @@ def graph_quality(ontology_id: str):
             quality_score -= min(0.25, len(orphan_relations) / edge_count * 0.25)
         return {
             "ontology_id": ontology_id,
+            "graph_backend": "sqlite-schema",
+            "available": True,
             "node_count": node_count,
             "edge_count": edge_count,
             "isolated_node_count": len(isolated),
@@ -152,17 +511,120 @@ def graph_quality(ontology_id: str):
 
 @router.get("/{ontology_id}/integrations/status")
 def integration_status(ontology_id: str):
-    neo = get_neo4j()
-    neo_available = neo.available
-    if neo_available:
-        neo.close()
+    falkor = get_falkordb()
     from app.services.v2.vector.chroma_service import ChromaService
     chroma = ChromaService()
     return {
         "ontology_id": ontology_id,
-        "neo4j": {"available": neo_available},
+        "falkordb": {"available": falkor.available, "host": falkor.host, "port": falkor.port},
         "chroma": {"available": chroma.available, "entity_count": chroma.count(ontology_id)},
     }
+
+
+@router.get("/{ontology_id}/graph/temporal/coverage")
+def temporal_coverage(ontology_id: str, production_line_id: str):
+    """Return current and historical COVERS edges for one production line."""
+    return get_falkordb().coverage(ontology_id, production_line_id)
+
+
+@router.post("/{ontology_id}/graph/temporal/import")
+def import_temporal_rows(ontology_id: str, body: TemporalImportRequest):
+    """Normalize and import a bounded temporal row batch into FalkorDB.
+
+    This is intentionally an explicit, deterministic API: the server never
+    invents timestamps or entity identities when a row is malformed.
+    """
+    from app.services.v2.temporal_service import (
+        TemporalConfig,
+        build_observation_instances,
+        normalize_temporal_rows,
+    )
+
+    falkor = get_falkordb()
+    if not falkor.available:
+        return {"available": False, "graph_backend": "falkordb", "error": "FalkorDB unavailable"}
+    rows = body.rows
+    time_kind = body.time_kind
+    if body.adapter:
+        from app.services.v2.datasets.temporal_adapters import get_adapter
+        adapter = get_adapter(body.adapter)
+        rows = adapter.normalize(rows)
+        time_kind = adapter.time_kind
+    config = TemporalConfig(
+        time_kind=time_kind,
+        sequence_column=body.sequence_column,
+        event_time_column=body.event_time_column,
+        valid_from_column=body.valid_from_column,
+        valid_to_column=body.valid_to_column,
+    )
+    normalized, issues = normalize_temporal_rows(rows, config)
+    nodes, edges = build_observation_instances(
+        normalized,
+        entity_id_column=body.entity_id_column,
+        entity_type=body.entity_type,
+        observation_type=body.observation_type,
+        reading_id_prefix=body.reading_id_prefix,
+    )
+    node_count = falkor.upsert_instances(ontology_id, nodes)
+    edge_count = falkor.upsert_relations(ontology_id, edges)
+    evidence_count = 0
+    if body.construction_run_id:
+        from app.models.v2.construction import ConstructionRun
+        from app.services.v2.construction_service import add_evidence, update_run
+        db = SessionLocal()
+        try:
+            run = db.query(ConstructionRun).filter(
+                ConstructionRun.id == body.construction_run_id,
+                ConstructionRun.ontology_id == ontology_id,
+            ).first()
+            if not run:
+                raise HTTPException(404, "Construction run not found")
+            update_run(db, run, status="completed", progress={"completed": len(normalized), "total": len(rows)}, metrics={"nodes_upserted": node_count, "edges_upserted": edge_count, "temporal_issues": len(issues)})
+            for index, row in enumerate(normalized):
+                add_evidence(db, run=run, assertion_id=f"row:{index}", assertion_kind="mapping", extractor="rule", source_row=index, source_dataset_version="input", confidence=1.0, confidence_method="deterministic_temporal_normalization", evidence_text=str({k: row.get(k) for k in ("event_seq", "event_time", "valid_from", "valid_to")}))
+                evidence_count += 1
+        finally:
+            db.close()
+    return {
+        "available": True,
+        "graph_backend": "falkordb",
+        "time_kind": time_kind,
+        "nodes_upserted": node_count,
+        "edges_upserted": edge_count,
+        "evidence_refs": evidence_count,
+        "row_count": len(rows),
+        "issues": issues,
+    }
+
+
+@router.get("/{ontology_id}/graph/temporal/relations")
+def temporal_relations(
+    ontology_id: str,
+    relation_type: str | None = None,
+    subject_id: str | None = None,
+    object_id: str | None = None,
+    event_seq: int | None = Query(None, ge=0),
+    event_time: str | None = None,
+    at: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    relation_state: str = Query("all", pattern="^(all|current)$"),
+    limit: int = 200,
+):
+    """Query temporal relations without exposing arbitrary write Cypher."""
+    return get_falkordb().get_temporal_relations(
+        ontology_id,
+        relation_type=relation_type,
+        subject_id=subject_id,
+        object_id=object_id,
+        event_seq=event_seq,
+        event_time=event_time,
+        at=at,
+        date_from=date_from,
+        date_to=date_to,
+        relation_state=relation_state,
+        limit=max(1, min(int(limit), 1000)),
+    )
 
 
 @router.post("/{ontology_id}/graph/cypher")
