@@ -107,8 +107,22 @@ def reasoning_inputs(ontology_id: str, db: Session = Depends(get_db)):
             "evidence_text": row.evidence_text, "content_hash": row.content_hash,
         })
     evidence = {}
-    def add(fact, assertion_id):
-        evidence[fact] = [{**r, "fact": fact} for r in refs.get(assertion_id, [])] or [{"fact": fact, "source": "graph_without_source_reference"}]
+    def source_refs(ident):
+        matches = refs.get(ident, [])
+        if not matches and ident.startswith('FactoryNet:Observation:'):
+            # The SQL materializer and FalkorDB use distinct deterministic IDs
+            # for the same episode + original row. Match the full identity,
+            # never a row number alone across datasets or episodes.
+            identity = ident.removeprefix('FactoryNet:Observation:')
+            digest = hashlib.sha256(f'{ontology_id}:Observation:{identity}'.encode()).hexdigest()[:20]
+            matches = refs.get(f'temporal:{ontology_id}:Observation:{digest}', [])
+        return matches
+    def add(fact, assertion_id, anchors=()):
+        matches = source_refs(assertion_id)
+        if not matches and anchors:
+            matches = [dict(r, evidence_scope='source_observation_for_relationship')
+                       for anchor in anchors for r in source_refs(anchor)]
+        evidence[fact] = [{**r, "fact": fact} for r in matches] or [{"fact": fact, "source": "graph_without_source_reference"}]
     for node in data.get("nodes", []):
         try:
             add(atom(f"{node['entity_type']}({node['id']})"), node["id"])
@@ -118,7 +132,10 @@ def reasoning_inputs(ontology_id: str, db: Session = Depends(get_db)):
         if (edge.get("properties") or {}).get("derived"):
             continue
         fact = atom(f"{edge['type']}({edge['source']}, {edge['target']})")
-        add(fact, (edge.get("properties") or {}).get("assertion_id", fact))
+        anchors = ()
+        if edge['source'].startswith('FactoryNet:Observation:') and edge['type'] in ('IN_PHASE', 'HAS_TOOL_CONDITION', 'OBSERVED_ON', 'HAS_INSPECTION'):
+            anchors = (edge['source'],)
+        add(fact, (edge.get("properties") or {}).get("assertion_id", fact), anchors)
     rules = [r.formula for r in db.query(LogicRule).filter(LogicRule.ontology_id == ontology_id, LogicRule.enabled.is_(True)).order_by(LogicRule.id).all()
              if (r.formula or '').startswith('IF ') and re.fullmatch(r'IF\s+[^<>]+\([^<>]+\)(?:\s+AND\s+[^<>]+\([^<>]+\))*\s+THEN\s+[^<>]+\([^<>]+\)', r.formula.strip(), re.I)]
     return {"facts": list(evidence), "evidence": evidence, "rules": rules, "available": True,

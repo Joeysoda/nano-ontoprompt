@@ -41,6 +41,8 @@ from app.routers.v2 import construction_drafts as construction_drafts_v2
 from app.routers.v2 import temporal as temporal_v2
 from app.routers.v2 import model_routes as model_routes_v2
 from app.routers.v2 import reasoning_workbench as reasoning_v2
+from app.routers.v2 import decisions as decisions_v2
+from app.routers.v2 import agent as agent_v2
 
 def _run_schema_migration():
     """统一 schema 迁移入口。
@@ -295,6 +297,8 @@ app.include_router(temporal_v2.ontology_router, prefix="/api/v2/ontologies", tag
 app.include_router(model_routes_v2.router, prefix="/api/v2/model-routes", tags=["v2-model-routes"])
 app.include_router(model_routes_v2.invocations_router, prefix="/api/v2", tags=["v2-model-invocations"])
 app.include_router(reasoning_v2.router, prefix="/api/v2/ontologies", tags=["v2-reasoning"])
+app.include_router(decisions_v2.router, prefix="/api/v2/ontologies", tags=["v2-decisions"])
+app.include_router(agent_v2.router, prefix="/api/v2/ontologies", tags=["v2-agent"])
 
 def get_db():
     db = SessionLocal()

@@ -1,0 +1,3 @@
+# Agno is optional at runtime; deterministic mode supports reproducible evaluation.
+agno>=1.7.0,<2
+openai>=1.99.0,<2

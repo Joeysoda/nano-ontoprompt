@@ -62,6 +62,7 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200)
     from app.models.entity_instance import EntityInstance
     from app.models.logic import LogicRule
     from app.models.relation import Relation
+    from app.models.v2.logic import OntologyLogicRule
     from app.models.v2.construction import EvidenceRef
 
     entities = (
@@ -95,6 +96,11 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200)
 
     relations = db.query(Relation).filter(Relation.ontology_id == ontology_id).all()
     rules = db.query(LogicRule).filter(LogicRule.ontology_id == ontology_id).order_by(LogicRule.name_cn.asc()).all()
+    decision_rules = db.query(OntologyLogicRule).filter(
+        OntologyLogicRule.ontology_id == ontology_id,
+        OntologyLogicRule.logic_type == "decision",
+        OntologyLogicRule.enabled.is_(True),
+    ).all()
     node_ids = set(entity_ids)
     nodes: list[dict[str, Any]] = []
     for entity in entities:
@@ -160,12 +166,28 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200)
                 "model_invocation_id": getattr(rule, "model_invocation_id", None),
             }
             for rule in rules
+        ] + [
+            {
+                "id": rule.id,
+                "name": rule.name,
+                "name_cn": rule.name,
+                "name_en": "Decision policy",
+                "description": rule.description or "",
+                "formula": rule.expression or {},
+                "condition": {"all_of": (rule.expression or {}).get("all_of"), "any_of": (rule.expression or {}).get("any_of")},
+                "effect": {"outcome": (rule.expression or {}).get("outcome"), "action": (rule.expression or {}).get("action")},
+                "linked_entities": [rule.target_entity_type] if rule.target_entity_type else [],
+                "evidence": {"status": rule.status, "severity": rule.severity, "version": rule.version},
+                "confidence": 1.0,
+                "model_invocation_id": None,
+            }
+            for rule in decision_rules
         ],
         "summary": {
             "entity_type_count": len(nodes),
             "property_count": property_count,
             "relationship_count": len(edges),
-            "logic_rule_count": len(rules),
+            "logic_rule_count": len(rules) + len(decision_rules),
             "instance_count": len(instance_rows),
             "evidence_count": total_evidence,
         },

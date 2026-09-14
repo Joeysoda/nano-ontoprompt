@@ -129,7 +129,7 @@ export default function LogicTab({ ontologyId }: { ontologyId: string }) {
             </div>
             {rule.formula && (
               <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-600">
-                {rule.formula}
+                {printed(rule.formula)}
               </div>
             )}
             <div className="mt-4 grid gap-3 text-xs text-slate-600 md:grid-cols-2">
