@@ -101,7 +101,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className={`min-h-screen transition-[padding] duration-200 ${collapsed ? 'pl-[72px]' : 'pl-[252px]'}`}>
+      <main className={`min-h-screen min-w-0 transition-[padding] duration-200 ${collapsed ? 'pl-[72px]' : 'pl-[252px]'}`}>
         <div className="min-h-screen px-8 py-7 xl:px-10">{children}</div>
       </main>
       <HelpFAQ />

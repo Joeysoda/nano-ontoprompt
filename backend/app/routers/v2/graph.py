@@ -200,9 +200,11 @@ def get_graph(
     # Keep a plain default so direct service-level callers/tests do not receive
     # FastAPI's ``Query`` object; clamp explicitly for both HTTP and Python use.
     limit: int = 200,
+    offset: int = Query(0, ge=0),
     label_filter: str | None = None,
     view: str = Query("ontology", pattern="^(ontology|schema|instances)$"),
     entity_type: str | None = None,
+    episode_id: str | None = None,
     seq_from: int | None = Query(None, ge=0),
     seq_to: int | None = Query(None, ge=0),
     relation_state: str = Query("all", pattern="^(all|current)$"),
@@ -215,6 +217,10 @@ def get_graph(
     existing Nano behavior for older ontologies.
     """
     limit = max(1, min(int(limit), 1000))
+    try:
+        offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        offset = 0
     if view == "ontology":
         if not hasattr(db, "query"):
             owned_db = SessionLocal()
@@ -240,14 +246,18 @@ def get_graph(
                 "available": False, "error": "FalkorDB unavailable",
             }
         try:
-            return svc.get_graph_data(
-                ontology_id,
-                limit=limit,
-                entity_type=entity_type or label_filter,
-                seq_from=seq_from,
-                seq_to=seq_to,
-                relation_state=relation_state,
-            )
+            graph_kwargs: dict[str, Any] = {
+                "limit": limit,
+                "entity_type": entity_type or label_filter,
+                "seq_from": seq_from,
+                "seq_to": seq_to,
+                "relation_state": relation_state,
+            }
+            if offset:
+                graph_kwargs["offset"] = offset
+            if episode_id:
+                graph_kwargs["episode_id"] = episode_id
+            return svc.get_graph_data(ontology_id, **graph_kwargs)
         except Exception as exc:
             return {
                 "nodes": [], "edges": [], "graph_backend": "falkordb",
@@ -275,6 +285,413 @@ def get_graph(
     data["neo4j_available"] = True
     data["graph_backend"] = "neo4j-legacy"
     return data
+
+
+def _data_model_type_groups(
+    canonical: dict[str, Any],
+    nodes: list[dict[str, Any]],
+    type_counts: dict[str, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Combine the published type catalogue with the currently visible data.
+
+    Entity type identifiers in older FalkorDB runs are human readable names,
+    while SQL entities use UUIDs.  ``filter`` deliberately carries the value
+    accepted by the instance query so the UI can filter without guessing.
+    """
+    live_counts = type_counts is not None
+    graph_counts = Counter(type_counts) if live_counts else Counter(str(node.get("entity_type") or "Entity") for node in nodes)
+    relation_counts: Counter[str] = Counter()
+    for edge in canonical.get("edges", []):
+        relation_counts[str(edge.get("source") or "")] += 1
+        relation_counts[str(edge.get("target") or "")] += 1
+    groups: list[dict[str, Any]] = []
+    used_filters: set[str] = set()
+    for type_node in canonical.get("nodes", []):
+        props = type_node.get("properties") or {}
+        candidates = [
+            props.get("name_en"),
+            props.get("name"),
+            props.get("name_cn"),
+            type_node.get("id"),
+        ]
+        filter_value = next((str(item) for item in candidates if item and str(item) in graph_counts), None)
+        if filter_value is None and candidates:
+            filter_value = str(next((item for item in candidates if item), type_node.get("id") or "Entity"))
+        if filter_value in used_filters:
+            continue
+        used_filters.add(filter_value or "")
+        groups.append({
+            "id": type_node.get("id"),
+            "name": props.get("name") or props.get("name_cn") or props.get("name_en") or type_node.get("id"),
+            "name_cn": props.get("name_cn") or "",
+            "name_en": props.get("name_en") or "",
+            "description": props.get("description") or "",
+            "filter": filter_value,
+            "property_count": int(props.get("property_definitions") and len(props.get("property_definitions") or []) or 0),
+            "relationship_count": int(relation_counts.get(str(type_node.get("id") or ""), 0)),
+            "instance_count": int(graph_counts.get(filter_value, 0) if live_counts else graph_counts.get(filter_value, props.get("instance_count") or 0)),
+            "evidence_count": int(props.get("evidence_count") or 0),
+        })
+    # A published type may not exist in an old SQL catalogue.  Keep the real
+    # instance type visible instead of dropping data from the workbench.
+    for filter_value, count in sorted(graph_counts.items()):
+        if filter_value in used_filters:
+            continue
+        groups.append({
+            "id": filter_value,
+            "name": filter_value,
+            "name_cn": "",
+            "name_en": filter_value,
+            "description": "",
+            "filter": filter_value,
+            "property_count": 0,
+            "relationship_count": 0,
+            "instance_count": count,
+            "evidence_count": 0,
+        })
+    return groups
+
+
+def _augment_multimodal_data_model(
+    db: Session,
+    ontology_id: str,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    """Add sample-to-asset evidence edges to legacy multimodal graph data.
+
+    Existing installations wrote media/inspection nodes to FalkorDB but did
+    not create a sample node.  The SQL sample is the source of truth, so this
+    small projection repairs the visible relationship without mutating the
+    historical graph or duplicating media bytes.
+    """
+    from app.models.v2.dataset import MediaItem, MultimodalSample
+    from app.models.v2.construction import EvidenceRef
+
+    nodes = list(data.get("nodes") or [])
+    edges = list(data.get("edges") or [])
+    media_nodes = [node for node in nodes if (node.get("node_kind") == "instance" and (node.get("entity_type") in {"MediaAsset", "MediaItem", "media"} or (node.get("properties") or {}).get("sample_id")))]
+    sample_ids = {
+        str((node.get("properties") or {}).get("sample_id"))
+        for node in media_nodes
+        if (node.get("properties") or {}).get("sample_id")
+    }
+    if not sample_ids:
+        sample_ids = {
+            str(value)
+            for (value,) in db.query(EvidenceRef.source_sample_id)
+            .filter(EvidenceRef.ontology_id == ontology_id, EvidenceRef.source_sample_id.isnot(None))
+            .distinct()
+            .all()
+        }
+    if not sample_ids:
+        return data
+    samples = db.query(MultimodalSample).filter(MultimodalSample.id.in_(sample_ids)).all()
+    sample_by_id = {str(sample.id): sample for sample in samples}
+    media_ids = {str(node.get("id")) for node in media_nodes if node.get("id")}
+    media_rows = db.query(MediaItem).filter(MediaItem.sample_id.in_(list(sample_by_id))).all()
+    existing_node_ids = {str(node.get("id")) for node in nodes}
+    existing_edge_ids = {str(edge.get("id")) for edge in edges}
+    for sample_id, sample in sample_by_id.items():
+        sample_node_id = f"sample:{sample_id}"
+        if sample_node_id not in existing_node_ids:
+            nodes.append({
+                "id": sample_node_id,
+                "labels": ["MultimodalSample"],
+                "entity_type": "MultimodalSample",
+                "node_kind": "sample",
+                "properties": {
+                    "sample_id": sample_id,
+                    "sample_key": sample.sample_key,
+                    "scene_id": sample.scene_id,
+                    "split": sample.split,
+                    "label": sample.label,
+                    "labels": sample.labels or [],
+                    "metadata": sample.metadata_json or {},
+                },
+            })
+            existing_node_ids.add(sample_node_id)
+    for media in media_rows:
+        media_node_id = f"media:{media.id}"
+        # Prefer the existing constructed node; otherwise create a compact
+        # evidence node that points at the immutable asset record.
+        if media_node_id not in existing_node_ids:
+            nodes.append({
+                "id": media_node_id,
+                "labels": ["MediaAsset"],
+                "entity_type": "MediaAsset",
+                "node_kind": "media",
+                "properties": {
+                    "media_id": str(media.id),
+                    "sample_id": str(media.sample_id),
+                    "asset_role": media.asset_role,
+                    "media_type": media.media_type,
+                    "original_name": media.original_name,
+                    "source_path": media.source_path,
+                    "checksum": media.checksum,
+                    "mime_type": media.mime_type,
+                },
+            })
+            existing_node_ids.add(media_node_id)
+        edge_id = f"sample:{media.sample_id}:HAS_ASSET:{media_node_id}"
+        if edge_id not in existing_edge_ids:
+            edges.append({
+                "id": edge_id,
+                "source": f"sample:{media.sample_id}",
+                "target": media_node_id,
+                "type": "HAS_ASSET",
+                "label": "包含资产",
+                "edge_kind": "evidence",
+                "properties": {
+                    "asset_role": media.asset_role,
+                    "media_type": media.media_type,
+                    "checksum": media.checksum,
+                    "source_path": media.source_path,
+                },
+            })
+            existing_edge_ids.add(edge_id)
+    data["nodes"] = nodes
+    data["edges"] = edges
+    data["multimodal"] = {
+        "sample_count": len(sample_by_id),
+        "asset_count": len(media_rows),
+        "sample_ids": sorted(sample_by_id),
+    }
+    return data
+
+
+@router.get("/{ontology_id}/data-model")
+def get_data_model(
+    ontology_id: str,
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    entity_type: str | None = None,
+    episode_id: str | None = None,
+    at: str | None = None,
+    mode: str = Query("cumulative", pattern="^(cumulative|window)$"),
+    db: Session = Depends(get_db),
+):
+    """Return the real data model (instances + instance relationships).
+
+    The endpoint is intentionally separate from ``/graph``: the latter keeps
+    its published vocabulary contract, while this route is paginated and can
+    apply temporal position and episode filters without changing the stored
+    ontology.
+    """
+    from app.models.ontology import OntologyProject
+
+    try:
+        limit = max(1, min(int(limit), 500))
+    except (TypeError, ValueError):
+        limit = 200
+    try:
+        offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        offset = 0
+    if not isinstance(mode, str) or mode not in {"cumulative", "window"}:
+        mode = "cumulative"
+
+    ontology = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
+    if not ontology:
+        raise HTTPException(404, "本体不存在")
+    canonical = _canonical_ontology_data(db, ontology_id, limit=1000)
+    data_class = str(getattr(ontology, "data_class", None) or "regular")
+    service = get_falkordb()
+    timeline: dict[str, Any] | None = None
+    resolved_at = at
+    seq_from: int | None = None
+    seq_to: int | None = None
+    if data_class == "temporal":
+        try:
+            timeline = service.temporal_timeline(ontology_id, episode_id=episode_id, limit=1000)
+        except Exception as exc:
+            timeline = {"available": False, "error": str(exc), "dates": [], "buckets": [], "episodes": []}
+        dates = [str(value) for value in (timeline or {}).get("dates", []) if value is not None]
+        if not resolved_at and dates:
+            # Ordinal is the only temporal value used by FactoryNet.  Keep it
+            # as a string in the API so no date-looking value is fabricated.
+            resolved_at = dates[-1]
+        try:
+            point = int(float(resolved_at)) if resolved_at not in (None, "") else None
+        except (TypeError, ValueError):
+            point = None
+        if point is not None:
+            seq_to = point
+            if mode == "window":
+                seq_from = point
+    if not service.available:
+        graph_data = {
+            "nodes": [],
+            "edges": [],
+            "returned": 0,
+            "total_instances": 0,
+            "offset": offset,
+            "next_offset": None,
+            "available": False,
+            "graph_backend": "falkordb",
+            "error": "FalkorDB unavailable",
+        }
+    else:
+        try:
+            graph_data = service.get_graph_data(
+                ontology_id,
+                limit=limit,
+                offset=offset,
+                entity_type=entity_type,
+                episode_id=episode_id,
+                seq_from=seq_from,
+                seq_to=seq_to,
+            )
+        except Exception as exc:
+            graph_data = {
+                "nodes": [],
+                "edges": [],
+                "returned": 0,
+                "total_instances": 0,
+                "offset": offset,
+                "next_offset": None,
+                "available": False,
+                "graph_backend": "falkordb",
+                "error": str(exc),
+            }
+    # Attach evidence counts without leaking internal storage keys into the
+    # visible property list.  Source fields remain available on selection.
+    from app.models.v2.construction import EvidenceRef
+    evidence_rows = db.query(EvidenceRef).filter(EvidenceRef.ontology_id == ontology_id).all()
+    evidence_by_assertion: Counter[str] = Counter()
+    edge_evidence_by_assertion: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    evidence_by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for item in evidence_rows:
+        evidence_item = {
+            "id": item.id,
+            "kind": item.assertion_kind,
+            "source_file": item.source_file,
+            "source_row_id": item.source_row_id,
+            "source_sample_id": item.source_sample_id,
+            "source_media_id": item.source_media_id,
+            "extractor": item.extractor,
+            "model_name": item.model_name,
+            "confidence": item.confidence,
+            "evidence_text": item.evidence_text,
+        }
+        if item.assertion_id:
+            evidence_by_assertion[str(item.assertion_id)] += 1
+            if item.assertion_kind == "edge":
+                edge_evidence_by_assertion[str(item.assertion_id)].append(evidence_item)
+        for source_key in (item.source_sample_id, item.source_media_id, item.source_row_id):
+            if source_key:
+                evidence_by_source[str(source_key)].append(evidence_item)
+    for node in graph_data.get("nodes", []):
+        props = node.setdefault("properties", {})
+        node["evidence_count"] = int(evidence_by_assertion.get(str(node.get("id")), 0))
+        source_key = props.get("sample_id") or props.get("media_id") or props.get("source_row_id") or node.get("id")
+        if source_key and str(source_key) in evidence_by_source:
+            node["evidence"] = evidence_by_source[str(source_key)][:8]
+        if not node.get("evidence") and evidence_rows:
+            # Older construction runs use a readable assertion id rather than
+            # the FalkorDB instance id.  Match stable source identifiers such
+            # as EQ001/R-EQ001-001 to keep the row/file evidence locatable.
+            tokens: set[str] = set()
+            if props.get("reading_id") not in (None, ""):
+                tokens.add(f"reading_id-{str(props['reading_id']).casefold()}")
+            elif props.get("equipment_id") not in (None, ""):
+                tokens.add(f"equipment_id-{str(props['equipment_id']).casefold()}")
+            for key in ("sample_key", "row_identity"):
+                value = props.get(key)
+                if value not in (None, "") and len(str(value)) >= 3:
+                    tokens.add(str(value).casefold())
+            if not tokens:
+                tokens.add(str(node.get("id") or "").split(":")[-1].casefold())
+            matches = []
+            for item in evidence_rows:
+                assertion = str(item.assertion_id or "").casefold()
+                if any(token and token in assertion for token in tokens):
+                    matches.append({
+                        "id": item.id,
+                        "kind": item.assertion_kind,
+                        "source_file": item.source_file,
+                        "source_row_id": item.source_row_id,
+                        "source_sample_id": item.source_sample_id,
+                        "source_media_id": item.source_media_id,
+                        "extractor": item.extractor,
+                        "model_name": item.model_name,
+                        "confidence": item.confidence,
+                    })
+            if matches:
+                node["evidence"] = matches[:8]
+                node["evidence_count"] = len(matches)
+    for edge in graph_data.get("edges", []):
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        relation_type = str(edge.get("type") or edge.get("label") or "关联")
+        edge_tokens = {
+            str(edge.get("id") or ""),
+            f"{source}:{relation_type}:{target}",
+            f"{source}:{relation_type}:{target}:{(edge.get('properties') or {}).get('valid_from', '')}",
+        }
+        edge_matches: list[dict[str, Any]] = []
+        for token in edge_tokens:
+            if token:
+                edge_matches.extend(edge_evidence_by_assertion.get(token, []))
+        edge["evidence"] = edge_matches[:8]
+        edge["evidence_count"] = len(edge_matches)
+    if data_class == "multimodal":
+        graph_data = _augment_multimodal_data_model(db, ontology_id, graph_data)
+    visible_node_count = len(graph_data.get("nodes", []))
+    visible_edge_count = len(graph_data.get("edges", []))
+    total_node_count = max(int(graph_data.get("total_instances", 0) or 0), visible_node_count)
+    total_edge_count = max(int(graph_data.get("total_edges", 0) or 0), visible_edge_count)
+    type_counts: dict[str, int] | None
+    if service.available:
+        try:
+            type_counts = service.get_instance_type_counts(
+                ontology_id,
+                entity_type=entity_type,
+                episode_id=episode_id,
+                seq_from=seq_from,
+                seq_to=seq_to,
+            )
+        except Exception:
+            type_counts = None
+    else:
+        type_counts = None
+    groups = _data_model_type_groups(canonical, graph_data.get("nodes", []), type_counts)
+    response: dict[str, Any] = {
+        "ontology_id": ontology_id,
+        "data_class": data_class,
+        "type_groups": groups,
+        "nodes": graph_data.get("nodes", []),
+        "edges": graph_data.get("edges", []),
+        "total_nodes": total_node_count,
+        "total_edges": total_edge_count,
+        "pagination": {
+            "offset": int(graph_data.get("offset", offset) or offset),
+            "limit": int(limit),
+            "returned": len(graph_data.get("nodes", [])),
+            "total": total_node_count,
+            "next_offset": graph_data.get("next_offset") if graph_data.get("next_offset") is not None and graph_data.get("next_offset") < total_node_count else None,
+        },
+        "available": bool(graph_data.get("available", False)),
+        "graph_backend": graph_data.get("graph_backend", "falkordb"),
+    }
+    if graph_data.get("error"):
+        response["error"] = graph_data["error"]
+    if data_class == "temporal":
+        timeline = timeline or {}
+        dates = [str(value) for value in (timeline.get("dates") or [])]
+        response["time"] = {
+            "kind": "ordinal",
+            "mode": mode,
+            "current": resolved_at,
+            "min": dates[0] if dates else None,
+            "max": dates[-1] if dates else None,
+            "dates": dates,
+            "buckets": timeline.get("buckets") or [],
+            "episodes": timeline.get("episodes") or [],
+            "episode_id": episode_id,
+        }
+    else:
+        response["time"] = None
+    return response
 
 
 def _sqlite_graph_data(ontology_id: str, limit: int = 200, label_filter: str | None = None) -> dict:

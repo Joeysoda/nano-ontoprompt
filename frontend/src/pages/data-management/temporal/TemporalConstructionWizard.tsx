@@ -50,13 +50,18 @@ type Profile = {
 const steps = ["选择数据", "筛选数据", "时间定义", "本体映射", "确认构建"];
 const fmt = (v: any) =>
   v === null || v === undefined || v === "" ? "—" : String(v);
-const errorText = (e: any) =>
-  e?.response?.data?.detail?.message ||
-  e?.response?.data?.detail ||
-  e?.detail?.message ||
-  e?.detail ||
-  e?.message ||
-  "请求失败";
+const errorText = (e: any) => {
+  const detail = e?.response?.data?.detail || e?.detail;
+  if (detail?.error === "PROFILE_NOT_READY") {
+    return `${detail.message || "MiniMax M3 分析尚未成功，不能开始构建"} 请返回“时间定义”，重新执行 M3 分析，完成后再构建。`;
+  }
+  return (
+    detail?.message ||
+    detail ||
+    e?.message ||
+    "请求失败"
+  );
+};
 const columnName = (value: unknown) => {
   if (typeof value === "string") return value;
   if (value && typeof value === "object") {
@@ -86,6 +91,7 @@ export default function TemporalConstructionWizard() {
   const uploadRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(0);
   const [history, setHistory] = useState<any[]>([]);
+  const [replayHistory, setReplayHistory] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [source, setSource] = useState<Source | null>(null);
@@ -119,7 +125,12 @@ export default function TemporalConstructionWizard() {
     "IN_PHASE",
     "HAS_TOOL_CONDITION",
     "EXPOSES_CHANNEL",
+    "HAS_INSPECTION",
   ]);
+  const [executionMode, setExecutionMode] = useState<"batch" | "replay">("batch");
+  const [replaySeriesIds, setReplaySeriesIds] = useState<string[]>([]);
+  const [replayWindowSeconds, setReplayWindowSeconds] = useState(1);
+  const [replaySpeed, setReplaySpeed] = useState(5);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -129,12 +140,13 @@ export default function TemporalConstructionWizard() {
     setLoading(true);
     setError("");
     try {
-      const [ss, oo, rr] = await Promise.all([
+      const [ss, oo, rr, rp] = await Promise.all([
         apiClientV2.get<Source[]>("/temporal/sources"),
         apiClient.get<any>("/ontologies", {
           params: { page: 1, page_size: 100 },
         }),
         apiClientV2.get<any[]>("/temporal/runs", { params: { limit: 20 } }),
+        apiClientV2.get<any[]>("/temporal/replays", { params: { limit: 20 } }),
       ]);
       setSources(
         (Array.isArray(ss) ? ss : []).filter(
@@ -146,6 +158,7 @@ export default function TemporalConstructionWizard() {
         ontologyRows.filter((item: Ontology) => item.data_class === "temporal"),
       );
       setHistory(Array.isArray(rr) ? rr : []);
+      setReplayHistory(Array.isArray(rp) ? rp : []);
       setUpdatedAt(new Date().toLocaleTimeString());
     } catch (e: any) {
       setError(errorText(e));
@@ -179,6 +192,12 @@ export default function TemporalConstructionWizard() {
     setPrivacy(item.privacy_level || "standard");
     setProfile(null);
     setPreview(null);
+    setFilters({
+      // FactoryNet stays readable by default; an uploaded source is not
+      // silently truncated unless the user chooses a smaller cap.
+      max_records: item.id === "factorynet_cnc" ? 5000 : Number(item.records || 5000),
+    });
+    setReplaySeriesIds([]);
     setError("");
     const cols = (item.columns || []).map(columnName).filter(Boolean);
     const pick = (re: RegExp, f: string) => cols.find((c) => re.test(c)) || f;
@@ -350,7 +369,10 @@ export default function TemporalConstructionWizard() {
       : step === 1
         ? Boolean(preview && Number(preview.total_rows) > 0)
         : step === 2
-          ? Boolean(profile?.status === "completed")
+          ? Boolean(
+              profile?.status === "completed" &&
+                (privacy === "private" || Boolean(profile.llm_used)),
+            )
           : step === 3
             ? relations.some(Boolean)
             : true;
@@ -359,6 +381,26 @@ export default function TemporalConstructionWizard() {
     setBusy(true);
     setError("");
     try {
+      if (executionMode === "replay" && source.id === "factorynet_cnc") {
+        const timeRange = filters.ranges?.[timeColumn] || {};
+        const r = await apiClientV2.post<any>("/temporal/replays", {
+          source_id: source.id,
+          dataset_id: source.dataset_id,
+          ontology_id: ontologyMode === "reuse" ? ontologyId : null,
+          ontology_name: ontologyName,
+          series_ids: replaySeriesIds,
+          start_time: timeRange.min === "" || timeRange.min === undefined ? undefined : Number(timeRange.min),
+          end_time: timeRange.max === "" || timeRange.max === undefined ? undefined : Number(timeRange.max),
+          window_seconds: replayWindowSeconds,
+          speed: replaySpeed,
+          max_records: Number(filters.max_records || source.records || 5000),
+          entity_column: entityColumn,
+          time_column: timeColumn,
+          config: { field_mapping: { columns: fieldMap, relations }, profile_id: profile.id },
+        });
+        navigate(`/data/temporal/replays/${r.replay_id || r.id}`);
+        return;
+      }
       const r = await apiClientV2.post<any>("/temporal/runs", {
         profile_id: profile.id,
         source_id: source.id,
@@ -387,6 +429,12 @@ export default function TemporalConstructionWizard() {
       });
       navigate(`/data/temporal/runs/${r.run_id || r.id}`);
     } catch (e: any) {
+      if (e?.response?.data?.detail?.error === "PROFILE_NOT_READY") {
+        // Keep the user on the step that can repair a stale deterministic
+        // profile.  The backend will requeue it for M3 when the user clicks
+        // the retry action there.
+        setStep(2);
+      }
       setError(errorText(e));
     } finally {
       setBusy(false);
@@ -661,6 +709,28 @@ export default function TemporalConstructionWizard() {
                 className="mt-1 w-full border rounded-lg px-3 py-2"
               />
             </label>
+            <label className="text-sm">
+              时间最大值
+              <input
+                type="number"
+                value={filters.ranges?.[timeColumn]?.max || ""}
+                onChange={(e) => {
+                  const n = {
+                    ...filters,
+                    ranges: {
+                      ...filters.ranges,
+                      [timeColumn]: {
+                        ...filters.ranges?.[timeColumn],
+                        max: e.target.value,
+                      },
+                    },
+                  };
+                  setFilters(n);
+                  query(n);
+                }}
+                className="mt-1 w-full border rounded-lg px-3 py-2"
+              />
+            </label>
           </div>
           <div className="border rounded-lg bg-gray-50 p-4 text-sm">
             筛选后预计 <b>{preview?.total_rows ?? "—"}</b> 条，原始数据{" "}
@@ -837,12 +907,24 @@ export default function TemporalConstructionWizard() {
             <button
               type="button"
               onClick={processAnalysis}
-              disabled={busy || profile?.status === "completed"}
+              disabled={
+                busy ||
+                profile?.status === "queued" ||
+                profile?.status === "running" ||
+                (profile?.status === "completed" &&
+                  (Boolean(profile.llm_used) || privacy === "private"))
+              }
               className="bg-black text-white rounded-lg px-4 py-2 text-sm flex items-center gap-2 disabled:opacity-40"
             >
               <Play size={14} />
               {profile?.status === "completed"
-                ? "已完成"
+                ? profile.llm_used
+                  ? "已完成"
+                  : privacy === "private"
+                    ? "已完成（规则画像）"
+                    : "重新执行 MiniMax M3"
+                : profile?.status === "failed"
+                  ? "重试 MiniMax M3"
                 : busy
                   ? "处理中"
                   : "开始处理"}
@@ -861,12 +943,20 @@ export default function TemporalConstructionWizard() {
                 }
               >
                 {profile.status === "completed"
-                  ? "已完成"
+                  ? profile.llm_used
+                    ? "已完成"
+                    : privacy === "private"
+                      ? "已完成（规则画像）"
+                      : "需要重新执行 M3"
                   : profile.status === "failed"
                     ? "失败"
                     : "处理中"}
               </b>
-              {profile.llm_used ? " · 已使用 MiniMax M3" : " · 未调用云模型"}
+              {profile.llm_used
+                ? " · 已使用 MiniMax M3"
+                : privacy === "private"
+                  ? " · 私密模式，仅使用确定性画像"
+                  : " · 尚未调用 MiniMax M3"}
               {profile.error ? ` · ${profile.error}` : ""}
             </div>
           )}
@@ -980,7 +1070,10 @@ export default function TemporalConstructionWizard() {
                     />
                     <button
                       onClick={() =>
-                        setRelations(relations.filter((_, j) => j !== i))
+                        // Keep the positional slot so the backend knows which
+                        // fixed FactoryNet relation was disabled; an empty
+                        // slot is an explicit allow-list exclusion.
+                        setRelations(relations.map((value, j) => (j === i ? "" : value)))
                       }
                       className="text-xs text-red-600"
                     >
@@ -1065,6 +1158,52 @@ export default function TemporalConstructionWizard() {
               )}
             </div>
           </div>
+          {source?.id === "factorynet_cnc" && (
+            <div className="border rounded-lg p-4 space-y-4">
+              <div>
+                <p className="font-medium">执行方式</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  一次性构建会立即处理筛选结果；时序模拟会按 time_s 分批到达，图谱随每批数据增长。
+                </p>
+              </div>
+              <div className="grid md:grid-cols-2 gap-3">
+                <label className={`border rounded-lg p-3 flex gap-2 items-start ${executionMode === "batch" ? "border-black ring-1 ring-black" : ""}`}>
+                  <input type="radio" checked={executionMode === "batch"} onChange={() => setExecutionMode("batch")} className="mt-1" />
+                  <span><b className="text-sm">一次性构建</b><span className="block text-xs text-gray-500 mt-1">保持现有构建任务，完成后直接查看整张图。</span></span>
+                </label>
+                <label className={`border rounded-lg p-3 flex gap-2 items-start ${executionMode === "replay" ? "border-black ring-1 ring-black" : ""}`}>
+                  <input type="radio" checked={executionMode === "replay"} onChange={() => setExecutionMode("replay")} className="mt-1" />
+                  <span><b className="text-sm">按时间模拟到达</b><span className="block text-xs text-gray-500 mt-1">后台逐批读取 FactoryNet，支持开始、暂停、继续和单步。</span></span>
+                </label>
+              </div>
+              {executionMode === "replay" && (
+                <div className="space-y-3 border-t pt-3">
+                  <div>
+                    <p className="text-sm font-medium">选择生产过程（可多选）</p>
+                    <p className="text-xs text-gray-500 mt-1">多个 episode 会按相对 time_s 同步推进，不代表现实中的同时发生。</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {(preview?.summary?.episode_ids || Array.from(new Set((preview?.rows || []).map((row: any) => String(row.episode_id || "")).filter(Boolean)))).map((episode: string) => (
+                        <label key={episode} className="text-xs border rounded px-2 py-1 flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={replaySeriesIds.includes(episode)}
+                            onChange={(e) => setReplaySeriesIds(e.target.checked ? [...replaySeriesIds, episode] : replaySeriesIds.filter((value) => value !== episode))}
+                          />
+                          {episode}
+                        </label>
+                      ))}
+                      {!((preview?.summary?.episode_ids || []).length || (preview?.rows || []).some((row: any) => row.episode_id)) && <span className="text-xs text-gray-500">未能从预览列出 episode，可留空使用默认过程。</span>}
+                    </div>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3 text-sm">
+                    <label>批次时间窗口（秒）<input type="number" min="0.1" step="0.1" value={replayWindowSeconds} onChange={(e) => setReplayWindowSeconds(Math.max(0.1, Number(e.target.value) || 1))} className="mt-1 w-full border rounded-lg px-3 py-2" /></label>
+                    <label>播放速度<select value={replaySpeed} onChange={(e) => setReplaySpeed(Number(e.target.value))} className="mt-1 w-full border rounded-lg px-3 py-2"><option value={1}>1×（慢）</option><option value={5}>5×（推荐）</option><option value={10}>10×</option><option value={25}>25×</option><option value={50}>50×</option></select></label>
+                  </div>
+                  <div className="text-xs text-gray-500">时间范围沿用步骤 2 的 {timeColumn} 最小/最大值；留空表示所选 episode 的完整范围。FactoryNet 使用 Ordinal，不会生成日期。</div>
+                </div>
+              )}
+            </div>
+          )}
           <div className="border rounded-lg bg-gray-50 p-4 text-sm">
             执行过程：读取 → 筛选 → 时间校验 → 规范化 → 生成节点 → 生成关系 →
             FalkorDB 写入 → EvidenceRef 保存 → 数量核对。空数据、孤立观测或 0
@@ -1085,7 +1224,7 @@ export default function TemporalConstructionWizard() {
             ) : (
               <Play size={15} />
             )}
-            开始构建
+            {executionMode === "replay" && source?.id === "factorynet_cnc" ? "创建时序模拟" : "开始构建"}
           </button>
         </section>
       )}
@@ -1097,15 +1236,21 @@ export default function TemporalConstructionWizard() {
             onClick={() => setShowHistory((value) => !value)}
             className="text-xs text-slate-500 underline hover:text-slate-900"
           >
-            {showHistory ? "收起历史任务" : `显示历史任务（${history.length}）`}
+            {showHistory ? "收起历史任务" : `显示历史任务（${history.length + replayHistory.length}）`}
           </button>
         </div>
         {!showHistory ? (
           <p className="text-sm text-gray-500">历史任务默认收起。</p>
-        ) : history.length === 0 ? (
+        ) : history.length === 0 && replayHistory.length === 0 ? (
           <p className="text-sm text-gray-500">暂无历史任务</p>
         ) : (
           <div className="space-y-2">
+            {replayHistory.map((r: any) => (
+              <button key={r.id || r.replay_id} onClick={() => navigate(`/data/temporal/replays/${r.id || r.replay_id}`)} className="w-full text-left border rounded-lg px-3 py-2 hover:bg-gray-50">
+                <div className="flex justify-between text-sm"><span>时序模拟 · {r.source_id || "factorynet_cnc"}</span><span className={r.status === "completed" ? "text-green-700" : r.status === "failed" ? "text-red-700" : "text-amber-700"}>{r.status}</span></div>
+                <p className="text-xs text-gray-500 mt-1">{r.selected_rows ?? "—"} 条记录 · {r.metrics?.committed_batches ?? 0} 批 · {r.series_ids?.join(", ") || "默认 episode"}</p>
+              </button>
+            ))}
             {history.map((r: any) => (
               <button
                 key={r.id || r.run_id}

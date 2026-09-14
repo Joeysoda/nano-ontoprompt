@@ -1,0 +1,6 @@
+# Semantica is pinned so What-If results can be reproduced.  The application
+# keeps a deterministic compatibility runner for developer environments where
+# the optional package has not been installed yet.
+semantica @ https://github.com/semantica-agi/semantica/archive/3a69721abf72d7188a0d6fd72c8462261b2c44eb.zip
+scipy>=1.13.0
+networkx>=2.8.0

@@ -1,9 +1,10 @@
 """Deterministic temporal normalization and FalkorDB instance construction."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import hashlib
+import math
 import re
 from typing import Any
 
@@ -16,6 +17,45 @@ class TemporalConfig:
     valid_from_column: str | None = None
     valid_to_column: str | None = None
     timezone: str = "UTC"
+
+
+@dataclass
+class FactoryNetIncrementalState:
+    """Small checkpoint carried between FactoryNet replay batches.
+
+    The one-shot builder historically kept these dictionaries as local
+    variables.  A replay needs the same information to survive a batch
+    boundary (and a process restart), otherwise ``NEXT_OBSERVATION`` would
+    be broken and ordinal values would start at zero for every batch.
+    """
+
+    sequence_by_episode: dict[str, int] = field(default_factory=dict)
+    previous_by_episode: dict[str, str] = field(default_factory=dict)
+    linked_machines: list[str] = field(default_factory=list)
+    linked_episodes: list[str] = field(default_factory=list)
+    linked_phases: list[str] = field(default_factory=list)
+    linked_conditions: list[str] = field(default_factory=list)
+    linked_inspections: list[str] = field(default_factory=list)
+    linked_inspection_edges: list[str] = field(default_factory=list)
+    linked_channels: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any] | None) -> "FactoryNetIncrementalState":
+        value = value or {}
+        return cls(
+            sequence_by_episode={str(k): int(v) for k, v in (value.get("sequence_by_episode") or {}).items()},
+            previous_by_episode={str(k): str(v) for k, v in (value.get("previous_by_episode") or {}).items()},
+            linked_machines=[str(v) for v in (value.get("linked_machines") or [])],
+            linked_episodes=[str(v) for v in (value.get("linked_episodes") or [])],
+            linked_phases=[str(v) for v in (value.get("linked_phases") or [])],
+            linked_conditions=[str(v) for v in (value.get("linked_conditions") or [])],
+            linked_inspections=[str(v) for v in (value.get("linked_inspections") or [])],
+            linked_inspection_edges=[str(v) for v in (value.get("linked_inspection_edges") or [])],
+            linked_channels=[str(v) for v in (value.get("linked_channels") or [])],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 def _parse_instant(value: Any) -> str | None:
@@ -59,6 +99,8 @@ def normalize_temporal_rows(rows: list[dict[str, Any]], config: TemporalConfig) 
                 if value in (None, ""):
                     raise ValueError(f"missing sequence column {source}")
                 number = float(value)
+                if not math.isfinite(number):
+                    raise ValueError(f"invalid sequence value {value}")
                 item["ordinal_value"] = int(number) if number.is_integer() else number
                 item["event_seq"] = int(number) if number.is_integer() else None
                 item["event_time"] = None
@@ -120,36 +162,70 @@ def build_observation_instances(
     return list(nodes.values()), edges
 
 
-def build_factorynet_instances(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Build a connected, stable graph for the FactoryNet CNC file.
+def build_factorynet_instances_incremental(
+    rows: list[dict[str, Any]],
+    state: FactoryNetIncrementalState | None = None,
+    *,
+    sequence_column: str = "time_s",
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], FactoryNetIncrementalState]:
+    """Build one FactoryNet chunk while preserving cross-chunk continuity.
 
-    Scalar S-E-F-C signals remain properties on Observation nodes. Shared
-    channel metadata nodes keep the graph interpretable without creating one
-    node and edge for every numeric cell.
+    ``_replay_event_seq`` is an optional source-wide ordinal assigned by the
+    replay scheduler.  It keeps the displayed sequence stable regardless of
+    batch size or playback speed.  The regular construction path does not set
+    it and therefore retains its historical per-call sequence behavior.
     """
+    state = state or FactoryNetIncrementalState()
     nodes: dict[str, dict[str, Any]] = {}
     edges: list[dict[str, Any]] = []
-    episode_sequences: dict[str, int] = {}
-    previous_by_episode: dict[str, str] = {}
-    linked_channels: set[str] = set()
-    linked_phases: set[str] = set()
-    linked_conditions: set[str] = set()
-    linked_inspections: set[str] = set()
+    linked_machines: set[str] = set(state.linked_machines)
+    linked_episodes: set[str] = set(state.linked_episodes)
+    linked_channels: set[str] = set(state.linked_channels)
+    linked_phases: set[str] = set(state.linked_phases)
+    linked_conditions: set[str] = set(state.linked_conditions)
+    linked_inspections: set[str] = set(state.linked_inspections)
+    linked_inspection_edges: set[str] = set(state.linked_inspection_edges)
     for index, row in enumerate(rows):
         machine = str(row.get("machine_type") or "CNC_Mill_3_Axis").strip()
         episode = str(row.get("episode_id") or "unknown_episode").strip()
         machine_id = f"FactoryNet:Machine:{machine}"
         episode_id = f"FactoryNet:Episode:{episode}"
-        nodes.setdefault(machine_id, {"id": machine_id, "entity_type": "Machine", "properties": {"machine_type": machine, "dataset": "FactoryNet"}})
-        nodes.setdefault(episode_id, {"id": episode_id, "entity_type": "Episode", "properties": {"episode_id": episode, "machine_type": machine}})
-        if not any(edge["source"] == machine_id and edge["target"] == episode_id for edge in edges):
+        if machine_id not in linked_machines:
+            linked_machines.add(machine_id)
+            nodes[machine_id] = {"id": machine_id, "entity_type": "Machine", "properties": {"machine_type": machine, "dataset": "FactoryNet"}}
+        if episode_id not in linked_episodes:
+            linked_episodes.add(episode_id)
+            nodes[episode_id] = {"id": episode_id, "entity_type": "Episode", "properties": {"episode_id": episode, "machine_type": machine}}
             edges.append({"source": machine_id, "target": episode_id, "type": "HAS_EPISODE", "properties": {"source": "FactoryNet"}})
-        sequence = episode_sequences.get(episode, 0)
-        episode_sequences[episode] = sequence + 1
+        sequence = row.get("_replay_event_seq")
+        if sequence in (None, ""):
+            sequence = state.sequence_by_episode.get(episode, 0)
+        else:
+            try:
+                sequence = int(sequence)
+            except (TypeError, ValueError):
+                sequence = state.sequence_by_episode.get(episode, 0)
+        state.sequence_by_episode[episode] = max(state.sequence_by_episode.get(episode, 0), int(sequence) + 1)
         source_row = row.get("_source_row_index", index)
         observation_id = f"FactoryNet:Observation:{episode}:{source_row}"
         props = {str(key): value for key, value in row.items() if not str(key).startswith("_")}
-        elapsed = row.get("time_s")
+        # ``normalize_temporal_rows`` has already validated the selected
+        # ordinal column.  Prefer its canonical numeric value so a CSV value
+        # such as ``"1.5"`` is stored/queryable as a number instead of a
+        # lexical string; the original source column remains in ``props`` for
+        # provenance and display.
+        elapsed = row.get("ordinal_value")
+        if elapsed in (None, ""):
+            elapsed = row.get(sequence_column)
+        try:
+            elapsed = float(elapsed)
+            if elapsed.is_integer():
+                elapsed = int(elapsed)
+        except (TypeError, ValueError):
+            # This path is only reachable for callers that bypass the
+            # normalizer.  Keep their original value rather than inventing a
+            # temporal value; the normal construction/replay path rejects it.
+            elapsed = row.get(sequence_column)
         props.update({"event_seq": sequence, "elapsed_seconds": elapsed, "time_kind": "ordinal", "source_row_index": source_row})
         nodes[observation_id] = {"id": observation_id, "entity_type": "Observation", "properties": props}
         edge_props = {"event_seq": sequence, "elapsed_seconds": elapsed, "time_kind": "ordinal", "source_row_index": source_row}
@@ -157,10 +233,10 @@ def build_factorynet_instances(rows: list[dict[str, Any]]) -> tuple[list[dict[st
             {"source": episode_id, "target": observation_id, "type": "HAS_OBSERVATION", "properties": edge_props},
             {"source": observation_id, "target": machine_id, "type": "OBSERVED_ON", "properties": edge_props},
         ])
-        previous = previous_by_episode.get(episode)
+        previous = state.previous_by_episode.get(episode)
         if previous:
             edges.append({"source": previous, "target": observation_id, "type": "NEXT_OBSERVATION", "properties": edge_props})
-        previous_by_episode[episode] = observation_id
+        state.previous_by_episode[episode] = observation_id
         phase = str(row.get("ctx_process_phase") or "unknown").strip()
         phase_key = hashlib.sha1(phase.encode()).hexdigest()[:12]
         phase_id = f"FactoryNet:ProcessPhase:{phase_key}"
@@ -181,7 +257,9 @@ def build_factorynet_instances(rows: list[dict[str, Any]]) -> tuple[list[dict[st
         if inspection_id not in linked_inspections:
             linked_inspections.add(inspection_id)
             nodes[inspection_id] = {"id": inspection_id, "entity_type": "InspectionResult", "properties": {"value": inspection}}
-        if not any(edge["source"] == episode_id and edge["target"] == inspection_id for edge in edges):
+        inspection_edge_key = f"{episode_id}:{inspection_id}"
+        if inspection_edge_key not in linked_inspection_edges:
+            linked_inspection_edges.add(inspection_edge_key)
             edges.append({"source": episode_id, "target": inspection_id, "type": "HAS_INSPECTION", "properties": {"source": "FactoryNet"}})
         for column in row.keys():
             name = str(column)
@@ -194,7 +272,20 @@ def build_factorynet_instances(rows: list[dict[str, Any]]) -> tuple[list[dict[st
             group = name.split("_", 1)[0].upper()
             nodes[channel_id] = {"id": channel_id, "entity_type": "SensorChannel", "properties": {"name": name, "signal_group": group}}
             edges.append({"source": machine_id, "target": channel_id, "type": "EXPOSES_CHANNEL", "properties": {"signal_group": group}})
-    return list(nodes.values()), edges
+    state.linked_machines = sorted(linked_machines)
+    state.linked_episodes = sorted(linked_episodes)
+    state.linked_channels = sorted(linked_channels)
+    state.linked_phases = sorted(linked_phases)
+    state.linked_conditions = sorted(linked_conditions)
+    state.linked_inspections = sorted(linked_inspections)
+    state.linked_inspection_edges = sorted(linked_inspection_edges)
+    return list(nodes.values()), edges, state
+
+
+def build_factorynet_instances(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Backward-compatible one-shot FactoryNet construction."""
+    nodes, edges, _ = build_factorynet_instances_incremental(rows)
+    return nodes, edges
 
 
 def build_bts_instances(rows: list[dict[str, Any]], *, building_id: str = "BTS:Site_B") -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

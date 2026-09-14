@@ -22,10 +22,13 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { min-height: 100%; }
+html, body, #root { min-height: 100%; min-width: 0; }
 body {
   margin: 0;
-  min-width: 1024px;
+  /* Keep the shell shrinkable. Dense tables and canvases own their
+     horizontal overflow; the fixed navigation must never cover actions. */
+  min-width: 0;
+  overflow-x: hidden;
   background: var(--workbench-canvas);
   color: var(--workbench-ink);
 }

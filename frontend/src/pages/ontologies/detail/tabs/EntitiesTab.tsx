@@ -230,7 +230,7 @@ export default function EntitiesTab({ ontologyId }: { ontologyId: string }) {
                   entity={entity}
                   onLocate={() =>
                     navigate(
-                      `/ontologies/${ontologyId}?tab=graph&entity=${encodeURIComponent(entity.id)}`,
+                      `/ontologies/${ontologyId}?tab=data_model&entity_type=${encodeURIComponent(entity.name_en || entity.name || entity.id)}`,
                     )
                   }
                 />

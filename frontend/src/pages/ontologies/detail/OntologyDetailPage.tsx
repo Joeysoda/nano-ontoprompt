@@ -6,9 +6,13 @@ import StatusBadge from "@/components/StatusBadge";
 import EntitiesTab from "./tabs/EntitiesTab";
 import LogicTab from "./tabs/LogicTab";
 import AuditTab from "./tabs/AuditTab";
+import DataModelTab from "./tabs/DataModelTab";
+import WhatIfTab from "./tabs/WhatIfTab";
+import OntologyEditorPanel from "./OntologyEditorPanel";
+import ChangeHistoryDrawer from "./ChangeHistoryDrawer";
 
 const GraphTab = lazy(() => import("./tabs/GraphTabV2"));
-type Tab = "graph" | "entities" | "logic" | "audit";
+type Tab = "graph" | "data_model" | "entities" | "logic" | "audit" | "what_if";
 
 class OntologyCanvasBoundary extends React.Component<
   { children: React.ReactNode },
@@ -43,41 +47,48 @@ export default function OntologyDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [editing, setEditing] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const requested = searchParams.get("tab") || "graph";
-  const initialTab: Tab =
-    requested === "entities" || requested === "logic" || requested === "audit"
-      ? requested
-      : "graph";
-  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+  const { data: ontology, isLoading } = useQuery({
+    queryKey: ["ontology", id],
+    queryFn: () => ontologyApi.get(id!),
+    enabled: !!id,
+  });
+  const temporal = ontology?.data_class === "temporal" && /factorynet|factory|cnc/i.test(ontology.name || "");
+  const validTabs = temporal ? ["graph", "data_model", "entities", "logic", "audit", "what_if"] : ["graph", "data_model", "entities", "logic", "audit"];
+  const activeTab: Tab = validTabs.includes(requested) ? (requested as Tab) : "graph";
   useEffect(() => {
-    if (!id || ["graph", "entities", "logic", "audit"].includes(requested))
+    if (isLoading || !id || validTabs.includes(requested))
       return;
     const entity = searchParams.get("entity");
     navigate(
       `/ontologies/${id}?tab=graph${entity ? `&entity=${encodeURIComponent(entity)}` : ""}`,
       { replace: true },
     );
-  }, [id, navigate, requested, searchParams]);
-  const { data: ontology, isLoading } = useQuery({
-    queryKey: ["ontology", id],
-    queryFn: () => ontologyApi.get(id!) as any,
-    enabled: !!id,
-  });
+  }, [id, isLoading, navigate, requested, searchParams, temporal]); // eslint-disable-line react-hooks/exhaustive-deps
   if (isLoading)
     return <div className="p-6 text-sm text-slate-500">正在加载本体</div>;
   if (!ontology)
     return <div className="p-6 text-sm text-red-600">未找到本体</div>;
   const tabs: Array<{ key: Tab; label: string }> = [
     { key: "graph", label: "本体" },
+    { key: "data_model", label: "数据模型" },
     { key: "entities", label: "实体" },
     { key: "logic", label: "逻辑规则" },
     { key: "audit", label: "质量审查" },
   ];
+  if (temporal) tabs.splice(4, 0, { key: "what_if", label: "What-If 推演" });
   const select = (tab: Tab) => {
-    setActiveTab(tab);
     const entity = searchParams.get("entity");
+    const target = searchParams.get("target_instance_id");
+    const episode = searchParams.get("episode_id");
+    const at = searchParams.get("at");
+    const mode = searchParams.get("mode");
+    const context = tab === "what_if" && target ? `&target_instance_id=${encodeURIComponent(target)}${episode ? `&episode_id=${encodeURIComponent(episode)}` : ""}${at ? `&at=${encodeURIComponent(at)}` : ""}${mode ? `&mode=${encodeURIComponent(mode)}` : ""}` : "";
     navigate(
-      `/ontologies/${id}?tab=${tab}${tab === "graph" && entity ? `&entity=${encodeURIComponent(entity)}` : ""}`,
+      `/ontologies/${id}?tab=${tab}${(tab === "graph" || tab === "data_model") && entity ? `&entity=${encodeURIComponent(entity)}` : ""}${context}`,
       { replace: true },
     );
   };
@@ -95,7 +106,9 @@ export default function OntologyDetailPage() {
           {ontology.name}
         </h1>
         {ontology.status && <StatusBadge status={ontology.status} />}
+        <div className="ml-auto flex items-center gap-2"><button onClick={() => setEditing((value) => !value)} className={`rounded-md border px-3 py-2 text-xs ${editing ? "border-slate-800 bg-slate-800 text-white" : "border-slate-300 text-slate-700 hover:border-slate-600"}`}>{editing ? "关闭编辑" : "编辑本体"}</button><button onClick={() => setShowHistory(true)} className="rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:border-slate-600">修改记录</button></div>
       </div>
+      {editing && <OntologyEditorPanel ontologyId={id!} onChanged={() => setRefreshKey((value) => value + 1)} />}
       <nav className="mb-5 flex gap-1 border-b border-slate-200">
         {tabs.map((tab) => (
           <button
@@ -116,13 +129,18 @@ export default function OntologyDetailPage() {
               </div>
             }
           >
-            <GraphTab ontologyId={id!} />
+            <GraphTab key={refreshKey} ontologyId={id!} />
           </Suspense>
         </OntologyCanvasBoundary>
       )}
-      {activeTab === "entities" && <EntitiesTab ontologyId={id!} />}
-      {activeTab === "logic" && <LogicTab ontologyId={id!} />}
+      {activeTab === "data_model" && (
+        <DataModelTab key={refreshKey} ontologyId={id!} dataClass={ontology.data_class} />
+      )}
+      {activeTab === "entities" && <EntitiesTab key={refreshKey} ontologyId={id!} />}
+      {activeTab === "logic" && <LogicTab key={refreshKey} ontologyId={id!} />}
       {activeTab === "audit" && <AuditTab ontologyId={id!} />}
+      {activeTab === "what_if" && temporal && <WhatIfTab ontologyId={id!} />}
+      {showHistory && <ChangeHistoryDrawer ontologyId={id!} onClose={() => setShowHistory(false)} />}
     </div>
   );
 }

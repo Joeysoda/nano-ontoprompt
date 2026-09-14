@@ -259,9 +259,12 @@ class FalkorDBService:
         limit: int = 200,
         offset: int = 0,
         entity_type: str | None = None,
+        episode_id: str | None = None,
         seq_from: int | None = None,
         seq_to: int | None = None,
         relation_state: str = "all",
+        replay_id: str | None = None,
+        at: float | None = None,
     ) -> dict[str, Any]:
         if not self.available:
             return {"nodes": [], "edges": [], "total_instances": 0, "graph_backend": "falkordb", "available": False}
@@ -273,12 +276,21 @@ class FalkorDBService:
         if entity_type:
             clauses.append("n._type = $entity_type")
             params["entity_type"] = entity_type
+        if replay_id:
+            clauses.append("n._replay_id = $replay_id")
+            params["replay_id"] = replay_id
+        if episode_id:
+            clauses.append("(n.episode_id = $episode_id OR n.event_seq IS NULL)")
+            params["episode_id"] = episode_id
         if seq_from is not None:
-            clauses.append("n.event_seq >= $seq_from")
+            clauses.append("(n.event_seq IS NULL OR n.event_seq >= $seq_from)")
             params["seq_from"] = int(seq_from)
         if seq_to is not None:
-            clauses.append("n.event_seq <= $seq_to")
+            clauses.append("(n.event_seq IS NULL OR n.event_seq <= $seq_to)")
             params["seq_to"] = int(seq_to)
+        if at is not None:
+            clauses.append("(n.elapsed_seconds IS NULL OR n.elapsed_seconds <= $at)")
+            params["at"] = float(at)
         result = graph.query(
             f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n ORDER BY n.event_seq, n._instance_id SKIP $offset LIMIT $limit",
             params={**params, "offset": offset},
@@ -295,13 +307,20 @@ class FalkorDBService:
         edges: list[dict[str, Any]] = []
         if ids:
             rel_where = ["source._instance_id IN $ids", "target._instance_id IN $ids"]
+            rel_params: dict[str, Any] = {"ids": ids}
+            if replay_id:
+                rel_where.append("relation._replay_id = $replay_id")
+                rel_params["replay_id"] = replay_id
             if relation_state == "current":
                 rel_where.append("relation.valid_to IS NULL")
+            if at is not None:
+                rel_where.append("(relation.elapsed_seconds IS NULL OR relation.elapsed_seconds <= $at)")
+                rel_params["at"] = float(at)
             rel_result = graph.query(
                 "MATCH (source)-[relation]->(target) "
                 f"WHERE {' AND '.join(rel_where)} "
                 "RETURN source._instance_id, target._instance_id, type(relation), relation",
-                params={"ids": ids},
+                params=rel_params,
             )
             for source_id, target_id, relation_type, relation in rel_result.result_set:
                 props = dict(getattr(relation, "properties", {}) or {})
@@ -320,17 +339,46 @@ class FalkorDBService:
         total_params: dict[str, Any] = {}
         if entity_type:
             total_clauses.append("n._type = $entity_type"); total_params["entity_type"] = entity_type
+        if replay_id:
+            total_clauses.append("n._replay_id = $replay_id"); total_params["replay_id"] = replay_id
+        if episode_id:
+            total_clauses.append("(n.episode_id = $episode_id OR n.event_seq IS NULL)"); total_params["episode_id"] = episode_id
         if seq_from is not None:
-            total_clauses.append("n.event_seq >= $seq_from"); total_params["seq_from"] = int(seq_from)
+            total_clauses.append("(n.event_seq IS NULL OR n.event_seq >= $seq_from)"); total_params["seq_from"] = int(seq_from)
         if seq_to is not None:
-            total_clauses.append("n.event_seq <= $seq_to"); total_params["seq_to"] = int(seq_to)
+            total_clauses.append("(n.event_seq IS NULL OR n.event_seq <= $seq_to)"); total_params["seq_to"] = int(seq_to)
+        if at is not None:
+            total_clauses.append("(n.elapsed_seconds IS NULL OR n.elapsed_seconds <= $at)"); total_params["at"] = float(at)
         total = graph.query(f"MATCH (n) WHERE {' AND '.join(total_clauses)} RETURN count(n)", params=total_params)
         total_instances = int(total.result_set[0][0]) if total.result_set else 0
+        edge_clauses = ["a._instance_id IS NOT NULL", "b._instance_id IS NOT NULL"]
+        edge_params = dict(total_params)
+        if entity_type:
+            edge_clauses.extend(["a._type = $entity_type", "b._type = $entity_type"])
+        if replay_id:
+            edge_clauses.extend(["a._replay_id = $replay_id", "b._replay_id = $replay_id"])
+            edge_clauses.append("relation._replay_id = $replay_id")
+        if episode_id:
+            edge_clauses.extend(["(a.episode_id = $episode_id OR a.event_seq IS NULL)", "(b.episode_id = $episode_id OR b.event_seq IS NULL)"])
+        if seq_from is not None:
+            edge_clauses.extend(["(a.event_seq IS NULL OR a.event_seq >= $seq_from)", "(b.event_seq IS NULL OR b.event_seq >= $seq_from)"])
+        if seq_to is not None:
+            edge_clauses.extend(["(a.event_seq IS NULL OR a.event_seq <= $seq_to)", "(b.event_seq IS NULL OR b.event_seq <= $seq_to)"])
+        if at is not None:
+            edge_clauses.extend(["(a.elapsed_seconds IS NULL OR a.elapsed_seconds <= $at)", "(b.elapsed_seconds IS NULL OR b.elapsed_seconds <= $at)", "(relation.elapsed_seconds IS NULL OR relation.elapsed_seconds <= $at)"])
+        if relation_state == "current":
+            edge_clauses.append("relation.valid_to IS NULL")
+        edge_total_result = graph.query(
+            f"MATCH (a)-[relation]->(b) WHERE {' AND '.join(edge_clauses)} RETURN count(relation)",
+            params=edge_params,
+        )
+        total_edges = int(edge_total_result.result_set[0][0]) if edge_total_result.result_set else len(edges)
         return {
             "nodes": nodes,
             "edges": edges,
             "total_instances": total_instances,
             "returned": len(nodes),
+            "total_edges": total_edges,
             "offset": offset,
             "next_offset": offset + len(nodes) if offset + len(nodes) < total_instances else None,
             "sample_limit": limit,
@@ -364,6 +412,143 @@ class FalkorDBService:
             "quality_score": round(max(0.0, score), 4),
             "samples": {"isolated_node_ids": isolated[:10]},
         }
+
+    def get_neighborhood(
+        self,
+        ontology_id: str,
+        *,
+        target_id: str | None = None,
+        episode_id: str | None = None,
+        seq_to: int | None = None,
+        mode: str = "cumulative",
+        hops: int = 2,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        """Return a bounded, temporal-aware neighborhood around one instance.
+
+        FalkorDB releases differ in support for variable-length paths.  A
+        small breadth-first expansion using parameterised one-hop queries is
+        consequently more portable and gives us a hard node/edge bound before
+        the What-If engine receives the context.
+        """
+        if not self.available:
+            return {"available": False, "nodes": [], "edges": []}
+        graph = self._graph(ontology_id)
+        hops = max(0, min(int(hops), 2))
+        limit = max(1, min(int(limit), 500))
+
+        def allowed(node: dict[str, Any]) -> bool:
+            props = node.get("properties") or {}
+            # _node removes internal properties; the graph query below keeps
+            # only fields needed for filtering in a private side map.
+            node_episode = props.get("episode_id")
+            node_seq = node.get("event_seq")
+            if episode_id and node_episode not in (None, episode_id):
+                return False
+            if node_seq is not None and seq_to is not None:
+                try:
+                    seq = int(float(node_seq))
+                except (TypeError, ValueError):
+                    return False
+                if mode == "window":
+                    return seq == int(seq_to)
+                return seq <= int(seq_to)
+            return True
+
+        target_row = None
+        if target_id:
+            result = graph.query("MATCH (n:Instance) WHERE n._instance_id = $target RETURN n", params={"target": str(target_id)})
+            if result.result_set:
+                target_row = result.result_set[0][0]
+        else:
+            clauses = ["n._instance_id IS NOT NULL"]
+            params: dict[str, Any] = {"limit": 1}
+            if episode_id:
+                clauses.append("(n.episode_id = $episode_id)"); params["episode_id"] = episode_id
+            if seq_to is not None:
+                clauses.append("n.event_seq IS NOT NULL"); params["seq_to"] = int(seq_to)
+            result = graph.query(f"MATCH (n:Instance) WHERE {' AND '.join(clauses)} RETURN n ORDER BY n.event_seq DESC LIMIT $limit", params=params)
+            if result.result_set:
+                target_row = result.result_set[0][0]
+        if target_row is None:
+            return {"available": True, "nodes": [], "edges": [], "target_instance_id": target_id}
+
+        # Keep the raw temporal fields in a side map because _node exposes
+        # user-facing properties only.
+        raw_by_id: dict[str, dict[str, Any]] = {}
+        target = self._node(target_row)
+        target_props = dict(getattr(target_row, "properties", {}) or {})
+        raw_by_id[str(target["id"])] = target_props
+        if not allowed({**target, "properties": target_props}):
+            return {"available": True, "nodes": [], "edges": [], "target_instance_id": target_id}
+        nodes_by_id: dict[str, dict[str, Any]] = {str(target["id"]): target}
+        edges_by_id: dict[str, dict[str, Any]] = {}
+        frontier = {str(target["id"])}
+        for _ in range(hops):
+            if not frontier or len(nodes_by_id) >= limit:
+                break
+            result = graph.query(
+                "MATCH (a:Instance)-[r]-(b:Instance) "
+                "WHERE a._instance_id IN $frontier OR b._instance_id IN $frontier "
+                "RETURN a, b, type(r), r LIMIT $limit",
+                params={"frontier": sorted(frontier), "limit": max(1, limit * 3)},
+            )
+            next_frontier: set[str] = set()
+            for a, b, relation_type, relation in result.result_set:
+                a_raw, b_raw = dict(getattr(a, "properties", {}) or {}), dict(getattr(b, "properties", {}) or {})
+                a_node, b_node = self._node(a), self._node(b)
+                a_id, b_id = str(a_node.get("id") or ""), str(b_node.get("id") or "")
+                if not a_id or not b_id:
+                    continue
+                a_node["properties"] = {k: v for k, v in a_raw.items() if not str(k).startswith("_")}
+                b_node["properties"] = {k: v for k, v in b_raw.items() if not str(k).startswith("_")}
+                if not allowed({**a_node, "properties": a_raw}) or not allowed({**b_node, "properties": b_raw}):
+                    continue
+                for node_id, node, raw in ((a_id, a_node, a_raw), (b_id, b_node, b_raw)):
+                    if node_id not in nodes_by_id and len(nodes_by_id) < limit:
+                        nodes_by_id[node_id] = node; raw_by_id[node_id] = raw; next_frontier.add(node_id)
+                if a_id not in nodes_by_id or b_id not in nodes_by_id:
+                    continue
+                relation_props = dict(getattr(relation, "properties", {}) or {})
+                edge_id = f"{a_id}:{relation_type}:{b_id}:{relation_props.get('valid_from', '')}"
+                edges_by_id[edge_id] = {"id": edge_id, "source": a_id, "target": b_id, "type": str(relation_type), "label": str(relation_type), "properties": relation_props, "edge_kind": "instance"}
+                if len(edges_by_id) >= limit * 4:
+                    break
+            frontier = next_frontier
+        # Always return the selected target first, which makes the UI and a
+        # copied scenario stable across FalkorDB result-order differences.
+        return {"available": True, "target_instance_id": str(target["id"]), "nodes": [nodes_by_id[str(target["id"])] ] + [node for node_id, node in nodes_by_id.items() if node_id != str(target["id"])][: max(0, limit - 1)], "edges": list(edges_by_id.values())[: limit * 4], "hops": hops, "episode_id": episode_id, "at": seq_to, "mode": mode}
+
+    def get_instance_type_counts(
+        self,
+        ontology_id: str,
+        entity_type: str | None = None,
+        episode_id: str | None = None,
+        seq_from: int | None = None,
+        seq_to: int | None = None,
+    ) -> dict[str, int]:
+        """Return type counts for the same filter plane as ``get_graph_data``."""
+        if not self.available:
+            return {}
+        clauses = ["n._instance_id IS NOT NULL"]
+        params: dict[str, Any] = {}
+        if entity_type:
+            clauses.append("n._type = $entity_type")
+            params["entity_type"] = entity_type
+        if episode_id:
+            clauses.append("(n.episode_id = $episode_id OR n.event_seq IS NULL)")
+            params["episode_id"] = episode_id
+        if seq_from is not None:
+            clauses.append("(n.event_seq IS NULL OR n.event_seq >= $seq_from)")
+            params["seq_from"] = int(seq_from)
+        if seq_to is not None:
+            clauses.append("(n.event_seq IS NULL OR n.event_seq <= $seq_to)")
+            params["seq_to"] = int(seq_to)
+        result = self._graph(ontology_id).query(
+            f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n._type, count(n)",
+            params=params,
+        )
+        return {str(row[0] or "Entity"): int(row[1]) for row in result.result_set if row}
 
     def _event_nodes(
         self,
@@ -454,6 +639,7 @@ class FalkorDBService:
         ontology_id: str,
         at: str | None = None,
         mode: str = "cumulative",
+        episode_id: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
         country: str | None = None,
@@ -469,7 +655,7 @@ class FalkorDBService:
         # ICEWS date predicates so a float ``time_s`` is never coerced to a
         # fabricated timestamp.
         if self.available and self._has_ordinal_nodes(ontology_id):
-            return self._ordinal_snapshot(ontology_id, at=at, mode=mode, limit=limit)
+            return self._ordinal_snapshot(ontology_id, at=at, mode=mode, episode_id=episode_id, limit=limit)
         nodes = self._event_nodes(
             ontology_id, at=at, mode=mode, date_from=date_from, date_to=date_to,
             country=country, event_type=event_type, category=category,
@@ -605,40 +791,92 @@ class FalkorDBService:
         result = self._graph(ontology_id).query("MATCH (n) WHERE n.event_seq IS NOT NULL RETURN count(n)")
         return bool(result.result_set and int(result.result_set[0][0]) > 0)
 
-    def _ordinal_snapshot(self, ontology_id: str, at: str | None, mode: str, limit: int) -> dict[str, Any]:
-        graph_data = self.get_graph_data(ontology_id, limit=min(max(int(limit), 1), 500))
-        all_nodes = graph_data.get("nodes", [])
+    def _ordinal_snapshot(
+        self,
+        ontology_id: str,
+        at: str | None,
+        mode: str,
+        episode_id: str | None = None,
+        limit: int = 300,
+    ) -> dict[str, Any]:
         try:
             point = float(at) if at not in (None, "") else None
         except (TypeError, ValueError):
             point = None
-        if point is None:
-            selected = all_nodes
-        elif mode == "window":
-            selected = [n for n in all_nodes if n.get("event_seq") is None or float(n.get("event_seq")) == point]
-        else:
-            selected = [n for n in all_nodes if n.get("event_seq") is None or float(n.get("event_seq")) <= point]
-        ids = {n.get("id") for n in selected}
-        edges = [e for e in graph_data.get("edges", []) if e.get("source") in ids and e.get("target") in ids]
+        seq_from = int(point) if point is not None and mode == "window" else None
+        seq_to = int(point) if point is not None else None
+        graph_data = self.get_graph_data(
+            ontology_id,
+            limit=min(max(int(limit), 1), 500),
+            episode_id=episode_id,
+            seq_from=seq_from,
+            seq_to=seq_to,
+        )
+        selected = graph_data.get("nodes", [])
+        edges = graph_data.get("edges", [])
         return {"available": True, "graph_backend": "falkordb", "ontology_id": ontology_id, "at": at, "mode": mode,
                 "time_kind": "ordinal", "nodes": selected[:limit], "edges": edges[:limit * 3],
-                "total_nodes": len(selected), "total_edges": len(edges),
-                "total_available_nodes": graph_data.get("total_instances", len(all_nodes)),
-                "total_available_edges": len(graph_data.get("edges", [])), "sample_limit": limit}
+                "total_nodes": graph_data.get("total_instances", len(selected)), "total_edges": len(edges),
+                "total_available_nodes": graph_data.get("total_instances", len(selected)),
+                "total_available_edges": len(edges), "sample_limit": limit, "episode_id": episode_id}
 
-    def temporal_timeline(self, ontology_id: str, entity_id: str | None = None, category: str | None = None, limit: int = 200) -> dict[str, Any]:
+    def temporal_timeline(
+        self,
+        ontology_id: str,
+        entity_id: str | None = None,
+        category: str | None = None,
+        episode_id: str | None = None,
+        limit: int = 200,
+    ) -> dict[str, Any]:
         if not self.available:
             return {"available": False, "graph_backend": "falkordb", "events": []}
         graph = self._graph(ontology_id)
         if self._has_ordinal_nodes(ontology_id):
-            buckets = graph.query("MATCH (n) WHERE n.event_seq IS NOT NULL RETURN n.event_seq, count(n) ORDER BY n.event_seq")
+            ordinal_clauses = ["n.event_seq IS NOT NULL"]
+            ordinal_params: dict[str, Any] = {}
+            if entity_id:
+                ordinal_clauses.append("n._instance_id = $entity_id")
+                ordinal_params["entity_id"] = entity_id
+            if episode_id:
+                ordinal_clauses.append("n.episode_id = $episode_id")
+                ordinal_params["episode_id"] = episode_id
+            if category:
+                ordinal_clauses.append("toLower(coalesce(n.category, '')) CONTAINS $category")
+                ordinal_params["category"] = str(category).casefold()
+            ordinal_where = " AND ".join(ordinal_clauses)
+            buckets = graph.query(
+                f"MATCH (n) WHERE {ordinal_where} RETURN n.event_seq, count(n) ORDER BY n.event_seq",
+                params=ordinal_params,
+            )
             points = [{"timestamp": str(row[0]), "count": int(row[1])} for row in buckets.result_set]
-            result = graph.query("MATCH (n) WHERE n.event_seq IS NOT NULL RETURN n ORDER BY n.event_seq LIMIT $limit", params={"limit": max(1, min(int(limit), 1000))})
+            result = graph.query(
+                f"MATCH (n) WHERE {ordinal_where} RETURN n ORDER BY n.event_seq LIMIT $limit",
+                params={**ordinal_params, "limit": max(1, min(int(limit), 1000))},
+            )
             events = []
             for row in result.result_set:
                 node = self._node(row[0]); props = node.get("properties") or {}
                 events.append({"id": node["id"], "timestamp": node.get("event_seq"), "label": props.get("episode_id") or props.get("phase") or node.get("entity_type"), "entity_type": node.get("entity_type"), "value": props.get("time_s") or props.get("elapsed_seconds")})
-            return {"available": True, "graph_backend": "falkordb", "ontology_id": ontology_id, "events": events, "count": len(events), "total_events": sum(p["count"] for p in points), "dates": [p["timestamp"] for p in points], "buckets": points, "time_kind": "ordinal", "sample_limit": limit}
+            episode_result = graph.query(
+                "MATCH (n) WHERE n.event_seq IS NOT NULL AND n.episode_id IS NOT NULL "
+                "RETURN DISTINCT n.episode_id ORDER BY n.episode_id LIMIT $limit",
+                params={"limit": 500},
+            )
+            episodes = [str(row[0]) for row in episode_result.result_set if row and row[0] is not None]
+            return {
+                "available": True,
+                "graph_backend": "falkordb",
+                "ontology_id": ontology_id,
+                "events": events,
+                "count": len(events),
+                "total_events": sum(p["count"] for p in points),
+                "dates": [p["timestamp"] for p in points],
+                "buckets": points,
+                "episodes": episodes,
+                "episode_id": episode_id,
+                "time_kind": "ordinal",
+                "sample_limit": limit,
+            }
         clauses = ["n.event_time IS NOT NULL"]
         params: dict[str, Any] = {"limit": max(1, min(int(limit), 1000))}
         if entity_id:

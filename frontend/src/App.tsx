@@ -23,6 +23,7 @@ import RegularDataPage from "@/pages/data-management/regular/RegularDataPage";
 import MultimodalDataPage from "@/pages/data-management/multimodal/MultimodalDataPage";
 import TemporalConstructionWizard from "@/pages/data-management/temporal/TemporalConstructionWizard";
 import TemporalWorkbenchPage from "@/pages/data-management/temporal/TemporalWorkbenchPage";
+import TemporalReplayPage from "@/pages/data-management/temporal/TemporalReplayPage";
 import BenchmarksPage from "@/pages/benchmarks/BenchmarksPage";
 
 class AppErrorBoundary extends React.Component<
@@ -124,6 +125,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <TemporalWorkbenchPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/data/temporal/replays/:replayId"
+              element={
+                <ProtectedRoute>
+                  <TemporalReplayPage />
                 </ProtectedRoute>
               }
             />

@@ -147,7 +147,26 @@ curl 'http://127.0.0.1:18080/api/v2/model-invocations?model=qwen3.5%3A0.8b&statu
 
 审查页展示只读工具轨迹、观察结果和最终结论，不展示模型隐藏思维。图片只记录资产引用和哈希，不复制 Base64。
 
-## 8. 常用运维命令
+## 8. 动态本体与 What-If
+
+打开 FactoryNet 本体后，右上角的“编辑本体”支持新增、修改或删除实体类型、属性、类型关系和逻辑规则。每次只保存一个修改，后端会在同一事务中校验引用并生成新的不可变修订；真实数据实例保持只读。删除有实例、关系、规则或证据引用的对象会被明确阻断。旧修订可在“修改记录”中恢复，恢复会重新物化本体结构并创建新的当前修订，不覆盖历史记录。
+
+模型建议支持批量导入：在建议列表左侧勾选多项，点击“批量填入表单”后逐项检查字段，再点击“检查冲突”。后端会在保存点中模拟整批新增/修改/删除，检查重复标识、对象引用、关系端点、基数和逻辑规则；校验通过后“确认批量导入”才会把整批操作作为一个新修订提交，任意一项失败都不会留下半批修改。对应接口为 `POST /api/v2/ontologies/<ontology_id>/changes/batch/validate` 和 `POST /api/v2/ontologies/<ontology_id>/changes/batch`。
+
+FactoryNet 的“数据模型”页面可以选中一个 Observation，再进入 “What-If 推演”。推演固定 `episode_id + Ordinal`、数据集版本和本体修订，流程是：选择基线 → 设置属性/关系/规则假设 → 运行推演 → 查看差异。结果只保存于情景，不写回正式本体或 FalkorDB；新增、消失和未变化关系在画布中分别用绿、红、灰标识，右侧显示规则前提、引擎版本和证据。
+
+推演使用已核验的 Semantica 提交 `3a69721abf72d7188a0d6fd72c8462261b2c44eb`，并受两跳、500 节点、2,000 条事实、50 条规则和 50 次迭代限制。当前内置演示把真实观测的 `ctx_tool_condition=unworn` 改为 `worn`，由 `IN_PHASE` 与 `HAS_TOOL_CONDITION` 推出 `PHASE_TOOL_STATE`；它是规则情景推演，不代表因果反事实或维护效果预测。
+
+常用接口：
+
+```bash
+curl http://127.0.0.1:18080/api/v2/ontologies/<ontology_id>/editor
+curl http://127.0.0.1:18080/api/v2/ontologies/<ontology_id>/changes
+curl 'http://127.0.0.1:18080/api/v2/ontologies/<ontology_id>/what-if/context?target_instance_id=<instance_id>&episode_id=<episode_id>&at=<ordinal>'
+curl http://127.0.0.1:18080/api/v2/ontologies/<ontology_id>/what-if/scenarios
+```
+
+## 9. 常用运维命令
 
 只重启本工作树的某个服务：
 
@@ -171,7 +190,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml stop
 
 不要使用 `docker compose down -v`，它会删除卷并可能清空本地演示数据。
 
-## 9. 不使用 Docker 时直接部署后端
+## 10. 不使用 Docker 时直接部署后端
 
 仅用于开发或测试，生产环境仍建议使用容器编排：
 
@@ -180,6 +199,7 @@ cd backend
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -r requirements-reasoning.txt
 alembic upgrade head
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -195,7 +215,7 @@ celery -A app.tasks.celery_app beat --loglevel=info
 
 直接运行时请把 `DATABASE_URL`、`REDIS_URL`、`NEO4J_URI`、`MINIO_ENDPOINT`、`CHROMA_HOST`、`LITELLM_API_BASE` 和 `OLLAMA_API_BASE` 改为实际地址，并将 `AUTH_MODE` 设为 `jwt` 后配置反向代理和强密码。
 
-## 10. 常见问题
+## 11. 常见问题
 
 ### 页面打不开或 API 代理失败
 
@@ -221,6 +241,6 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build f
 
 重新打开多模态数据页并继续同一个安装任务。安装器按数据集版本和样本键幂等写入，不要同时创建第二个安装任务。
 
-## 11. 生产部署提醒
+## 12. 生产部署提醒
 
 本地 Compose 仅用于演示。生产部署至少需要：关闭 `local_single_user`、启用 JWT 与强密码、使用独立密钥管理、限制 LiteLLM/数据库/对象存储网络访问、配置 HTTPS 反向代理、备份 PostgreSQL 和对象存储，并在轮换 M3 凭证后重新验证模型路由。

@@ -12,6 +12,8 @@ from app.models.rules_config import RulesConfig
 from app.models.audit_task import AuditTask
 from app.models.entity_instance import EntityInstance
 from app.models.ontology_revision import OntologyRevision
+from app.models.v2.dynamic_ontology import OntologyChange, WhatIfRun, WhatIfScenario
+from app.models.v2.temporal_replay import TemporalReplay, TemporalReplayBatch
 
 __all__ = [
     "User",
@@ -28,4 +30,9 @@ __all__ = [
     "AuditTask",
     "EntityInstance",
     "OntologyRevision",
+    "OntologyChange",
+    "WhatIfScenario",
+    "WhatIfRun",
+    "TemporalReplay",
+    "TemporalReplayBatch",
 ]

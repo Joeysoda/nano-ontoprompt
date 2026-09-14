@@ -58,3 +58,47 @@ def test_private_multimodal_mapping_keeps_sample_asset_and_official_label_contra
         ("multimodalsample", "anomalyevent"),
     }
     assert validated.mapping["logic_rules"][0]["linked_entities"] == ["multimodalsample", "anomalyevent"]
+
+
+def test_mapping_normalises_uml_cardinality_notation_from_multimodal_model():
+    mapping = {
+        "entity_types": [
+            {"id": "dataset", "name": "Dataset"},
+            {"id": "scene", "name": "Scene"},
+            {"id": "sample", "name": "Sample"},
+            {"id": "asset", "name": "Asset"},
+        ],
+        "properties": [],
+        "relationships": [
+            {"name": "aggregates scene", "from": "dataset", "to": "scene", "cardinality": "1:N"},
+            {"name": "contains sample", "from": "scene", "to": "sample", "cardinality": "1 : n"},
+            {"name": "owns asset", "from": "sample", "to": "asset", "cardinality": "0..1:1"},
+            {"name": "links assets", "from": "sample", "to": "asset", "cardinality": "M:N"},
+            {"name": "reverse link", "from": "asset", "to": "sample", "cardinality": "n:1"},
+        ],
+        "logic_rules": [],
+    }
+
+    validated = normalise_mapping(mapping, data_class="multimodal")
+
+    assert validated.errors == []
+    assert [item["cardinality"] for item in validated.mapping["relationships"]] == [
+        "one-to-many", "one-to-many", "one-to-one", "many-to-many", "many-to-one",
+    ]
+    optional = validated.mapping["relationships"][2]
+    assert optional["cardinality_raw"] == "0..1:1"
+    assert optional["optional_from"] is True
+    assert any("已规范为 one-to-many" in warning for warning in validated.warnings)
+
+
+def test_mapping_rejects_unknown_cardinality_tokens():
+    mapping = {
+        "entity_types": [{"id": "a", "name": "A"}, {"id": "b", "name": "B"}],
+        "properties": [],
+        "relationships": [{"name": "invalid", "from": "a", "to": "b", "cardinality": "1:banana"}],
+        "logic_rules": [],
+    }
+
+    validated = normalise_mapping(mapping, data_class="multimodal")
+
+    assert validated.errors == ["关系 invalid 的基数无效：1:banana"]

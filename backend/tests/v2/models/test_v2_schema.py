@@ -76,6 +76,18 @@ def test_all_v2_tables_registered():
         "v2_construction_runs",
         "v2_evidence_refs",
         "v2_extracted_fragments",
+        "v2_construction_drafts",
+        "v2_mapping_tasks",
+        "v2_data_import_tasks",
+        "v2_model_invocations",
+        "v2_temporal_dataset_profiles",
+        "v2_multimodal_install_tasks",
+        "v2_multimodal_samples",
+        "v2_ontology_changes",
+        "v2_what_if_scenarios",
+        "v2_what_if_runs",
+        "v2_temporal_replays",
+        "v2_temporal_replay_batches",
     }
 
 

@@ -40,6 +40,9 @@ from app.routers.v2 import audits as audits_v2
 from app.routers.v2 import construction_drafts as construction_drafts_v2
 from app.routers.v2 import temporal as temporal_v2
 from app.routers.v2 import model_routes as model_routes_v2
+from app.routers.v2 import dynamic_ontology as dynamic_ontology_v2
+from app.routers.v2 import what_if as what_if_v2
+from app.routers.v2 import temporal_replays as temporal_replays_v2
 
 def _run_schema_migration():
     """统一 schema 迁移入口。
@@ -92,6 +95,8 @@ def _seed_db():
         from app.models.v2.multimodal_install import MultimodalInstallTask  # noqa: F401
         from app.models.v2.construction_draft import ConstructionDraft  # noqa: F401
         from app.models.v2.workbench_task import MappingTask, DataImportTask, ModelInvocation  # noqa: F401
+        from app.models.v2.dynamic_ontology import OntologyChange, WhatIfScenario, WhatIfRun  # noqa: F401
+        from app.models.v2.temporal_replay import TemporalReplay, TemporalReplayBatch  # noqa: F401
         _run_schema_migration()
 
         seed_admin(db)
@@ -165,6 +170,7 @@ def _seed_db():
             resumable_install = [item for item in db.query(MultimodalInstallTask).filter(MultimodalInstallTask.status == "running").all() if is_stale(item)]
             resumable_mapping = [item for item in db.query(MappingTask).filter(MappingTask.status == "running").all() if is_stale(item)]
             resumable_import = [item for item in db.query(DataImportTask).filter(DataImportTask.status == "running").all() if is_stale(item)]
+            resumable_what_if = [item for item in db.query(WhatIfRun).filter(WhatIfRun.status == "running").all() if is_stale(item)]
             for item in resumable_install:
                 item.status = "queued"
                 item.updated_at = datetime.now(timezone.utc)
@@ -176,17 +182,28 @@ def _seed_db():
             for item in resumable_import:
                 item.status = "queued"
                 item.updated_at = datetime.now(timezone.utc)
-            if resumable_install or resumable_mapping or resumable_import:
+            for item in resumable_what_if:
+                item.status = "queued"
+                item.stage = "prepare_baseline"
+                item.progress = 0
+                item.started_at = None
+                item.completed_at = None
+                item.error = None
+                item.updated_at = datetime.now(timezone.utc)
+            if resumable_install or resumable_mapping or resumable_import or resumable_what_if:
                 db.commit()
                 try:
                     from app.tasks.v2.workbench import run_ibadas_install_task, run_mapping_task
                     from app.tasks.v2.connection_sync import run_data_import_task
+                    from app.tasks.v2.workbench import run_what_if_task
                     for item in resumable_install:
                         run_ibadas_install_task.delay(item.id)
                     for item in resumable_mapping:
                         run_mapping_task.delay(item.id)
                     for item in resumable_import:
                         run_data_import_task.delay(item.id)
+                    for item in resumable_what_if:
+                        run_what_if_task.delay(item.id)
                 except Exception:
                     logger.warning("Resumable workbench tasks were queued but could not be published", exc_info=True)
 
@@ -291,8 +308,11 @@ app.include_router(construction_drafts_v2.router, prefix="/api/v2", tags=["v2-co
 app.include_router(construction_drafts_v2.mapping_tasks_router, prefix="/api/v2", tags=["v2-mapping-tasks"])
 app.include_router(temporal_v2.router, prefix="/api/v2", tags=["v2-temporal"])
 app.include_router(temporal_v2.ontology_router, prefix="/api/v2/ontologies", tags=["v2-temporal"])
+app.include_router(temporal_replays_v2.router, prefix="/api/v2", tags=["v2-temporal-replays"])
 app.include_router(model_routes_v2.router, prefix="/api/v2/model-routes", tags=["v2-model-routes"])
 app.include_router(model_routes_v2.invocations_router, prefix="/api/v2", tags=["v2-model-invocations"])
+app.include_router(dynamic_ontology_v2.router, prefix="/api/v2/ontologies", tags=["v2-ontology-editor"])
+app.include_router(what_if_v2.router, prefix="/api/v2/ontologies", tags=["v2-what-if"])
 
 def get_db():
     db = SessionLocal()
