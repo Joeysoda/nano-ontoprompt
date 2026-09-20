@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect, no-useless-assignment */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import cytoscape from "cytoscape";
@@ -19,6 +20,8 @@ type Replay = {
   id: string;
   replay_id: string;
   ontology_id: string;
+  graph_namespace?: string | null;
+  total_events?: number;
   status: string;
   time_kind: string;
   series_ids: string[];
@@ -130,14 +133,23 @@ export default function TemporalReplayPage() {
     } catch (reason: any) {
       setError(errorText(reason, "无法读取时序模拟"));
     }
-  }, [loadGraph, replayId]);
+  }, [followLatest, loadGraph, replayId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    if (!replay || !active.has(replay.status)) return;
+    // Replays created by the compatibility endpoint are now event streams.
+    // Keep the old URL readable, but take users to the unified workbench once
+    // the run metadata confirms it has a dynamic namespace.
+    if (replay?.graph_namespace && Number(replay.total_events || 0) > 0) {
+      navigate(`/ontologies/${replay.ontology_id}?tab=dynamic&run_id=${encodeURIComponent(replay.id)}`, { replace: true });
+    }
+  }, [navigate, replay]);
+  const replayStatus = replay?.status;
+  useEffect(() => {
+    if (!replayStatus || !active.has(replayStatus)) return;
     const timer = window.setInterval(load, 900);
     return () => window.clearInterval(timer);
-  }, [load, replay?.status]);
+  }, [load, replayStatus]);
 
   useEffect(() => {
     if (!canvasRef.current || !graph) return;
@@ -242,7 +254,7 @@ export default function TemporalReplayPage() {
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">{[["源记录", replay.source_rows], ["选中记录", replay.selected_rows], ["已规范化", replay.normalized_rows], ["已提交批次", metrics.committed_batches || 0], ["节点写入", metrics.nodes_written || 0], ["关系写入", metrics.edges_written || 0], ["问题", metrics.issues || 0], ["图中节点", graph?.total_instances || 0]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{fmt(value)}</p></div>)}</section>
       <section className="grid gap-5 xl:grid-cols-[390px_minmax(0,1fr)_310px]">
         <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="flex items-center justify-between"><h3 className="font-medium">最近到达的原始记录</h3><span className="text-xs text-slate-500">每批最多 20 行</span></div><div className="mt-3 max-h-[560px] overflow-auto rounded border"><table className="w-full text-[11px]"><thead className="sticky top-0 bg-slate-50"><tr>{columns.map((column) => <th key={column} className="whitespace-nowrap px-2 py-2 text-left">{column}</th>)}</tr></thead><tbody>{(replay.latest_rows || []).map((row, index) => <tr key={index} className="border-t">{columns.map((column) => <td key={column} className="max-w-[130px] truncate whitespace-nowrap px-2 py-2">{fmt(row[column])}</td>)}</tr>)}</tbody></table>{!(replay.latest_rows || []).length && <p className="p-4 text-xs text-slate-500">尚未提交批次</p>}</div></div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium">增长中的实例图</h3><p className="mt-1 text-xs text-slate-500">画布只渲染已提交数据；节点数量可调整，全部模式按 500 个一页加载。</p></div><div className="flex items-center gap-2"><select value={graphLimit} onChange={(e) => setGraphLimit(e.target.value)} className="rounded border px-2 py-1 text-xs"><option value="50">50 个</option><option value="100">100 个</option><option value="200">200 个</option><option value="500">500 个</option><option value="1000">1000 个</option><option value="custom">自定义</option><option value="all">全部（分页）</option></select>{graphLimit === "custom" && <input type="number" min="1" max="100000" value={customGraphLimit} onChange={(e) => setCustomGraphLimit(e.target.value)} className="w-20 rounded border px-2 py-1 text-xs" />}{loadingGraph && <button type="button" onClick={cancelGraphLoad} className="rounded border border-red-200 px-2 py-1 text-xs text-red-700">停止加载</button>}</div></div><div ref={canvasRef} className="mt-3 h-[520px] rounded-lg bg-slate-50" />{loadingGraph && <p className="mt-2 text-xs text-slate-500">正在加载图谱…</p>}{graph && !graph.available && <p className="mt-2 text-xs text-red-600">FalkorDB 当前不可用，已保留任务状态，启动后可刷新查看。</p>}</div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium">增长中的数据模型</h3><p className="mt-1 text-xs text-slate-500">画布只渲染已提交数据；节点数量可调整，全部模式按 500 个一页加载。</p></div><div className="flex items-center gap-2"><select value={graphLimit} onChange={(e) => setGraphLimit(e.target.value)} className="rounded border px-2 py-1 text-xs"><option value="50">50 个</option><option value="100">100 个</option><option value="200">200 个</option><option value="500">500 个</option><option value="1000">1000 个</option><option value="custom">自定义</option><option value="all">全部（分页）</option></select>{graphLimit === "custom" && <input type="number" min="1" max="100000" value={customGraphLimit} onChange={(e) => setCustomGraphLimit(e.target.value)} className="w-20 rounded border px-2 py-1 text-xs" />}{loadingGraph && <button type="button" onClick={cancelGraphLoad} className="rounded border border-red-200 px-2 py-1 text-xs text-red-700">停止加载</button>}</div></div><div ref={canvasRef} className="mt-3 h-[520px] rounded-lg bg-slate-50" />{loadingGraph && <p className="mt-2 text-xs text-slate-500">正在加载数据模型…</p>}{graph && !graph.available && <p className="mt-2 text-xs text-red-600">FalkorDB 当前不可用，已保留任务状态，启动后可刷新查看。</p>}</div>
         <div className="space-y-5"><div className="rounded-xl border border-slate-200 bg-white p-4"><h3 className="font-medium">选中节点</h3>{selectedNode ? <div className="mt-3 space-y-2 text-xs"><p className="break-all font-mono text-slate-600">{selectedNode.id}</p><p>类型：{selectedNode.entity_type}</p>{Object.entries(selectedNode.properties || {}).slice(0, 18).map(([key, value]) => <div key={key} className="flex justify-between gap-2 border-t pt-1"><span className="text-slate-500">{key}</span><span className="max-w-[170px] truncate text-right">{fmt(value)}</span></div>)}</div> : <p className="mt-3 text-xs text-slate-500">点击画布中的节点查看属性和 time_s。</p>}</div><div className="rounded-xl border border-slate-200 bg-white p-4"><h3 className="font-medium">批次时间轴</h3><div className="mt-3 max-h-80 space-y-1 overflow-auto">{batches.map((batch) => <div key={batch.id} className={`rounded border px-2 py-2 text-xs ${batch.status === "completed" ? "border-emerald-200 bg-emerald-50" : batch.status === "failed" ? "border-red-200 bg-red-50" : "border-slate-200"}`}><div className="flex justify-between"><span>#{batch.batch_no + 1}</span><span>{batch.status}</span></div><div className="mt-1 text-slate-500">{fmt(batch.time_from)} → {fmt(batch.time_to)} · {batch.normalized_rows || 0} 行</div></div>)}</div></div></div>
       </section>
       <section className="rounded-xl border border-slate-200 bg-white p-5">
@@ -255,8 +267,8 @@ export default function TemporalReplayPage() {
           </div>
         </div>
       </section>
-      {replay.status === "completed" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">模拟完成。现在看到的图谱是按 FactoryNet 原始 time_s 逐批提交后的结果；需要查看本体结构和 Data Model，可打开本体页面。</div>}
-      <div className="flex justify-end"><button onClick={() => navigate(`/ontologies/${replay.ontology_id}?tab=data_model`)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"><FastForward size={14} /> 打开本体数据模型</button></div>
+      {replay.status === "completed" && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">模拟完成。现在看到的数据模型是按 FactoryNet 原始 time_s 逐条提交后的结果；需要查看本体结构，可打开本体页面。</div>}
+      <div className="flex justify-end"><button onClick={() => navigate(`/ontologies/${replay.ontology_id}?tab=dynamic&run_id=${encodeURIComponent(replay.id)}`)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"><FastForward size={14} /> 打开动态演化</button></div>
     </div>
   );
 }

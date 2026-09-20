@@ -1,6 +1,8 @@
 """API for the FactoryNet temporal data-arrival simulation."""
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -14,7 +16,7 @@ from app.deps import get_current_user, require_editor
 from app.models.ontology import OntologyProject
 from app.models.user import User
 from app.models.v2.dataset import Dataset, DatasetVersion
-from app.models.v2.temporal_replay import TemporalReplay, TemporalReplayBatch
+from app.models.v2.temporal_replay import TemporalReplay, TemporalReplayBatch, TemporalStreamEvent
 from app.services.v2.datasets.factorynet_installer import FACTORYNET_SOURCE_ID, find_factorynet_dataset
 from app.services.v2.temporal_replay_service import (
     ACTIVE_STATUSES,
@@ -24,6 +26,7 @@ from app.services.v2.temporal_replay_service import (
     serialize_replay,
     update_replay_control,
 )
+from app.services.v2.temporal_stream_service import StreamError
 
 
 router = APIRouter(prefix="/temporal/replays", dependencies=[Depends(get_current_user)])
@@ -165,8 +168,9 @@ def create_replay(body: TemporalReplayCreate, db: Session = Depends(get_db), use
         db.flush()
     # Publish the fixed FactoryNet vocabulary before any replay batch starts;
     # the simulation grows instances and assertions, not the ontology schema.
-    from app.tasks.v2.temporal_construction import _ensure_factorynet_schema
+    from app.services.v2.temporal_stream_service import _ensure_factorynet_schema, ensure_schema_revision
     _ensure_factorynet_schema(db, ontology.id)
+    ensure_schema_revision(db, ontology)
     manifest = dict(dataset.schema_json or {})
     replay_config = {
         **(body.config or {}),
@@ -182,6 +186,7 @@ def create_replay(body: TemporalReplayCreate, db: Session = Depends(get_db), use
     # already committed by the worker.  This keeps an appended segment
     # collision-free even when the user adds it before pressing Start.
     scheduled_offsets: dict[str, int] = {}
+    event_sequence_counter = 0
     for item in batches:
         for row in item.get("rows", []):
             episode = str(row.get("episode_id") or row.get("_series_id") or "unknown_episode")
@@ -199,6 +204,10 @@ def create_replay(body: TemporalReplayCreate, db: Session = Depends(get_db), use
         current_batch_index=-1, total_batches=len(batches), source_rows=len(rows), selected_rows=summary["selected_rows"],
         normalized_rows=0, metrics={"source_rows": len(rows), "selected_rows": summary["selected_rows"], "normalized_rows": 0, "nodes_written": 0, "edges_written": 0, "committed_batches": 0},
         config=replay_config, state={}, error=None, pause_requested=False, step_requested=False, cancel_requested=False,
+        source_mode="file_replay", schema_revision_id=ontology.current_revision_id,
+        graph_namespace=f"stream_{uuid.uuid4().hex}", event_interval_ms=max(1, int(round(1000 / max(float(body.speed), 0.01)))),
+        current_event_index=-1, total_events=summary["selected_rows"], committed_events=0,
+        watermark_ordinal=None, watermark_sequence=None,
     )
     db.add(replay)
     for item in batches:
@@ -208,6 +217,31 @@ def create_replay(body: TemporalReplayCreate, db: Session = Depends(get_db), use
             source_rows=item["source_rows"], normalized_rows=0, nodes_written=0, edges_written=0,
             issue_count=0, latest_rows=item["latest_rows"], payload_hash=item["payload_hash"],
         ))
+        # Keep an event-level index for the new dynamic-evolution endpoint.
+        # Legacy clients still see their batch records unchanged.
+        for row_offset, row in enumerate(item.get("rows", [])):
+            episode = str(row.get("episode_id") or row.get("_series_id") or "unknown_episode")
+            source_row_id = str(row.get("_source_row_index", row_offset))
+            payload = {key: value for key, value in row.items() if not str(key).startswith("_")}
+            event_key = f"factorynet:{episode}:{source_row_id}"
+            try:
+                event_ordinal = float(row.get(body.time_column))
+            except (TypeError, ValueError):
+                # Preserve the legacy batch's time bound as a sortable value;
+                # the worker will validate the original payload and surface a
+                # precise source error instead of crashing the scheduler.
+                event_ordinal = float(item["time_from"])
+            db.add(TemporalStreamEvent(
+                id=str(uuid.uuid4()), replay_id=replay.id, event_key=event_key,
+                episode_id=episode, entity_key=str(row.get("machine_type") or episode),
+                ordinal=event_ordinal,
+                source_sequence=event_sequence_counter,
+                source_row_id=source_row_id, payload=payload,
+                source_ref={"dataset_id": dataset.id, "dataset_version_id": version.id, "source_row_id": source_row_id, "batch_no": item["batch_no"]},
+                payload_hash=__import__("hashlib").sha256(__import__("json").dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest(),
+                status="queued",
+            ))
+            event_sequence_counter += 1
     db.commit(); db.refresh(replay)
     return serialize_replay(replay, latest_batch=_latest_batch(db, replay.id))
 
@@ -238,11 +272,18 @@ def control_replay(replay_id: str, body: TemporalReplayControl, db: Session = De
     if not replay:
         raise HTTPException(404, "时序模拟不存在")
     try:
-        replay, dispatch = update_replay_control(db, replay, body.action, body.speed)
-    except ValueError as exc:
-        raise HTTPException(409, str(exc)) from exc
+        if getattr(replay, "graph_namespace", None) and getattr(replay, "total_events", 0):
+            from app.services.v2.temporal_stream_service import dispatch_stream, update_stream_control
+            replay, dispatch = update_stream_control(db, replay, body.action, body.speed)
+        else:
+            replay, dispatch = update_replay_control(db, replay, body.action, body.speed)
+    except (ValueError, StreamError) as exc:
+        raise HTTPException(409, getattr(exc, "extra", None) and {"code": getattr(exc, "code", "STREAM_INVALID"), "message": str(exc), **getattr(exc, "extra", {})} or str(exc)) from exc
     if dispatch:
-        dispatch_replay(replay.id)
+        if getattr(replay, "graph_namespace", None) and getattr(replay, "total_events", 0):
+            dispatch_stream(replay.id)
+        else:
+            dispatch_replay(replay.id)
     return serialize_replay(replay, latest_batch=_latest_batch(db, replay.id))
 
 
@@ -289,6 +330,70 @@ def append_replay_segment(replay_id: str, body: TemporalReplaySegment, db: Sessi
         ))
     replay.total_batches += len(batches)
     replay.selected_rows += summary["selected_rows"]
+    # The compatibility endpoint now feeds the same event-at-a-time worker.
+    # Add an event index for every appended source row, otherwise the legacy
+    # batch list would grow while the unified dynamic page silently stopped at
+    # the original watermark.
+    existing_event_keys = {
+        str(value[0]) for value in db.query(TemporalStreamEvent.event_key).filter(
+            TemporalStreamEvent.replay_id == replay.id,
+        ).all()
+    }
+    max_sequence = db.query(TemporalStreamEvent.source_sequence).filter(
+        TemporalStreamEvent.replay_id == replay.id,
+    ).order_by(TemporalStreamEvent.source_sequence.desc()).first()
+    next_source_sequence = int(max_sequence[0]) + 1 if max_sequence and max_sequence[0] is not None else 0
+    appended_event_count = 0
+    for item in batches:
+        for row_offset, row in enumerate(item.get("rows", [])):
+            episode = str(row.get("episode_id") or row.get("_series_id") or "unknown_episode")
+            source_row_id = str(row.get("_source_row_index", row_offset))
+            event_key = f"factorynet:{episode}:{source_row_id}"
+            payload = {key: value for key, value in row.items() if not str(key).startswith("_")}
+            payload_hash = hashlib.sha256(
+                json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest()
+            if event_key in existing_event_keys:
+                # The source interval is required to be after the current
+                # end, so a duplicate normally indicates a stale retry.  Keep
+                # it idempotent when the payload is identical and reject a
+                # changed payload before committing a partial extension.
+                existing = db.query(TemporalStreamEvent).filter(
+                    TemporalStreamEvent.replay_id == replay.id,
+                    TemporalStreamEvent.event_key == event_key,
+                ).first()
+                if existing and existing.payload_hash != payload_hash:
+                    raise HTTPException(409, detail={"code": "EVENT_PAYLOAD_CONFLICT", "message": f"事件 {event_key} 的载荷不同"})
+                continue
+            try:
+                event_ordinal = float(row.get(replay.time_column or "time_s"))
+            except (TypeError, ValueError):
+                event_ordinal = float(item["time_from"])
+            db.add(TemporalStreamEvent(
+                id=str(uuid.uuid4()),
+                replay_id=replay.id,
+                event_key=event_key,
+                episode_id=episode,
+                entity_key=str(row.get("machine_type") or episode),
+                ordinal=event_ordinal,
+                source_sequence=next_source_sequence,
+                source_row_id=source_row_id,
+                payload=payload,
+                source_ref={"dataset_id": replay.dataset_id, "dataset_version_id": replay.dataset_version_id, "source_row_id": source_row_id, "batch_no": item["batch_no"]},
+                payload_hash=payload_hash,
+                status="queued",
+            ))
+            existing_event_keys.add(event_key)
+            next_source_sequence += 1
+            appended_event_count += 1
+    replay.total_events = int(getattr(replay, "total_events", 0) or 0) + appended_event_count
+    replay.committed_events = int(getattr(replay, "committed_events", 0) or 0)
+    replay.metrics = {
+        **(replay.metrics or {}),
+        "events_total": replay.total_events,
+        "events_committed": replay.committed_events,
+        "queue": max(0, replay.total_events - replay.committed_events),
+    }
     replay.end_time = float(body.end_time)
     replay.window_seconds = float(window)
     appended_offsets = dict(offsets)
@@ -330,9 +435,20 @@ def replay_graph(
     if not replay:
         raise HTTPException(404, "时序模拟不存在")
     from app.services.v2.graph.falkordb_service import FalkorDBService
-    graph = FalkorDBService().get_graph_data(
-        replay.ontology_id, offset=offset, limit=limit, entity_type=entity_type,
-        episode_id=episode_id, seq_from=seq_from, seq_to=seq_to,
-        relation_state=relation_state, replay_id=replay.id, at=at,
-    )
+    service = FalkorDBService()
+    try:
+        graph = service.get_graph_data(
+            replay.ontology_id, offset=offset, limit=limit, entity_type=entity_type,
+            episode_id=episode_id, seq_from=seq_from, seq_to=seq_to,
+            relation_state=relation_state, replay_id=replay.id, at=at,
+            graph_namespace=getattr(replay, "graph_namespace", None),
+        )
+    except TypeError:
+        # Keep the adapter usable with older FalkorDB clients and test doubles
+        # that predate the namespace argument.
+        graph = service.get_graph_data(
+            replay.ontology_id, offset=offset, limit=limit, entity_type=entity_type,
+            episode_id=episode_id, seq_from=seq_from, seq_to=seq_to,
+            relation_state=relation_state, replay_id=replay.id, at=at,
+        )
     return {**graph, "replay_id": replay.id, "ontology_id": replay.ontology_id, "current_time": replay.current_time, "status": replay.status}

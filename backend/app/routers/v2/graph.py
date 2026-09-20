@@ -253,6 +253,18 @@ def get_graph(
                 "seq_to": seq_to,
                 "relation_state": relation_state,
             }
+            # Published dynamic runs are isolated in their own graph
+            # namespace.  Keep the legacy instances endpoint pointed at the
+            # current immutable snapshot instead of the old ontology graph.
+            try:
+                from app.models.v2.temporal_replay import DataModelSnapshot
+                project = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
+                snapshot = db.query(DataModelSnapshot).filter(DataModelSnapshot.id == getattr(project, "current_data_snapshot_id", None)).first() if getattr(project, "current_data_snapshot_id", None) else None
+                if snapshot:
+                    graph_kwargs["replay_id"] = snapshot.replay_id
+                    graph_kwargs["graph_namespace"] = snapshot.graph_namespace
+            except Exception:
+                pass
             if offset:
                 graph_kwargs["offset"] = offset
             if episode_id:
@@ -493,6 +505,20 @@ def get_data_model(
     ontology = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
     if not ontology:
         raise HTTPException(404, "本体不存在")
+    # A published dynamic stream owns an immutable graph namespace.  Resolve
+    # it before querying FalkorDB so the ordinary data-model page does not
+    # silently fall back to the legacy ontology graph after a snapshot is
+    # published.  Legacy projects have a null pointer and retain old behavior.
+    snapshot_namespace: str | None = None
+    snapshot_replay_id: str | None = None
+    try:
+        from app.models.v2.temporal_replay import DataModelSnapshot
+        snapshot = db.query(DataModelSnapshot).filter(DataModelSnapshot.id == getattr(ontology, "current_data_snapshot_id", None)).first() if getattr(ontology, "current_data_snapshot_id", None) else None
+        if snapshot:
+            snapshot_namespace = snapshot.graph_namespace
+            snapshot_replay_id = snapshot.replay_id
+    except Exception:
+        snapshot = None
     canonical = _canonical_ontology_data(db, ontology_id, limit=1000)
     data_class = str(getattr(ontology, "data_class", None) or "regular")
     service = get_falkordb()
@@ -502,9 +528,43 @@ def get_data_model(
     seq_to: int | None = None
     if data_class == "temporal":
         try:
-            timeline = service.temporal_timeline(ontology_id, episode_id=episode_id, limit=1000)
+            try:
+                timeline = service.temporal_timeline(ontology_id, episode_id=episode_id, limit=1000, graph_namespace=snapshot_namespace)
+            except TypeError:
+                timeline = service.temporal_timeline(ontology_id, episode_id=episode_id, limit=1000)
         except Exception as exc:
             timeline = {"available": False, "error": str(exc), "dates": [], "buckets": [], "episodes": []}
+        # A published event stream can still provide its Ordinal axis while
+        # FalkorDB is offline (or while a legacy client is using the SQL
+        # projection).  Keep the timeline truthful instead of disabling the
+        # temporal controls just because the optional graph cache is down.
+        if snapshot_replay_id and not (timeline or {}).get("dates"):
+            try:
+                from app.models.v2.temporal_replay import TemporalStreamEvent
+                event_query = db.query(
+                    TemporalStreamEvent.ordinal,
+                    TemporalStreamEvent.episode_id,
+                ).filter(
+                    TemporalStreamEvent.replay_id == snapshot_replay_id,
+                    TemporalStreamEvent.status == "committed",
+                )
+                if episode_id:
+                    event_query = event_query.filter(TemporalStreamEvent.episode_id == episode_id)
+                event_rows = event_query.order_by(
+                    TemporalStreamEvent.ordinal.asc(),
+                    TemporalStreamEvent.source_sequence.asc(),
+                ).all()
+                ordinal_values = [str(value) for value, _episode in event_rows if value is not None]
+                unique_ordinals = list(dict.fromkeys(ordinal_values))
+                timeline = {
+                    "available": True,
+                    "dates": unique_ordinals,
+                    "buckets": [{"timestamp": value, "count": ordinal_values.count(value)} for value in unique_ordinals],
+                    "episodes": sorted({str(value) for _ordinal, value in event_rows if value is not None}),
+                    "graph_namespace": snapshot_namespace,
+                }
+            except Exception:
+                pass
         dates = [str(value) for value in (timeline or {}).get("dates", []) if value is not None]
         if not resolved_at and dates:
             # Ordinal is the only temporal value used by FactoryNet.  Keep it
@@ -519,29 +579,30 @@ def get_data_model(
             if mode == "window":
                 seq_from = point
     if not service.available:
-        graph_data = {
-            "nodes": [],
-            "edges": [],
-            "returned": 0,
-            "total_instances": 0,
-            "offset": offset,
-            "next_offset": None,
-            "available": False,
-            "graph_backend": "falkordb",
-            "error": "FalkorDB unavailable",
-        }
-    else:
-        try:
-            graph_data = service.get_graph_data(
-                ontology_id,
-                limit=limit,
-                offset=offset,
-                entity_type=entity_type,
-                episode_id=episode_id,
-                seq_from=seq_from,
-                seq_to=seq_to,
-            )
-        except Exception as exc:
+        graph_data = None
+        # PostgreSQL is authoritative for a published event stream.  Keep
+        # the data-model page useful when FalkorDB is temporarily offline by
+        # using the same SQL fact projection as the dynamic workbench.
+        if snapshot_replay_id:
+            try:
+                from app.models.v2.temporal_replay import TemporalReplay
+                from app.services.v2.temporal_stream_service import stream_graph
+                snapshot_replay = db.query(TemporalReplay).filter(TemporalReplay.id == snapshot_replay_id).first()
+                if snapshot_replay:
+                    graph_data = stream_graph(
+                        db,
+                        snapshot_replay,
+                        limit=limit,
+                        offset=offset,
+                        entity_type=entity_type,
+                        episode_id=episode_id,
+                        at=(float(resolved_at) if resolved_at not in (None, "") else None),
+                        mode=mode,
+                        relation_state="all",
+                    )
+            except Exception:
+                graph_data = None
+        if graph_data is None:
             graph_data = {
                 "nodes": [],
                 "edges": [],
@@ -551,8 +612,70 @@ def get_data_model(
                 "next_offset": None,
                 "available": False,
                 "graph_backend": "falkordb",
-                "error": str(exc),
+                "error": "FalkorDB unavailable",
             }
+    else:
+        try:
+            try:
+                graph_data = service.get_graph_data(
+                    ontology_id,
+                    limit=limit,
+                    offset=offset,
+                    entity_type=entity_type,
+                    episode_id=episode_id,
+                    seq_from=seq_from,
+                    seq_to=seq_to,
+                    replay_id=snapshot_replay_id,
+                    at=(float(resolved_at) if resolved_at not in (None, "") else None),
+                    graph_namespace=snapshot_namespace,
+                    mode=mode,
+                )
+            except TypeError:
+                graph_data = service.get_graph_data(
+                    ontology_id,
+                    limit=limit,
+                    offset=offset,
+                    entity_type=entity_type,
+                    episode_id=episode_id,
+                    seq_from=seq_from,
+                    seq_to=seq_to,
+                    replay_id=snapshot_replay_id,
+                    at=(float(resolved_at) if resolved_at not in (None, "") else None),
+                    graph_namespace=snapshot_namespace,
+                )
+        except Exception as exc:
+            graph_data = None
+            if snapshot_replay_id:
+                try:
+                    from app.models.v2.temporal_replay import TemporalReplay
+                    from app.services.v2.temporal_stream_service import stream_graph
+                    snapshot_replay = db.query(TemporalReplay).filter(TemporalReplay.id == snapshot_replay_id).first()
+                    if snapshot_replay:
+                        graph_data = stream_graph(
+                            db,
+                            snapshot_replay,
+                            limit=limit,
+                            offset=offset,
+                            entity_type=entity_type,
+                            episode_id=episode_id,
+                            at=(float(resolved_at) if resolved_at not in (None, "") else None),
+                            mode=mode,
+                            relation_state="all",
+                        )
+                except Exception:
+                    graph_data = None
+            if graph_data is None:
+                graph_data = {
+                    "nodes": [],
+                    "edges": [],
+                    "returned": 0,
+                    "total_instances": 0,
+                    "offset": offset,
+                    "next_offset": None,
+                    "available": False,
+                    "graph_backend": "falkordb",
+                    "error": str(exc),
+                }
     # Attach evidence counts without leaking internal storage keys into the
     # visible property list.  Source fields remain available on selection.
     from app.models.v2.construction import EvidenceRef
@@ -643,13 +766,23 @@ def get_data_model(
     type_counts: dict[str, int] | None
     if service.available:
         try:
-            type_counts = service.get_instance_type_counts(
-                ontology_id,
-                entity_type=entity_type,
-                episode_id=episode_id,
-                seq_from=seq_from,
-                seq_to=seq_to,
-            )
+            try:
+                type_counts = service.get_instance_type_counts(
+                    ontology_id,
+                    entity_type=entity_type,
+                    episode_id=episode_id,
+                    seq_from=seq_from,
+                    seq_to=seq_to,
+                    graph_namespace=snapshot_namespace,
+                )
+            except TypeError:
+                type_counts = service.get_instance_type_counts(
+                    ontology_id,
+                    entity_type=entity_type,
+                    episode_id=episode_id,
+                    seq_from=seq_from,
+                    seq_to=seq_to,
+                )
         except Exception:
             type_counts = None
     else:
@@ -672,6 +805,8 @@ def get_data_model(
         },
         "available": bool(graph_data.get("available", False)),
         "graph_backend": graph_data.get("graph_backend", "falkordb"),
+        "graph_namespace": snapshot_namespace or graph_data.get("graph_namespace"),
+        "data_snapshot_id": getattr(snapshot, "id", None) if snapshot else None,
     }
     if graph_data.get("error"):
         response["error"] = graph_data["error"]

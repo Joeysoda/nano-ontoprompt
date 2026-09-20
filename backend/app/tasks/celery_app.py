@@ -11,6 +11,7 @@ celery_app = Celery("ontoprompt",
                         "app.tasks.v2.connection_sync",
                         "app.tasks.v2.workbench",
                         "app.tasks.v2.temporal_replay",
+                        "app.tasks.v2.temporal_stream",
                     ])
 
 # broker 不可用时快速失败 (默认会长时间重试, 导致 API 请求阻塞)

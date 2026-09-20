@@ -8,11 +8,12 @@ import LogicTab from "./tabs/LogicTab";
 import AuditTab from "./tabs/AuditTab";
 import DataModelTab from "./tabs/DataModelTab";
 import WhatIfTab from "./tabs/WhatIfTab";
+import DynamicEvolutionTab from "./tabs/DynamicEvolutionTab";
 import OntologyEditorPanel from "./OntologyEditorPanel";
 import ChangeHistoryDrawer from "./ChangeHistoryDrawer";
 
 const GraphTab = lazy(() => import("./tabs/GraphTabV2"));
-type Tab = "graph" | "data_model" | "entities" | "logic" | "audit" | "what_if";
+type Tab = "graph" | "data_model" | "dynamic" | "entities" | "logic" | "audit" | "what_if";
 
 class OntologyCanvasBoundary extends React.Component<
   { children: React.ReactNode },
@@ -56,8 +57,8 @@ export default function OntologyDetailPage() {
     queryFn: () => ontologyApi.get(id!),
     enabled: !!id,
   });
-  const temporal = ontology?.data_class === "temporal" && /factorynet|factory|cnc/i.test(ontology.name || "");
-  const validTabs = temporal ? ["graph", "data_model", "entities", "logic", "audit", "what_if"] : ["graph", "data_model", "entities", "logic", "audit"];
+  const temporal = ontology?.data_class === "temporal";
+  const validTabs = temporal ? ["graph", "data_model", "dynamic", "entities", "logic", "audit", "what_if"] : ["graph", "data_model", "entities", "logic", "audit"];
   const activeTab: Tab = validTabs.includes(requested) ? (requested as Tab) : "graph";
   useEffect(() => {
     if (isLoading || !id || validTabs.includes(requested))
@@ -75,18 +76,21 @@ export default function OntologyDetailPage() {
   const tabs: Array<{ key: Tab; label: string }> = [
     { key: "graph", label: "本体" },
     { key: "data_model", label: "数据模型" },
+    ...(temporal ? [{ key: "dynamic" as Tab, label: "动态演化" }] : []),
     { key: "entities", label: "实体" },
     { key: "logic", label: "逻辑规则" },
     { key: "audit", label: "质量审查" },
   ];
-  if (temporal) tabs.splice(4, 0, { key: "what_if", label: "What-If 推演" });
+  if (temporal) tabs.push({ key: "what_if", label: "What-If 推演" });
   const select = (tab: Tab) => {
     const entity = searchParams.get("entity");
     const target = searchParams.get("target_instance_id");
     const episode = searchParams.get("episode_id");
     const at = searchParams.get("at");
     const mode = searchParams.get("mode");
-    const context = tab === "what_if" && target ? `&target_instance_id=${encodeURIComponent(target)}${episode ? `&episode_id=${encodeURIComponent(episode)}` : ""}${at ? `&at=${encodeURIComponent(at)}` : ""}${mode ? `&mode=${encodeURIComponent(mode)}` : ""}` : "";
+    const runId = searchParams.get("run_id");
+    const dynamicContext = tab === "dynamic" && runId ? `&run_id=${encodeURIComponent(runId)}${at ? `&at=${encodeURIComponent(at)}` : ""}` : "";
+    const context = tab === "what_if" && target ? `&target_instance_id=${encodeURIComponent(target)}${episode ? `&episode_id=${encodeURIComponent(episode)}` : ""}${at ? `&at=${encodeURIComponent(at)}` : ""}${mode ? `&mode=${encodeURIComponent(mode)}` : ""}` : dynamicContext;
     navigate(
       `/ontologies/${id}?tab=${tab}${(tab === "graph" || tab === "data_model") && entity ? `&entity=${encodeURIComponent(entity)}` : ""}${context}`,
       { replace: true },
@@ -136,6 +140,7 @@ export default function OntologyDetailPage() {
       {activeTab === "data_model" && (
         <DataModelTab key={refreshKey} ontologyId={id!} dataClass={ontology.data_class} />
       )}
+      {activeTab === "dynamic" && temporal && <DynamicEvolutionTab ontologyId={id!} />}
       {activeTab === "entities" && <EntitiesTab key={refreshKey} ontologyId={id!} />}
       {activeTab === "logic" && <LogicTab key={refreshKey} ontologyId={id!} />}
       {activeTab === "audit" && <AuditTab ontologyId={id!} />}

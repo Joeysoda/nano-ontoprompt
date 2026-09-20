@@ -13,6 +13,9 @@ class OntologyProject(Base):
     description: Mapped[str] = mapped_column(Text, nullable=True)
     version: Mapped[str] = mapped_column(String(20), default="v0.1")
     current_revision_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Published dynamic data-model projection.  Kept nullable so legacy
+    # ontologies continue to resolve their original graph namespace.
+    current_data_snapshot_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(20), default="draft")
     build_mode: Mapped[str] = mapped_column(String(30), default="simple_llm", nullable=True)
     # Build mode describes a UI implementation; data class is the compatibility

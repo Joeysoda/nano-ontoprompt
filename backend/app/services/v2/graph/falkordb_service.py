@@ -18,8 +18,10 @@ except ImportError:  # pragma: no cover - exercised in the container image
     FalkorDB = None  # type: ignore
 
 
-def graph_name_for_ontology(ontology_id: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9_]", "_", ontology_id).strip("_") or "default"
+def graph_name_for_ontology(ontology_id: str, namespace: str | None = None) -> str:
+    """Return the graph for an ontology or an isolated stream namespace."""
+    value = namespace or ontology_id
+    safe = re.sub(r"[^A-Za-z0-9_]", "_", str(value)).strip("_") or "default"
     return f"nano_{safe[:90]}"
 
 
@@ -47,7 +49,7 @@ class FalkorDBService:
     def available(self) -> bool:
         return self._available
 
-    def delete_graph(self, ontology_id: str) -> bool:
+    def delete_graph(self, ontology_id: str, namespace: str | None = None) -> bool:
         """Delete the isolated graph for an ontology.
 
         FalkorDB exposes graph deletion on the client in recent releases.  A
@@ -56,7 +58,7 @@ class FalkorDBService:
         """
         if not self.available or not self._db:
             return False
-        name = graph_name_for_ontology(ontology_id)
+        name = graph_name_for_ontology(ontology_id, namespace)
         try:
             deleter = getattr(self._db, "delete_graph", None)
             if callable(deleter):
@@ -74,12 +76,12 @@ class FalkorDBService:
         except Exception:
             return False
 
-    def _graph(self, ontology_id: str):
+    def _graph(self, ontology_id: str, namespace: str | None = None):
         if not self._db:
             raise RuntimeError("FalkorDB unavailable")
-        return self._db.select_graph(graph_name_for_ontology(ontology_id))
+        return self._db.select_graph(graph_name_for_ontology(ontology_id, namespace))
 
-    def _ensure_instance_index(self, ontology_id: str) -> None:
+    def _ensure_instance_index(self, ontology_id: str, namespace: str | None = None) -> None:
         """Create the Falkor range index used by idempotent MERGE writes.
 
         FalkorDB versions before 1.8 use ``CREATE INDEX ON :Label(prop)`` and
@@ -89,7 +91,7 @@ class FalkorDBService:
         if not self.available:
             return
         try:
-            self._graph(ontology_id).query("CREATE INDEX ON :Instance(_instance_id)")
+            self._graph(ontology_id, namespace).query("CREATE INDEX ON :Instance(_instance_id)")
         except Exception:
             pass
 
@@ -98,12 +100,12 @@ class FalkorDBService:
         relation = re.sub(r"[^A-Za-z0-9_]", "_", str(value or "RELATED")).upper()
         return relation if relation and relation[0].isalpha() else f"R_{relation}"
 
-    def upsert_instances(self, ontology_id: str, instances: list[dict[str, Any]]) -> int:
+    def upsert_instances(self, ontology_id: str, instances: list[dict[str, Any]], graph_namespace: str | None = None) -> int:
         """Idempotently write ontology instances into the per-ontology graph."""
         if not self.available or not instances:
             return 0
-        graph = self._graph(ontology_id)
-        self._ensure_instance_index(ontology_id)
+        graph = self._graph(ontology_id, graph_namespace)
+        self._ensure_instance_index(ontology_id, graph_namespace)
         # Older demo runs predate the Instance label.  Label them once before
         # the indexed MERGE so a retry does not create duplicates and later
         # writes use the range index instead of scanning every node.
@@ -118,6 +120,8 @@ class FalkorDBService:
                 continue
             props = dict(item.get("properties") or {})
             props.update({"_instance_id": instance_id, "_type": item.get("entity_type") or item.get("type") or "Entity", "_ontology_id": ontology_id})
+            if graph_namespace:
+                props["_graph_namespace"] = graph_namespace
             rows.append({"id": instance_id, "props": props})
         if not rows:
             return 0
@@ -129,11 +133,11 @@ class FalkorDBService:
         )
         return len(rows)
 
-    def upsert_relations(self, ontology_id: str, relations: list[dict[str, Any]]) -> int:
+    def upsert_relations(self, ontology_id: str, relations: list[dict[str, Any]], graph_namespace: str | None = None) -> int:
         """Write relationship instances with stable source/type/target identity."""
         if not self.available or not relations:
             return 0
-        graph = self._graph(ontology_id)
+        graph = self._graph(ontology_id, graph_namespace)
         grouped: dict[str, list[dict[str, Any]]] = {}
         for relation in relations:
             source = str(relation.get("source") or "")
@@ -143,17 +147,61 @@ class FalkorDBService:
             rel_type = self._safe_relation_type(relation.get("type") or "RELATED")
             props = dict(relation.get("properties") or {})
             props.setdefault("_ontology_id", ontology_id)
+            if graph_namespace:
+                props["_graph_namespace"] = graph_namespace
             grouped.setdefault(rel_type, []).append({"source": source, "target": target, "props": props})
         written = 0
         for rel_type, rows in grouped.items():
-            graph.query(
-                "UNWIND $rows AS row "
-                "MATCH (a:Instance {_instance_id: row.source}), (b:Instance {_instance_id: row.target}) "
-                f"MERGE (a)-[r:{rel_type}]->(b) SET r += row.props",
-                params={"rows": rows},
-            )
+            keyed = [
+                {**row, "fact_id": row["props"].get("_fact_id")}
+                for row in rows
+                if row["props"].get("_fact_id")
+            ]
+            unkeyed = [row for row in rows if not row["props"].get("_fact_id")]
+            if keyed:
+                graph.query(
+                    "UNWIND $rows AS row "
+                    "MATCH (a:Instance {_instance_id: row.source}), (b:Instance {_instance_id: row.target}) "
+                    f"MERGE (a)-[r:{rel_type} {{_fact_id: row.fact_id}}]->(b) SET r += row.props",
+                    params={"rows": keyed},
+                )
+            if unkeyed:
+                graph.query(
+                    "UNWIND $rows AS row "
+                    "MATCH (a:Instance {_instance_id: row.source}), (b:Instance {_instance_id: row.target}) "
+                    f"MERGE (a)-[r:{rel_type}]->(b) SET r += row.props",
+                    params={"rows": unkeyed},
+                )
             written += len(rows)
         return written
+
+    def expire_relation_by_fact_id(
+        self,
+        ontology_id: str,
+        fact_id: str,
+        valid_to_ordinal: float,
+        *,
+        graph_namespace: str | None = None,
+    ) -> bool:
+        """Close one fact edge in an isolated stream projection.
+
+        Graph projections are deliberately best effort: PostgreSQL remains the
+        source of truth and a missing graph must not make a stream event look
+        committed.  The fact id is the stable key used by ``upsert_relations``
+        so repeated worker retries update the same edge instead of creating a
+        parallel relationship.
+        """
+        if not self.available:
+            return False
+        try:
+            self._graph(ontology_id, graph_namespace).query(
+                "MATCH ()-[r]->() WHERE r._fact_id = $fact_id "
+                "SET r.valid_to_ordinal = $valid_to, r.valid_to = $valid_to, r._fact_status = 'expired'",
+                params={"fact_id": str(fact_id), "valid_to": float(valid_to_ordinal)},
+            )
+            return True
+        except Exception:
+            return False
 
     def get_temporal_relations(
         self,
@@ -168,6 +216,7 @@ class FalkorDBService:
         date_to: str | None = None,
         relation_state: str = "all",
         limit: int = 200,
+        graph_namespace: str | None = None,
     ) -> dict[str, Any]:
         """Return bounded, parameterized relationship assertions.
 
@@ -178,7 +227,7 @@ class FalkorDBService:
         """
         if not self.available:
             return {"available": False, "graph_backend": "falkordb", "relations": []}
-        graph = self._graph(ontology_id)
+        graph = self._graph(ontology_id, graph_namespace)
         limit = max(1, min(int(limit), 1000))
         rel_pattern = f"[r:{self._safe_relation_type(relation_type)}]" if relation_type else "[r]"
         clauses = ["a._instance_id IS NOT NULL", "b._instance_id IS NOT NULL"]
@@ -205,9 +254,12 @@ class FalkorDBService:
             clauses.append("(r.event_time IS NULL OR r.event_time <= $at)")
             clauses.append("(r.valid_from IS NULL OR r.valid_from <= $at)")
             clauses.append("(r.valid_to IS NULL OR r.valid_to >= $at)")
+            clauses.append("(r.valid_from_ordinal IS NULL OR r.valid_from_ordinal <= $at)")
+            clauses.append("(r.valid_to_ordinal IS NULL OR r.valid_to_ordinal > $at)")
             params["at"] = at
-        if relation_state == "current":
+        if relation_state == "current" and at is None:
             clauses.append("r.valid_to IS NULL")
+            clauses.append("r.valid_to_ordinal IS NULL")
         result = graph.query(
             f"MATCH (a)-{rel_pattern}->(b) WHERE {' AND '.join(clauses)} "
             "RETURN a._instance_id, b._instance_id, type(r), r LIMIT $limit",
@@ -226,6 +278,8 @@ class FalkorDBService:
                 "event_time": props.get("event_time"),
                 "valid_from": props.get("valid_from"),
                 "valid_to": props.get("valid_to"),
+                "valid_from_ordinal": props.get("valid_from_ordinal"),
+                "valid_to_ordinal": props.get("valid_to_ordinal"),
             })
         return {
             "available": True,
@@ -250,6 +304,7 @@ class FalkorDBService:
             "entity_type": props.get("_type") or (labels[0] if labels else "Entity"),
             "event_seq": props.get("event_seq"),
             "event_time": props.get("event_time"),
+            "event_ordinal": props.get("event_ordinal"),
             "node_kind": "instance",
         }
 
@@ -265,12 +320,14 @@ class FalkorDBService:
         relation_state: str = "all",
         replay_id: str | None = None,
         at: float | None = None,
+        graph_namespace: str | None = None,
+        mode: str = "cumulative",
     ) -> dict[str, Any]:
         if not self.available:
             return {"nodes": [], "edges": [], "total_instances": 0, "graph_backend": "falkordb", "available": False}
         limit = max(1, min(int(limit), 500))
         offset = max(0, int(offset))
-        graph = self._graph(ontology_id)
+        graph = self._graph(ontology_id, graph_namespace)
         clauses = ["n._instance_id IS NOT NULL"]
         params: dict[str, Any] = {"limit": limit}
         if entity_type:
@@ -290,7 +347,11 @@ class FalkorDBService:
             params["seq_to"] = int(seq_to)
         if at is not None:
             clauses.append("(n.elapsed_seconds IS NULL OR n.elapsed_seconds <= $at)")
+            clauses.append("(n.event_ordinal IS NULL OR n.event_ordinal <= $at)")
             params["at"] = float(at)
+            if mode == "window":
+                clauses.append("(n.event_ordinal IS NULL OR n.event_ordinal = $window_at)")
+                params["window_at"] = float(at)
         result = graph.query(
             f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n ORDER BY n.event_seq, n._instance_id SKIP $offset LIMIT $limit",
             params={**params, "offset": offset},
@@ -311,11 +372,20 @@ class FalkorDBService:
             if replay_id:
                 rel_where.append("relation._replay_id = $replay_id")
                 rel_params["replay_id"] = replay_id
-            if relation_state == "current":
+            if relation_state == "current" and at is None:
                 rel_where.append("relation.valid_to IS NULL")
+                rel_where.append("relation.valid_to_ordinal IS NULL")
             if at is not None:
                 rel_where.append("(relation.elapsed_seconds IS NULL OR relation.elapsed_seconds <= $at)")
+                rel_where.extend([
+                    "(relation.event_ordinal IS NULL OR relation.event_ordinal <= $at)",
+                    "(relation.valid_from_ordinal IS NULL OR relation.valid_from_ordinal <= $at)",
+                    "(relation.valid_to_ordinal IS NULL OR relation.valid_to_ordinal > $at)",
+                ])
                 rel_params["at"] = float(at)
+                if mode == "window":
+                    rel_where.append("(relation.event_ordinal IS NULL OR relation.event_ordinal = $window_at)")
+                    rel_params["window_at"] = float(at)
             rel_result = graph.query(
                 "MATCH (source)-[relation]->(target) "
                 f"WHERE {' AND '.join(rel_where)} "
@@ -333,6 +403,8 @@ class FalkorDBService:
                     "properties": props,
                     "valid_from": props.get("valid_from"),
                     "valid_to": props.get("valid_to"),
+                    "valid_from_ordinal": props.get("valid_from_ordinal"),
+                    "valid_to_ordinal": props.get("valid_to_ordinal"),
                     "edge_kind": "instance",
                 })
         total_clauses = ["n._instance_id IS NOT NULL"]
@@ -348,7 +420,11 @@ class FalkorDBService:
         if seq_to is not None:
             total_clauses.append("(n.event_seq IS NULL OR n.event_seq <= $seq_to)"); total_params["seq_to"] = int(seq_to)
         if at is not None:
-            total_clauses.append("(n.elapsed_seconds IS NULL OR n.elapsed_seconds <= $at)"); total_params["at"] = float(at)
+            total_clauses.append("(n.elapsed_seconds IS NULL OR n.elapsed_seconds <= $at)")
+            total_clauses.append("(n.event_ordinal IS NULL OR n.event_ordinal <= $at)"); total_params["at"] = float(at)
+            if mode == "window":
+                total_clauses.append("(n.event_ordinal IS NULL OR n.event_ordinal = $window_at)")
+                total_params["window_at"] = float(at)
         total = graph.query(f"MATCH (n) WHERE {' AND '.join(total_clauses)} RETURN count(n)", params=total_params)
         total_instances = int(total.result_set[0][0]) if total.result_set else 0
         edge_clauses = ["a._instance_id IS NOT NULL", "b._instance_id IS NOT NULL"]
@@ -365,9 +441,22 @@ class FalkorDBService:
         if seq_to is not None:
             edge_clauses.extend(["(a.event_seq IS NULL OR a.event_seq <= $seq_to)", "(b.event_seq IS NULL OR b.event_seq <= $seq_to)"])
         if at is not None:
-            edge_clauses.extend(["(a.elapsed_seconds IS NULL OR a.elapsed_seconds <= $at)", "(b.elapsed_seconds IS NULL OR b.elapsed_seconds <= $at)", "(relation.elapsed_seconds IS NULL OR relation.elapsed_seconds <= $at)"])
-        if relation_state == "current":
+            edge_clauses.extend([
+                "(a.elapsed_seconds IS NULL OR a.elapsed_seconds <= $at)",
+                "(b.elapsed_seconds IS NULL OR b.elapsed_seconds <= $at)",
+                "(relation.elapsed_seconds IS NULL OR relation.elapsed_seconds <= $at)",
+                "(a.event_ordinal IS NULL OR a.event_ordinal <= $at)",
+                "(b.event_ordinal IS NULL OR b.event_ordinal <= $at)",
+                "(relation.event_ordinal IS NULL OR relation.event_ordinal <= $at)",
+                "(relation.valid_from_ordinal IS NULL OR relation.valid_from_ordinal <= $at)",
+                "(relation.valid_to_ordinal IS NULL OR relation.valid_to_ordinal > $at)",
+            ])
+            if mode == "window":
+                edge_clauses.append("(relation.event_ordinal IS NULL OR relation.event_ordinal = $window_at)")
+                edge_params["window_at"] = float(at)
+        if relation_state == "current" and at is None:
             edge_clauses.append("relation.valid_to IS NULL")
+            edge_clauses.append("relation.valid_to_ordinal IS NULL")
         edge_total_result = graph.query(
             f"MATCH (a)-[relation]->(b) WHERE {' AND '.join(edge_clauses)} RETURN count(relation)",
             params=edge_params,
@@ -384,6 +473,7 @@ class FalkorDBService:
             "sample_limit": limit,
             "graph_backend": "falkordb",
             "available": True,
+            "graph_namespace": graph_namespace,
             "time_kind": "ordinal" if any(n.get("event_seq") is not None for n in nodes) else "event_time",
         }
 
@@ -526,6 +616,7 @@ class FalkorDBService:
         episode_id: str | None = None,
         seq_from: int | None = None,
         seq_to: int | None = None,
+        graph_namespace: str | None = None,
     ) -> dict[str, int]:
         """Return type counts for the same filter plane as ``get_graph_data``."""
         if not self.available:
@@ -544,7 +635,7 @@ class FalkorDBService:
         if seq_to is not None:
             clauses.append("(n.event_seq IS NULL OR n.event_seq <= $seq_to)")
             params["seq_to"] = int(seq_to)
-        result = self._graph(ontology_id).query(
+        result = self._graph(ontology_id, graph_namespace).query(
             f"MATCH (n) WHERE {' AND '.join(clauses)} RETURN n._type, count(n)",
             params=params,
         )
@@ -785,10 +876,10 @@ class FalkorDBService:
             total_edges = int(count_edges.result_set[0][0]) if count_edges.result_set else total_edges
         return {"available": self.available, "graph_backend": "falkordb", "ontology_id": ontology_id, "at": at, "mode": mode, "date_from": date_from, "date_to": date_to, "nodes": nodes, "edges": edges, "total_nodes": len(nodes), "total_edges": len(edges), "total_available_nodes": total_nodes, "total_available_edges": total_edges, "sample_limit": max(1, min(int(limit), 1000))}
 
-    def _has_ordinal_nodes(self, ontology_id: str) -> bool:
+    def _has_ordinal_nodes(self, ontology_id: str, graph_namespace: str | None = None) -> bool:
         if not self.available:
             return False
-        result = self._graph(ontology_id).query("MATCH (n) WHERE n.event_seq IS NOT NULL RETURN count(n)")
+        result = self._graph(ontology_id, graph_namespace).query("MATCH (n) WHERE n.event_seq IS NOT NULL RETURN count(n)")
         return bool(result.result_set and int(result.result_set[0][0]) > 0)
 
     def _ordinal_snapshot(
@@ -827,11 +918,12 @@ class FalkorDBService:
         category: str | None = None,
         episode_id: str | None = None,
         limit: int = 200,
+        graph_namespace: str | None = None,
     ) -> dict[str, Any]:
         if not self.available:
             return {"available": False, "graph_backend": "falkordb", "events": []}
-        graph = self._graph(ontology_id)
-        if self._has_ordinal_nodes(ontology_id):
+        graph = self._graph(ontology_id, graph_namespace)
+        if self._has_ordinal_nodes(ontology_id, graph_namespace):
             ordinal_clauses = ["n.event_seq IS NOT NULL"]
             ordinal_params: dict[str, Any] = {}
             if entity_id:
@@ -867,6 +959,7 @@ class FalkorDBService:
                 "available": True,
                 "graph_backend": "falkordb",
                 "ontology_id": ontology_id,
+                "graph_namespace": graph_namespace,
                 "events": events,
                 "count": len(events),
                 "total_events": sum(p["count"] for p in points),
@@ -909,6 +1002,7 @@ class FalkorDBService:
             "available": True,
             "graph_backend": "falkordb",
             "ontology_id": ontology_id,
+            "graph_namespace": graph_namespace,
             "events": events,
             "count": len(events),
             "total_events": sum(bucket["count"] for bucket in buckets),

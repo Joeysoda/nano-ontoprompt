@@ -398,7 +398,10 @@ export default function TemporalConstructionWizard() {
           time_column: timeColumn,
           config: { field_mapping: { columns: fieldMap, relations }, profile_id: profile.id },
         });
-        navigate(`/data/temporal/replays/${r.replay_id || r.id}`);
+        // The legacy endpoint still creates the same isolated event stream for
+        // compatibility, but the user-facing destination is the unified
+        // dynamic-evolution workbench.
+        navigate(`/ontologies/${r.ontology_id || ontologyId}?tab=dynamic&run_id=${r.replay_id || r.id}`);
         return;
       }
       const r = await apiClientV2.post<any>("/temporal/runs", {
@@ -1163,7 +1166,7 @@ export default function TemporalConstructionWizard() {
               <div>
                 <p className="font-medium">执行方式</p>
                 <p className="text-xs text-gray-500 mt-1">
-                  一次性构建会立即处理筛选结果；时序模拟会按 time_s 分批到达，图谱随每批数据增长。
+                  一次性构建会立即处理筛选结果；时序模拟会按 time_s 逐条到达，数据模型随每条事件增长。
                 </p>
               </div>
               <div className="grid md:grid-cols-2 gap-3">
@@ -1173,7 +1176,7 @@ export default function TemporalConstructionWizard() {
                 </label>
                 <label className={`border rounded-lg p-3 flex gap-2 items-start ${executionMode === "replay" ? "border-black ring-1 ring-black" : ""}`}>
                   <input type="radio" checked={executionMode === "replay"} onChange={() => setExecutionMode("replay")} className="mt-1" />
-                  <span><b className="text-sm">按时间模拟到达</b><span className="block text-xs text-gray-500 mt-1">后台逐批读取 FactoryNet，支持开始、暂停、继续和单步。</span></span>
+                  <span><b className="text-sm">按时间模拟到达</b><span className="block text-xs text-gray-500 mt-1">后台逐条读取 FactoryNet，支持开始、暂停、继续和单步。</span></span>
                 </label>
               </div>
               {executionMode === "replay" && (

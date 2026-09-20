@@ -43,6 +43,7 @@ from app.routers.v2 import model_routes as model_routes_v2
 from app.routers.v2 import dynamic_ontology as dynamic_ontology_v2
 from app.routers.v2 import what_if as what_if_v2
 from app.routers.v2 import temporal_replays as temporal_replays_v2
+from app.routers.v2 import temporal_streams as temporal_streams_v2
 
 def _run_schema_migration():
     """统一 schema 迁移入口。
@@ -96,7 +97,13 @@ def _seed_db():
         from app.models.v2.construction_draft import ConstructionDraft  # noqa: F401
         from app.models.v2.workbench_task import MappingTask, DataImportTask, ModelInvocation  # noqa: F401
         from app.models.v2.dynamic_ontology import OntologyChange, WhatIfScenario, WhatIfRun  # noqa: F401
-        from app.models.v2.temporal_replay import TemporalReplay, TemporalReplayBatch  # noqa: F401
+        from app.models.v2.temporal_replay import (  # noqa: F401
+            DataModelSnapshot,
+            TemporalFact,
+            TemporalReplay,
+            TemporalReplayBatch,
+            TemporalStreamEvent,
+        )
         _run_schema_migration()
 
         seed_admin(db)
@@ -207,6 +214,42 @@ def _seed_db():
                 except Exception:
                     logger.warning("Resumable workbench tasks were queued but could not be published", exc_info=True)
 
+        # A process restart can leave an event-at-a-time stream marked as
+        # running even though its worker thread/Celery task has disappeared.
+        # Requeue only stale active streams; the committed event watermark and
+        # idempotent event keys let the next worker continue exactly where it
+        # stopped.  This is deliberately best-effort so startup never fails
+        # because a broker is unavailable.
+        stream_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+        def stream_is_stale(item):
+            timestamp = item.updated_at
+            if timestamp is None:
+                return True
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            return timestamp < stream_cutoff
+
+        resumable_streams = [
+            item for item in db.query(TemporalReplay).filter(
+                TemporalReplay.status.in_(["running", "pausing"]),
+            ).all() if stream_is_stale(item)
+        ]
+        for item in resumable_streams:
+            item.status = "queued"
+            item.pause_requested = False
+            item.step_requested = False
+            item.cancel_requested = False
+            item.error = None
+            item.updated_at = datetime.now(timezone.utc)
+        if resumable_streams:
+            db.commit()
+            try:
+                from app.services.v2.temporal_stream_service import dispatch_stream
+                for item in resumable_streams:
+                    dispatch_stream(item.id)
+            except Exception:
+                logger.warning("Resumable temporal streams were requeued but could not be dispatched", exc_info=True)
+
         # Seed confidence rules
         if db.query(RulesConfig).count() == 0:
             rules = [
@@ -309,6 +352,7 @@ app.include_router(construction_drafts_v2.mapping_tasks_router, prefix="/api/v2"
 app.include_router(temporal_v2.router, prefix="/api/v2", tags=["v2-temporal"])
 app.include_router(temporal_v2.ontology_router, prefix="/api/v2/ontologies", tags=["v2-temporal"])
 app.include_router(temporal_replays_v2.router, prefix="/api/v2", tags=["v2-temporal-replays"])
+app.include_router(temporal_streams_v2.router, prefix="/api/v2", tags=["v2-temporal-streams"])
 app.include_router(model_routes_v2.router, prefix="/api/v2/model-routes", tags=["v2-model-routes"])
 app.include_router(model_routes_v2.invocations_router, prefix="/api/v2", tags=["v2-model-invocations"])
 app.include_router(dynamic_ontology_v2.router, prefix="/api/v2/ontologies", tags=["v2-ontology-editor"])

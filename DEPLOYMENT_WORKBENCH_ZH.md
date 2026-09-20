@@ -2,10 +2,18 @@
 
 本文档对应分支 `factorynet-temporal-workbench`，用于本地完整演示。当前工作树的前端、后端、Celery、LiteLLM、数据库和本地模型均按本说明启动。
 
+当前版本入口：
+
+- GitHub 分支：[factorynet-temporal-workbench](https://github.com/Joeysoda/nano-ontoprompt/tree/factorynet-temporal-workbench)
+- 本地工作台：`http://127.0.0.1:15173/overview`
+- 本地后端健康检查：`http://127.0.0.1:18080/health`
+
+注意：`127.0.0.1` 只对启动服务的这台电脑有效，不是公网链接。同学需要先按本文档在自己的电脑上部署，不能直接打开你电脑上的 localhost。
+
 ## 1. 运行边界
 
 - 目标：电脑浏览器本地演示，不做公网部署。
-- 认证：`docker-compose.local.yml` 显式启用 `AUTH_MODE=local_single_user`，打开网站后不需要登录。
+- 认证：`docker-compose.local.yml` 显式启用 `AUTH_MODE=local_single_user`，打开网站后不需要用户名和密码，也不会出现登录页。
 - 绑定：演示端口只绑定 `127.0.0.1`，不会把数据库、对象存储或 LiteLLM 暴露到局域网。
 - 数据：不执行 `down -v`，不删除既有 PostgreSQL、Neo4j、MinIO 或 ChromaDB 数据卷。
 
@@ -18,12 +26,12 @@
 3. Ollama。安装后准备本地审查模型：
 
 ```bash
-ollama serve                 # 如果 Ollama 已作为系统服务运行，不要重复启动
+OLLAMA_HOST=0.0.0.0 ollama serve  # Docker 访问宿主机时使用；已作为系统服务运行则不要重复启动
 ollama pull qwen3.5:0.8b
 curl http://127.0.0.1:11434/api/tags
 ```
 
-最后一个请求应能看到 `qwen3.5:0.8b`。网页不会自动安装模型，只会在“模型与审查”页面检测服务。
+最后一个请求应能看到 `qwen3.5:0.8b`。网页不会自动安装模型，只会在“模型与审查”页面检测服务。当前本地演示已验证该模型存在；模型约 1 GB，不需要再次下载。
 
 ### 可选
 
@@ -107,6 +115,33 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml \
 - [后端健康检查](http://127.0.0.1:18080/health)
 - [模型与审查](http://127.0.0.1:15173/models)
 
+### 4.1 FalkorDB 说明
+
+FalkorDB 不是 Compose 文件中的公共端口服务；没有它时，本体和动态数据模型仍可通过 PostgreSQL 事实回退运行。要启用原生图投影，可在宿主机额外启动一个本地实例：
+
+```bash
+docker volume create nano-ontoprompt_workbench_falkordb_data
+docker run -d --name nano-ontoprompt-falkordb --restart unless-stopped \
+  -p 127.0.0.1:6381:6379 \
+  -v nano-ontoprompt_workbench_falkordb_data:/data \
+  falkordb/falkordb:latest
+```
+
+然后在 `.env` 中确认：
+
+```env
+FALKORDB_HOST=host.docker.internal
+FALKORDB_PORT=6381
+```
+
+重启后端和 worker：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml restart backend celery_worker
+```
+
+检查 `/health` 中 `falkordb` 是否为 `ok`。如果不需要原生图投影，可以不执行这一节，系统会继续使用 PostgreSQL 回退。
+
 ## 5. 本地模型与模型路由
 
 “模型与审查”页面应显示：
@@ -122,6 +157,14 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml \
 curl http://127.0.0.1:18080/api/v1/models/local/probe
 curl 'http://127.0.0.1:18080/api/v2/model-routes/status?probe_local=true'
 ```
+
+要同时显式验证本地模型和 MiniMax 路由：
+
+```bash
+curl 'http://127.0.0.1:18080/api/v2/model-routes/status?probe_local=true&probe_cloud=true'
+```
+
+只有 `available=true` 才表示实际探测通过；“已配置”或“网关可达”不等于模型调用成功。标准数据构建使用 MiniMax M3，私密数据禁止走云端；本地审查使用 `qwen3.5:0.8b`。
 
 标准数据的 M3 请求统一经过 LiteLLM，并且只发送用户确认的范围。私密数据不会发送到云端；审查默认使用本地 qwen。网页打开或刷新模型页不会自动调用 M3。
 
@@ -154,6 +197,35 @@ curl 'http://127.0.0.1:18080/api/v2/model-invocations?model=qwen3.5%3A0.8b&statu
 模型建议支持批量导入：在建议列表左侧勾选多项，点击“批量填入表单”后逐项检查字段，再点击“检查冲突”。后端会在保存点中模拟整批新增/修改/删除，检查重复标识、对象引用、关系端点、基数和逻辑规则；校验通过后“确认批量导入”才会把整批操作作为一个新修订提交，任意一项失败都不会留下半批修改。对应接口为 `POST /api/v2/ontologies/<ontology_id>/changes/batch/validate` 和 `POST /api/v2/ontologies/<ontology_id>/changes/batch`。
 
 FactoryNet 的“数据模型”页面可以选中一个 Observation，再进入 “What-If 推演”。推演固定 `episode_id + Ordinal`、数据集版本和本体修订，流程是：选择基线 → 设置属性/关系/规则假设 → 运行推演 → 查看差异。结果只保存于情景，不写回正式本体或 FalkorDB；新增、消失和未变化关系在画布中分别用绿、红、灰标识，右侧显示规则前提、引擎版本和证据。
+
+### 8.1 FactoryNet 逐事件动态演化
+
+打开 FactoryNet 本体后选择“动态演化”，点击“新建动态运行”。文件回放会先建立事件索引，随后支持：
+
+- 每次只提交一条 Observation；
+- 单步、播放、暂停、继续、取消和 0.5/1/2/5/10/20 条每秒；
+- `Ordinal` 水位、当前状态/完整历史切换；
+- `LATEST_OBSERVATION`、工序、刀具状态和检测状态的事实迁移；
+- 旧事实保留有效区间、来源事件和 EvidenceRef；
+- 播放结束后人工确认“发布快照”，不会自动写回正式本体。
+
+也可以用推送模式接入未来的传感器或脚本：
+
+```bash
+curl -X POST http://127.0.0.1:18080/api/v2/temporal-streams/<run_id>/events \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "event_id": "demo-0001",
+    "episode_id": "episode-a",
+    "entity_key": "CNC_Mill_3_Axis",
+    "ordinal": 1,
+    "source_sequence": 0,
+    "payload": {"ctx_process_phase": "roughing", "ctx_tool_condition": "unworn"},
+    "source_ref": {"source_row_id": "demo-0001"}
+  }'
+```
+
+重复的 `event_id + 相同载荷` 会幂等处理；相同 `event_id` 但载荷不同、或早于水位的事件会返回明确错误，不会偷偷重算历史。
 
 推演使用已核验的 Semantica 提交 `3a69721abf72d7188a0d6fd72c8462261b2c44eb`，并受两跳、500 节点、2,000 条事实、50 条规则和 50 次迭代限制。当前内置演示把真实观测的 `ctx_tool_condition=unworn` 改为 `worn`，由 `IN_PHASE` 与 `HAS_TOOL_CONDITION` 推出 `PHASE_TOOL_STATE`；它是规则情景推演，不代表因果反事实或维护效果预测。
 
@@ -244,3 +316,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build f
 ## 12. 生产部署提醒
 
 本地 Compose 仅用于演示。生产部署至少需要：关闭 `local_single_user`、启用 JWT 与强密码、使用独立密钥管理、限制 LiteLLM/数据库/对象存储网络访问、配置 HTTPS 反向代理、备份 PostgreSQL 和对象存储，并在轮换 M3 凭证后重新验证模型路由。
+
+## 13. 关于登录密码
+
+本交付链接对应的是本地演示配置：`AUTH_MODE=local_single_user`，因此不需要用户名或密码，直接打开 `/overview` 即可。仓库中保留 JWT 登录代码是为了部署到共享或生产环境；如果要启用 JWT，请在自己的 `.env` 中设置强随机 `SECRET_KEY` 和 `FIRST_ADMIN_PASSWORD`，不要使用或转发任何共享默认密码。

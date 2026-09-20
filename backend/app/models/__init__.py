@@ -13,7 +13,13 @@ from app.models.audit_task import AuditTask
 from app.models.entity_instance import EntityInstance
 from app.models.ontology_revision import OntologyRevision
 from app.models.v2.dynamic_ontology import OntologyChange, WhatIfRun, WhatIfScenario
-from app.models.v2.temporal_replay import TemporalReplay, TemporalReplayBatch
+from app.models.v2.temporal_replay import (
+    DataModelSnapshot,
+    TemporalFact,
+    TemporalReplay,
+    TemporalReplayBatch,
+    TemporalStreamEvent,
+)
 
 __all__ = [
     "User",
@@ -35,4 +41,7 @@ __all__ = [
     "WhatIfRun",
     "TemporalReplay",
     "TemporalReplayBatch",
+    "TemporalStreamEvent",
+    "TemporalFact",
+    "DataModelSnapshot",
 ]
