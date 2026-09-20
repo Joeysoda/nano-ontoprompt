@@ -44,6 +44,7 @@ from app.routers.v2 import dynamic_ontology as dynamic_ontology_v2
 from app.routers.v2 import what_if as what_if_v2
 from app.routers.v2 import temporal_replays as temporal_replays_v2
 from app.routers.v2 import temporal_streams as temporal_streams_v2
+from app.routers.v2 import dynamic_data as dynamic_data_v2
 
 def _run_schema_migration():
     """统一 schema 迁移入口。
@@ -353,6 +354,7 @@ app.include_router(temporal_v2.router, prefix="/api/v2", tags=["v2-temporal"])
 app.include_router(temporal_v2.ontology_router, prefix="/api/v2/ontologies", tags=["v2-temporal"])
 app.include_router(temporal_replays_v2.router, prefix="/api/v2", tags=["v2-temporal-replays"])
 app.include_router(temporal_streams_v2.router, prefix="/api/v2", tags=["v2-temporal-streams"])
+app.include_router(dynamic_data_v2.router, prefix="/api/v2", tags=["v2-dynamic-data"])
 app.include_router(model_routes_v2.router, prefix="/api/v2/model-routes", tags=["v2-model-routes"])
 app.include_router(model_routes_v2.invocations_router, prefix="/api/v2", tags=["v2-model-invocations"])
 app.include_router(dynamic_ontology_v2.router, prefix="/api/v2/ontologies", tags=["v2-ontology-editor"])

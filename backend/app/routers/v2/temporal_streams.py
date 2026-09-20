@@ -44,7 +44,7 @@ class TemporalStreamCreate(BaseModel):
     dataset_id: str | None = None
     dataset_version_id: str | None = None
     source_id: str = "factorynet_cnc"
-    source_mode: str = Field(default="file_replay", pattern="^(file_replay|push)$")
+    source_mode: str = Field(default="file_replay", pattern="^(file_replay|push|simulated_live)$")
     episode_ids: list[str] = Field(default_factory=list, max_length=200)
     # The singular form is accepted by the browser's compact form and older
     # integrations; it is folded into episode_ids below.

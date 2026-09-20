@@ -24,6 +24,7 @@ import MultimodalDataPage from "@/pages/data-management/multimodal/MultimodalDat
 import TemporalConstructionWizard from "@/pages/data-management/temporal/TemporalConstructionWizard";
 import TemporalWorkbenchPage from "@/pages/data-management/temporal/TemporalWorkbenchPage";
 import TemporalReplayPage from "@/pages/data-management/temporal/TemporalReplayPage";
+import DynamicDataPage from "@/pages/data-management/dynamic/DynamicDataPage";
 import BenchmarksPage from "@/pages/benchmarks/BenchmarksPage";
 
 class AppErrorBoundary extends React.Component<
@@ -149,6 +150,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <MultimodalDataPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/data/dynamic"
+              element={
+                <ProtectedRoute>
+                  <DynamicDataPage />
                 </ProtectedRoute>
               }
             />

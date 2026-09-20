@@ -199,13 +199,48 @@ def _serialize_snapshot(snapshot: DataModelSnapshot) -> dict[str, Any]:
 
 def serialize_stream(replay: TemporalReplay, *, db: Session | None = None) -> dict[str, Any]:
     """Return a JSON-safe stream status payload shared by every endpoint."""
+    live_mode = replay.source_mode == "simulated_live"
     metrics = dict(replay.metrics or {})
     total = int(replay.total_events or replay.selected_rows or 0)
     committed = int(replay.committed_events or replay.normalized_rows or 0)
-    metrics.setdefault("events_total", total)
-    metrics.setdefault("events_committed", committed)
-    metrics.setdefault("queue", max(0, total - committed))
-    progress = round(committed / total * 100, 2) if total else 0.0
+    if live_mode:
+        # A simulated live source deliberately does not expose its future
+        # horizon.  ``total_events`` is the number received so far, not a
+        # prediction of the file length; the public payload uses the explicit
+        # received_events field instead of a progress percentage.
+        metrics.setdefault("events_received", committed)
+        metrics.pop("events_total", None)
+        metrics.pop("queue", None)
+        progress: dict[str, Any] = {"stage": _stage(replay), "completed": committed}
+        public_total: int | None = None
+    else:
+        metrics.setdefault("events_total", total)
+        metrics.setdefault("events_committed", committed)
+        metrics.setdefault("queue", max(0, total - committed))
+        progress = {"pct": round(committed / total * 100, 2) if total else 0.0, "completed": committed, "total": total, "stage": _stage(replay)}
+        public_total = total
+    latest_event = None
+    last_received_at = None
+    if db is not None:
+        latest_event_row = db.query(TemporalStreamEvent).filter(
+            TemporalStreamEvent.replay_id == replay.id,
+            TemporalStreamEvent.status == "committed",
+        ).order_by(TemporalStreamEvent.source_sequence.desc()).first()
+        if latest_event_row:
+            latest_event = _serialize_event(latest_event_row)
+            last_received_at = latest_event_row.committed_at.isoformat() if latest_event_row.committed_at else None
+    config = dict(replay.config or {})
+    public_config = config
+    if live_mode:
+        # Keep the internal selection cursor available to the worker, but do
+        # not leak a user-selected end boundary (or a source-file horizon) in
+        # the blind-stream response.  The UI can only expose ordinals that
+        # have already arrived.
+        public_config = dict(config)
+        selection = dict(public_config.get("selection") or {})
+        selection.pop("start_ordinal", None)
+        selection.pop("end_ordinal", None)
+        public_config["selection"] = selection
     payload: dict[str, Any] = {
         "id": replay.id,
         "run_id": replay.id,
@@ -223,27 +258,32 @@ def serialize_stream(replay: TemporalReplay, *, db: Session | None = None) -> di
         "time_column": replay.time_column,
         "episode_ids": replay.series_ids or [],
         "series_ids": replay.series_ids or [],
-        "start_ordinal": replay.start_time,
-        "end_ordinal": replay.end_time,
-        "start_time": replay.start_time,
-        "end_time": replay.end_time,
+        "start_ordinal": None if live_mode else replay.start_time,
+        "end_ordinal": None if live_mode else replay.end_time,
+        "start_time": None if live_mode else replay.start_time,
+        "end_time": None if live_mode else replay.end_time,
         "current_ordinal": replay.current_time,
         "current_time": replay.current_time,
         "current_event_index": replay.current_event_index,
         "current_batch_index": replay.current_batch_index,
-        "total_events": total,
+        "total_events": public_total,
         "committed_events": committed,
-        "total_batches": replay.total_batches,
-        "source_rows": replay.source_rows,
-        "selected_rows": replay.selected_rows,
+        "total_batches": None if live_mode else replay.total_batches,
+        "source_rows": None if live_mode else replay.source_rows,
+        "selected_rows": None if live_mode else replay.selected_rows,
         "normalized_rows": replay.normalized_rows,
         "watermark_ordinal": float(replay.watermark_ordinal) if replay.watermark_ordinal is not None else None,
         "watermark_sequence": replay.watermark_sequence,
         "event_interval_ms": replay.event_interval_ms,
         "speed": replay.speed,
-        "progress": {"pct": progress, "completed": committed, "total": total, "stage": _stage(replay)},
+        "progress": progress,
         "metrics": metrics,
-        "config": replay.config or {},
+        "config": public_config,
+        "horizon_known": not live_mode,
+        "received_events": committed,
+        "first_received_ordinal": _float_or_none(config.get("first_received_ordinal")) if live_mode else _float_or_none(replay.start_time),
+        "last_received_at": last_received_at,
+        "source_exhausted": bool(config.get("source_exhausted", False)) if live_mode else None,
         "state": replay.state or {},
         "pause_requested": bool(replay.pause_requested),
         "step_requested": bool(replay.step_requested),
@@ -256,12 +296,7 @@ def serialize_stream(replay: TemporalReplay, *, db: Session | None = None) -> di
         "completed_at": replay.completed_at.isoformat() if replay.completed_at else None,
         "updated_at": replay.updated_at.isoformat() if replay.updated_at else None,
     }
-    if db is not None:
-        latest = db.query(TemporalStreamEvent).filter(
-            TemporalStreamEvent.replay_id == replay.id,
-            TemporalStreamEvent.status == "committed",
-        ).order_by(TemporalStreamEvent.source_sequence.desc()).first()
-        payload["latest_event"] = _serialize_event(latest) if latest else None
+    payload["latest_event"] = latest_event
     return payload
 
 
@@ -438,8 +473,8 @@ def create_stream_run(
         raise StreamError("本体不存在", "ONTOLOGY_NOT_FOUND")
     if str(getattr(project, "data_class", "regular")) != "temporal":
         raise StreamError("动态演化只能用于时序本体", "DATA_CLASS_MISMATCH")
-    if source_mode not in {"file_replay", "push"}:
-        raise StreamError("source_mode 必须是 file_replay 或 push", "INVALID_SOURCE_MODE")
+    if source_mode not in {"file_replay", "push", "simulated_live"}:
+        raise StreamError("source_mode 必须是 file_replay、push 或 simulated_live", "INVALID_SOURCE_MODE")
     speed = _finite_number(speed, "speed")
     if speed <= 0 or speed > MAX_SPEED:
         raise StreamError(f"speed 必须在 0 和 {MAX_SPEED} 之间", "INVALID_SPEED")
@@ -466,7 +501,7 @@ def create_stream_run(
     # small enough to inspect while still preserving every event in that
     # episode (the optional max_records limit is applied afterwards).
     effective_episode_ids = [str(value).strip() for value in (episode_ids or []) if str(value).strip()]
-    if source_mode == "file_replay" and not effective_episode_ids:
+    if source_mode in {"file_replay", "simulated_live"} and not effective_episode_ids:
         candidates = _select_rows(
             rows,
             episode_ids=None,
@@ -490,12 +525,17 @@ def create_stream_run(
         time_column=time_column,
         max_records=(config or {}).get("max_records"),
     )
-    if source_mode == "file_replay" and not selected:
+    if source_mode in {"file_replay", "simulated_live"} and not selected:
         raise StreamError("所选 episode 或 Ordinal 范围没有可用记录", "NO_EVENTS")
     selected_episodes = sorted({ _episode(row) for row, _, _ in selected })
-    if start_ordinal is None and selected:
+    # The live demo needs the first episode to be known, but must not reveal or
+    # persist its future start/end horizon.  The source cursor will discover
+    # the first actual Ordinal only when the first event arrives.
+    if source_mode == "simulated_live":
+        selected_episodes = [effective_episode_ids[0]] if effective_episode_ids else selected_episodes[:1]
+    if source_mode != "simulated_live" and start_ordinal is None and selected:
         start_ordinal = selected[0][1]
-    if end_ordinal is None and selected:
+    if source_mode != "simulated_live" and end_ordinal is None and selected:
         end_ordinal = selected[-1][1]
     replay_id = str(uuid.uuid4())
     namespace = f"stream_{uuid.uuid4().hex}"
@@ -513,11 +553,19 @@ def create_stream_run(
         "event_order": "ordinal,source_sequence",
         "selection": {
             "episode_ids": selected_episodes,
-            "start_ordinal": start_ordinal,
-            "end_ordinal": end_ordinal,
+            "start_ordinal": start_ordinal if source_mode != "simulated_live" else (config or {}).get("start_ordinal", start_ordinal),
+            "end_ordinal": end_ordinal if source_mode != "simulated_live" else (config or {}).get("end_ordinal", end_ordinal),
             "time_column": time_column,
         },
     })
+    if source_mode == "simulated_live":
+        cfg.update({
+            "horizon_known": False,
+            "source_cursor": 0,
+            "source_exhausted": False,
+            "first_received_ordinal": None,
+        })
+    live_mode = source_mode == "simulated_live"
     replay = TemporalReplay(
         id=replay_id,
         ontology_id=ontology_id,
@@ -539,14 +587,14 @@ def create_stream_run(
         event_interval_ms=explicit_interval or max(1, int(round(1000 / speed))),
         current_time=None,
         current_batch_index=-1,
-        total_batches=len(selected),
-        source_rows=len(rows),
-        selected_rows=len(selected),
+        total_batches=0 if live_mode else len(selected),
+        source_rows=0 if live_mode else len(rows),
+        selected_rows=0 if live_mode else len(selected),
         normalized_rows=0,
-        total_events=len(selected),
+        total_events=0 if live_mode else len(selected),
         committed_events=0,
         current_event_index=-1,
-        metrics={"events_total": len(selected), "events_committed": 0, "queue": len(selected), "nodes_written": 0, "edges_written": 0, "facts_written": 0, "state_transitions": 0, "model_calls": 0},
+        metrics={"events_received": 0, **({} if live_mode else {"events_total": len(selected), "events_committed": 0, "queue": len(selected)}), "nodes_written": 0, "edges_written": 0, "facts_written": 0, "state_transitions": 0, "model_calls": 0},
         config=cfg,
         state={"builder": {}, "episodes": {}, "latest_event": None},
         error=None,
@@ -556,24 +604,25 @@ def create_stream_run(
     )
     db.add(replay)
     db.flush()
-    for source_sequence, (row, ordinal, source_row_id) in enumerate(selected):
-        episode = _episode(row)
-        event_id = f"factorynet:{episode}:{source_row_id}"
-        payload = {key: value for key, value in row.items() if not str(key).startswith("_")}
-        db.add(TemporalStreamEvent(
-            id=str(uuid.uuid4()),
-            replay_id=replay.id,
-            event_key=event_id,
-            episode_id=episode,
-            entity_key=str(row.get("entity_key") or row.get("machine_type") or episode),
-            ordinal=Decimal(str(ordinal)),
-            source_sequence=source_sequence,
-            source_row_id=source_row_id,
-            payload=payload,
-            source_ref={"dataset_id": replay.dataset_id, "dataset_version_id": replay.dataset_version_id, "source_row_id": source_row_id, "source_file": cfg.get("source_file")},
-            payload_hash=_hash(payload),
-            status="queued",
-        ))
+    if not live_mode:
+        for source_sequence, (row, ordinal, source_row_id) in enumerate(selected):
+            episode = _episode(row)
+            event_id = f"factorynet:{episode}:{source_row_id}"
+            payload = {key: value for key, value in row.items() if not str(key).startswith("_")}
+            db.add(TemporalStreamEvent(
+                id=str(uuid.uuid4()),
+                replay_id=replay.id,
+                event_key=event_id,
+                episode_id=episode,
+                entity_key=str(row.get("entity_key") or row.get("machine_type") or episode),
+                ordinal=Decimal(str(ordinal)),
+                source_sequence=source_sequence,
+                source_row_id=source_row_id,
+                payload=payload,
+                source_ref={"dataset_id": replay.dataset_id, "dataset_version_id": replay.dataset_version_id, "source_row_id": source_row_id, "source_file": cfg.get("source_file")},
+                payload_hash=_hash(payload),
+                status="queued",
+            ))
     _ensure_factorynet_schema(db, ontology_id)
     ensure_schema_revision(db, project)
     replay.schema_revision_id = project.current_revision_id
@@ -801,6 +850,11 @@ def process_one_event(db: Session, replay: TemporalReplay, event: TemporalStream
     state_payload["episodes"] = state_map
     state_payload["latest_event"] = {"id": event.id, "event_key": event.event_key, "episode_id": event.episode_id, "ordinal": ordinal, "source_sequence": sequence, "payload": payload}
     replay.state = state_payload
+    if replay.source_mode == "simulated_live":
+        live_config = dict(replay.config or {})
+        if live_config.get("first_received_ordinal") is None:
+            live_config["first_received_ordinal"] = ordinal
+        replay.config = live_config
     replay.current_time = ordinal
     replay.watermark_ordinal = Decimal(str(ordinal))
     replay.watermark_sequence = sequence
@@ -809,7 +863,7 @@ def process_one_event(db: Session, replay: TemporalReplay, event: TemporalStream
     replay.committed_events = int(replay.committed_events or 0) + 1
     replay.normalized_rows = int(replay.normalized_rows or 0) + 1
     metrics = dict(replay.metrics or {})
-    metrics.update({"events_total": replay.total_events, "events_committed": replay.committed_events, "queue": max(0, replay.total_events - replay.committed_events), "nodes_written": int(metrics.get("nodes_written", 0)) + graph_nodes_written, "edges_written": int(metrics.get("edges_written", 0)) + graph_edges_written, "facts_written": int(metrics.get("facts_written", 0)) + len(facts) + 1 + transitions, "state_transitions": int(metrics.get("state_transitions", 0)) + transitions, "last_event_id": event.id, "last_event_ordinal": ordinal, "last_payload_hash": event.payload_hash})
+    metrics.update({"events_total": replay.total_events, "events_committed": replay.committed_events, "events_received": replay.committed_events, "queue": max(0, replay.total_events - replay.committed_events), "nodes_written": int(metrics.get("nodes_written", 0)) + graph_nodes_written, "edges_written": int(metrics.get("edges_written", 0)) + graph_edges_written, "facts_written": int(metrics.get("facts_written", 0)) + len(facts) + 1 + transitions, "state_transitions": int(metrics.get("state_transitions", 0)) + transitions, "last_event_id": event.id, "last_event_ordinal": ordinal, "last_payload_hash": event.payload_hash})
     replay.metrics = metrics
     event.status = "committed"
     event.committed_at = _now()
@@ -868,6 +922,74 @@ def _next_event(db: Session, replay_id: str) -> TemporalStreamEvent | None:
     ).first()
 
 
+def _next_simulated_live_event(db: Session, replay: TemporalReplay) -> TemporalStreamEvent | None:
+    """Materialize only the next source row for the blind live demo.
+
+    The source file is read by the producer, but future rows are never written
+    to the event table or returned by the API.  A JSON cursor is sufficient for
+    this deterministic local demo and survives worker restarts without adding a
+    migration just for a source-specific offset.
+    """
+    if replay.source_mode != "simulated_live":
+        return None
+    config = dict(replay.config or {})
+    if config.get("source_exhausted"):
+        return None
+    _dataset, version, rows = _resolve_source(db, replay.dataset_id, replay.dataset_version_id)
+    selection = dict(config.get("selection") or {})
+    episode_ids = [str(item) for item in (selection.get("episode_ids") or replay.series_ids or []) if str(item).strip()]
+    candidates = _select_rows(
+        rows,
+        episode_ids=episode_ids,
+        start_ordinal=_float_or_none(selection.get("start_ordinal")),
+        end_ordinal=_float_or_none(selection.get("end_ordinal")),
+        time_column=replay.time_column or "time_s",
+        max_records=None,
+    )
+    cursor = max(0, int(config.get("source_cursor") or 0))
+    if cursor >= len(candidates):
+        config["source_exhausted"] = True
+        replay.config = config
+        replay.updated_at = _now()
+        return None
+    row, ordinal, source_row_id = candidates[cursor]
+    episode = _episode(row)
+    payload = {key: value for key, value in row.items() if not str(key).startswith("_")}
+    event = TemporalStreamEvent(
+        id=str(uuid.uuid4()),
+        replay_id=replay.id,
+        event_key=f"factorynet:{episode}:{source_row_id}",
+        episode_id=episode,
+        entity_key=str(row.get("entity_key") or row.get("machine_type") or episode),
+        ordinal=Decimal(str(ordinal)),
+        source_sequence=cursor,
+        source_row_id=source_row_id,
+        payload=payload,
+        source_ref={
+            "dataset_id": replay.dataset_id,
+            "dataset_version_id": replay.dataset_version_id,
+            "source_row_id": source_row_id,
+            "source_file": config.get("source_file"),
+            "source_mode": "simulated_live",
+        },
+        payload_hash=_hash(payload),
+        status="queued",
+    )
+    db.add(event)
+    db.flush()
+    # The cursor is advanced in the same transaction as the event and facts by
+    # run_temporal_stream after process_one_event succeeds.
+    config["source_cursor_pending"] = cursor + 1
+    replay.config = config
+    replay.total_events = int(replay.total_events or 0) + 1
+    replay.selected_rows = int(replay.selected_rows or 0) + 1
+    replay.total_batches = int(replay.total_batches or 0) + 1
+    if replay.start_time is None:
+        replay.start_time = ordinal
+    replay.updated_at = _now()
+    return event
+
+
 def run_temporal_stream(replay_id: str) -> dict[str, Any]:
     """Resume a stream and commit one event per loop iteration."""
     with _worker_lock:
@@ -897,9 +1019,14 @@ def run_temporal_stream(replay_id: str) -> dict[str, Any]:
                 replay.completed_at = _now()
                 db.commit()
                 return serialize_stream(replay, db=db)
-            event = _next_event(db, replay.id)
+            if replay.pause_requested:
+                replay.status = "paused"
+                replay.updated_at = _now()
+                db.commit()
+                return serialize_stream(replay, db=db)
+            event = _next_simulated_live_event(db, replay) if replay.source_mode == "simulated_live" else _next_event(db, replay.id)
             if event is None:
-                if replay.source_mode == "push":
+                if replay.source_mode in {"push"}:
                     # Push streams stay open between batches.  A producer can
                     # append another event later; the ingest endpoint will
                     # move the run back to queued and dispatch the worker.
@@ -923,7 +1050,15 @@ def run_temporal_stream(replay_id: str) -> dict[str, Any]:
             replay.status = "running"
             db.commit()
             try:
-                process_one_event(db, replay, event)
+                process_one_event(db, replay, event, commit=False)
+                if replay.source_mode == "simulated_live":
+                    config = dict(replay.config or {})
+                    pending_cursor = config.pop("source_cursor_pending", None)
+                    if pending_cursor is not None:
+                        config["source_cursor"] = int(pending_cursor)
+                    replay.config = config
+                db.commit()
+                db.refresh(replay)
             except StreamError as exc:
                 db.rollback()
                 replay = db.query(TemporalReplay).filter(TemporalReplay.id == replay_id).first()

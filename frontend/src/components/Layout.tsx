@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LogOut,
   Network,
+  Radio,
   Settings,
   Table2,
 } from 'lucide-react'
@@ -36,6 +37,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       subItems: [
         { to: '/data/regular', icon: Table2, label: '常规数据', hint: '表格与数据库' },
         { to: '/data/temporal', icon: Activity, label: '时序数据', hint: '序列与时间轴' },
+        { to: '/data/dynamic', icon: Radio, label: '动态数据构建', hint: '逐事件实时接收' },
         { to: '/data/multimodal', icon: Images, label: '多模态数据', hint: '图像、深度与点云' },
       ],
     },

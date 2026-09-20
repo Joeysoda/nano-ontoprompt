@@ -76,6 +76,81 @@ def test_stream_defaults_to_one_episode_and_processes_one_event(db, admin_user, 
     assert db.query(TemporalFact).filter(TemporalFact.replay_id == replay.id).count() > 0
 
 
+def test_simulated_live_starts_empty_and_materializes_one_event(db, admin_user, monkeypatch):
+    ontology, dataset, version = _source(db, admin_user)
+    monkeypatch.setattr(streams, "_resolve_source", lambda _db, _dataset_id, _version_id: (dataset, version, _rows()))
+    monkeypatch.setattr(streams, "dispatch_stream", lambda _run_id: "test")
+
+    replay = streams.create_stream_run(
+        db,
+        ontology.id,
+        dataset_id=dataset.id,
+        source_mode="simulated_live",
+        speed=20,
+    )
+    assert replay.source_mode == "simulated_live"
+    assert db.query(TemporalStreamEvent).filter(TemporalStreamEvent.replay_id == replay.id).count() == 0
+    status = streams.serialize_stream(replay, db=db)
+    assert status["horizon_known"] is False
+    assert status["received_events"] == 0
+    assert status["total_events"] is None
+    assert status["first_received_ordinal"] is None
+    assert status["start_time"] is None
+    assert status["end_time"] is None
+    assert status["config"]["selection"].get("end_ordinal") is None
+
+    event = streams._next_simulated_live_event(db, replay)
+    assert event is not None
+    assert event.source_sequence == 0
+    streams.process_one_event(db, replay, event, commit=False)
+    config = dict(replay.config or {})
+    config["source_cursor"] = int(config.pop("source_cursor_pending"))
+    replay.config = config
+    db.commit()
+    db.refresh(replay)
+
+    status = streams.serialize_stream(replay, db=db)
+    assert db.query(TemporalStreamEvent).filter(TemporalStreamEvent.replay_id == replay.id).count() == 1
+    assert status["received_events"] == 1
+    assert status["first_received_ordinal"] == 0.0
+    assert status["current_ordinal"] == 0.0
+    assert status["source_exhausted"] is False
+
+
+def test_simulated_live_reaches_source_end_and_publishes(db, admin_user, monkeypatch):
+    ontology, dataset, version = _source(db, admin_user)
+    monkeypatch.setattr(streams, "_resolve_source", lambda _db, _dataset_id, _version_id: (dataset, version, _rows()))
+
+    replay = streams.create_stream_run(
+        db,
+        ontology.id,
+        dataset_id=dataset.id,
+        episode_ids=["episode-a"],
+        source_mode="simulated_live",
+        speed=20,
+    )
+    while True:
+        event = streams._next_simulated_live_event(db, replay)
+        if event is None:
+            break
+        streams.process_one_event(db, replay, event, commit=False)
+        config = dict(replay.config or {})
+        config["source_cursor"] = int(config.pop("source_cursor_pending"))
+        replay.config = config
+        db.commit()
+        db.refresh(replay)
+    replay.status = "completed"
+    db.commit()
+    completed = db.query(TemporalReplay).filter(TemporalReplay.id == replay.id).one()
+    assert completed.committed_events == 3
+    assert completed.config["source_exhausted"] is True
+    assert db.query(TemporalStreamEvent).filter(TemporalStreamEvent.replay_id == replay.id).count() == 3
+
+    published = streams.publish_stream_run(db, completed, created_by=admin_user.id)
+    assert published["run"]["status"] == "published"
+    assert published["snapshot"]["event_count"] == 3
+
+
 def test_stream_state_fact_expires_and_duplicate_is_idempotent(db, admin_user, monkeypatch):
     ontology, dataset, version = _source(db, admin_user)
     monkeypatch.setattr(streams, "_resolve_source", lambda _db, _dataset_id, _version_id: (dataset, version, _rows()))
