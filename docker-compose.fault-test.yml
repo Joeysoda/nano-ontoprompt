@@ -1,0 +1,4 @@
+services:
+  celery_worker:
+    environment:
+      SUPPLIER_FAULT_TEST_PAUSE_SECONDS: "8"

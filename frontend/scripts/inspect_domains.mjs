@@ -1,4 +1,3 @@
-import { createInterface } from 'readline';
 
 const API = 'http://localhost:8002/api/v1';
 

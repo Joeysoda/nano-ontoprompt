@@ -44,6 +44,11 @@ target_metadata = Base.metadata
 from app.models.v2 import reasoning  # noqa: E402, F401
 from app.models.v2 import decision  # noqa: E402, F401
 from app.models.v2 import agent  # noqa: E402, F401
+from app.models.v2 import logic_asset  # noqa: E402, F401
+from app.models.v2 import object_set  # noqa: E402, F401
+from app.models.v2 import query_view  # noqa: E402, F401
+from app.models.v2 import query_job  # noqa: E402, F401
+from app.models.v2 import scenario  # noqa: E402, F401
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -82,6 +87,13 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    supplied_connection = config.attributes.get('connection')
+    if supplied_connection is not None:
+        context.configure(connection=supplied_connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

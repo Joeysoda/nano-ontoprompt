@@ -15,7 +15,6 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5173';
-const API  = 'http://localhost:8000';
 const SS   = path.join(__dirname, 'sc_fulltest_screenshots');
 fs.mkdirSync(SS, { recursive: true });
 
@@ -85,9 +84,8 @@ console.log('\n🗑️  [2] 清理旧数据...');
 // 删 v2 datasets
 const dsRes = await apiCall('GET', '/api/v2/datasets', null, token);
 const allDs = Array.isArray(dsRes.body) ? dsRes.body : [];
-for (const ds of allDs) {
-  // 无 DELETE 端点，先通过日志确认数量
-}
+// v2 datasets currently have no DELETE endpoint; retain the count for diagnostics.
+console.log(`  v2 datasets discovered: ${allDs.length}`);
 // 删 v1 ontologies（有 DELETE 端点）
 const ontoRes = await apiCall('GET', '/api/v1/ontologies?page_size=100', null, token);
 const ontologies = ontoRes.body?.data?.items ?? [];

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -14,11 +14,11 @@ const SEVERITY_CONFIG = {
   info:    { label: 'INFO',    bg: 'bg-blue-50',   border: 'border-blue-200',  text: 'text-blue-700',  icon: Info },
 }
 
-function ValidationReportCard({ report }: { report: any }) {
+function ValidationReportCard({ report }: { report: { by_severity?: Record<string, Array<{ message: string }>>; has_fatal?: boolean; has_errors?: boolean; total_issues?: number } }) {
   const { t } = useTranslation()
   if (!report) return null
   const bySeverity = report.by_severity ?? {}
-  const allEmpty = Object.values(bySeverity).every((arr: any) => arr.length === 0)
+  const allEmpty = Object.values(bySeverity).every(arr => arr.length === 0)
   const overallOk = !report.has_fatal && !report.has_errors
 
   return (
@@ -53,7 +53,7 @@ function ValidationReportCard({ report }: { report: any }) {
               <div key={sev} className={`rounded-lg border ${cfg.border} ${cfg.bg} p-3`}>
                 <p className={`text-xs font-semibold ${cfg.text} mb-1.5`}>{cfg.label} · {issues.length} 项</p>
                 <ul className="space-y-1">
-                  {issues.map((issue: any, i: number) => (
+                  {issues.map((issue, i: number) => (
                     <li key={i} className={`flex items-start gap-1.5 text-xs ${cfg.text}`}>
                       <Icon size={11} className="mt-0.5 flex-shrink-0" />
                       <span>{issue.message}</span>
@@ -86,7 +86,18 @@ const STAGE_PCT: Record<string, number> = {
 
 const lastTaskKey = (oid: string) => `ontoprompt_last_task_${oid}`
 
-type SavedTask = { task_id?: string; status?: string; [key: string]: unknown }
+type SavedTask = {
+  task_id?: string; status?: string; error?: string | null;
+  progress?: { stage?: string; pct?: number };
+  validation_report?: { by_severity?: Record<string, Array<{ message: string }>>; has_fatal?: boolean; has_errors?: boolean; total_issues?: number };
+  [key: string]: unknown;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'detail' in error) return String(error.detail)
+  return String(error)
+}
 
 function loadSavedTask(oid: string): SavedTask | null {
   try {
@@ -100,7 +111,7 @@ function loadSavedTask(oid: string): SavedTask | null {
 function saveTask(oid: string, data: SavedTask) {
   try {
     localStorage.setItem(lastTaskKey(oid), JSON.stringify(data))
-  } catch {}
+  } catch { /* local storage may be unavailable */ }
 }
 
 function StructuredDataLink() {
@@ -114,12 +125,16 @@ function StructuredDataLink() {
     </button>
   )
 }
+type MappingRecord = { mapping_id?: string; id?: string; entity_class?: string; entity_class_cn?: string; status?: string }
+type PromptRecord = { id: string; name: string; domain: string }
+type ModelRecord = { id: string; name: string; provider: string; models?: string[] }
+
 function PipelineMappingInfo({ ontology }: { ontology: OntologyDetail }) {
-  const [mappings, setMappings] = useState<any[]>([])
+  const [mappings, setMappings] = useState<MappingRecord[]>([])
   useEffect(() => {
     import('@/api/client').then(({ apiClientV2 }) => {
       apiClientV2.get(`/ontologies/${ontology.id}/mappings`)
-        .then((res: any) => setMappings(Array.isArray(res) ? res : []))
+        .then((res: unknown) => setMappings(Array.isArray(res) ? res as MappingRecord[] : []))
         .catch(() => setMappings([]))
     })
   }, [ontology.id])
@@ -134,7 +149,7 @@ function PipelineMappingInfo({ ontology }: { ontology: OntologyDetail }) {
         <p className="text-sm text-gray-400">暂无 Mapping 配置。请先在 Pipelines → Curated Datasets 中审批数据，然后在新建本体时配置 Mapping。</p>
       ) : (
         <div className="space-y-2">
-          {mappings.map((m: any) => (
+          {mappings.map((m) => (
             <div key={m.mapping_id || m.id} className="border rounded-lg px-3 py-2 text-sm flex items-center justify-between">
               <div>
                 <span className="font-medium">{m.entity_class}</span>
@@ -155,14 +170,14 @@ function PipelineMappingInfo({ ontology }: { ontology: OntologyDetail }) {
 }
 
 export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const qc = useQueryClient()
   const pollRef = useRef<(() => void) | null>(null)
   const [promptId, setPromptId] = useState('')
   const [modelId, setModelId] = useState('')
   const [modelName, setModelName] = useState('')
   const [pollTimedOut, setPollTimedOut] = useState(false)
-  const [taskStatus, setTaskStatus] = useState<any>(() => loadSavedTask(ontology.id))
+  const [taskStatus, setTaskStatus] = useState<SavedTask | null>(() => loadSavedTask(ontology.id))
   const [exportingFormat, setExportingFormat] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
 
@@ -171,18 +186,18 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
     setExportingFormat(format)
     try {
       await ontologyApi.exportOntology(ontology.id, format)
-    } catch (err: any) {
-      setExportError(err?.detail ?? err?.message ?? t('extract.export_failed', 'Export failed'))
+    } catch (err: unknown) {
+      setExportError(errorMessage(err) || t('extract.export_failed', 'Export failed'))
     } finally {
       setExportingFormat(null)
     }
   }
 
-  const { data: prompts } = useQuery({ queryKey: ['prompts'], queryFn: () => promptApi.list() as any })
-  const { data: models } = useQuery({ queryKey: ['models'], queryFn: () => modelApi.list() as any })
+  const { data: prompts } = useQuery<PromptRecord[]>({ queryKey: ['prompts'], queryFn: () => promptApi.list() as Promise<PromptRecord[]> })
+  const { data: models } = useQuery<ModelRecord[]>({ queryKey: ['models'], queryFn: () => modelApi.list() as Promise<ModelRecord[]> })
   const { data: files = [] } = useQuery({
     queryKey: ['files', ontology.id],
-    queryFn: () => ontologyApi.listFiles(ontology.id) as any,
+    queryFn: () => ontologyApi.listFiles(ontology.id),
   })
 
   const extractMut = useMutation({
@@ -195,7 +210,7 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
       }),
   })
 
-  const startPoll = (taskId: string) => {
+  const startPoll = useCallback((taskId: string) => {
     pollRef.current?.()
     setPollTimedOut(false)
     let attempts = 0
@@ -210,7 +225,7 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
         return
       }
       try {
-        const status: any = await ontologyApi.getExtractionStatus(ontology.id, taskId)
+        const status = await ontologyApi.getExtractionStatus(ontology.id, taskId) as SavedTask
         if (cancelled) return
         const merged = { ...status, task_id: taskId }
         setTaskStatus(merged)
@@ -231,37 +246,37 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
       }
     }
     poll()
-  }
+  }, [ontology.id, qc])
 
   // Resume polling if user refreshed while a task was still running
   useEffect(() => {
     const saved = loadSavedTask(ontology.id)
     if (saved?.task_id && saved.status !== 'completed' && saved.status !== 'failed') {
-      startPoll(saved.task_id)
+      void Promise.resolve().then(() => startPoll(saved.task_id!))
     }
     return () => { pollRef.current?.() }
-  }, [ontology.id])
+  }, [ontology.id, startPoll])
 
   const handleExtract = async () => {
     setPollTimedOut(false)
-    setTaskStatus({ status: 'running', progress: { stage: 'queued', pct: 0 }, error: null } as any)
+    setTaskStatus({ status: 'running', progress: { stage: 'queued', pct: 0 }, error: null })
     const constraints = getActiveConstraints(loadRuleStates())
     try {
-      const res: any = await extractMut.mutateAsync(constraints)
+      const res = await extractMut.mutateAsync(constraints) as { task_id: string }
       saveTask(ontology.id, { status: 'running', progress: { stage: 'queued', pct: 0 }, task_id: res.task_id })
       startPoll(res.task_id)
-    } catch (e: any) {
+    } catch (e: unknown) {
       setTaskStatus({
         status: 'failed',
         progress: { stage: 'error', pct: 0 },
-        error: String(e?.detail || e?.message || e),
-      } as any)
+        error: errorMessage(e),
+      })
     }
   }
 
-  const selectedModel = (models as any[] | undefined)?.find((m: any) => m.id === modelId)
+  const selectedModel = models?.find(m => m.id === modelId)
   const activeConstraints = getActiveConstraints(loadRuleStates())
-  const fileList = files as any[]
+  const fileList = Array.isArray(files) ? files : []
   const isExtracting = taskStatus && taskStatus.status !== 'completed' && taskStatus.status !== 'failed'
   const currentPct = taskStatus?.progress?.pct ?? 0
   const currentStage = taskStatus?.progress?.stage ?? ''
@@ -313,7 +328,7 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
             <select value={promptId} onChange={e => setPromptId(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm">
               <option value="">{t('extract.select_prompt')}</option>
-              {(prompts as any[] || []).map((p: any) => (
+              {(prompts || []).map((p) => (
                 <option key={p.id} value={p.id}>{p.name}（{p.domain}）</option>
               ))}
             </select>
@@ -324,7 +339,7 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
             <select value={modelId} onChange={e => { setModelId(e.target.value); setModelName('') }}
               className="w-full border rounded-lg px-3 py-2 text-sm">
               <option value="">{t('extract.select_model')}</option>
-              {(models as any[] || []).map((m: any) => (
+              {(models || []).map((m) => (
                 <option key={m.id} value={m.id}>{m.name}（{m.provider}）</option>
               ))}
             </select>
@@ -368,7 +383,7 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
               <XCircle size={16} className="mt-0.5 flex-shrink-0" />
               <div>
                 <p className="text-sm font-medium">{t('extract.failed')}</p>
-                <p className="text-xs mt-0.5 text-red-500">{taskStatus.error}</p>
+                <p className="text-xs mt-0.5 text-red-500">{taskStatus.error || ''}</p>
               </div>
             </div>
           ) : (
@@ -416,7 +431,7 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
                   <p className="text-xs text-amber-600">{t('extract.poll_timeout')}</p>
                   <button
                     type="button"
-                    onClick={() => startPoll(taskStatus.task_id)}
+                    onClick={() => taskStatus.task_id && startPoll(taskStatus.task_id)}
                     className="text-xs px-2 py-1 border border-amber-200 rounded text-amber-700 hover:bg-amber-50"
                   >
                     {t('extract.resume_poll')}

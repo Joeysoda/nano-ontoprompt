@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint:src": "eslint \"src/**/*.{ts,tsx}\" --max-warnings=0",
+    "lint:scripts": "eslint \"**/*.{js,mjs,cjs}\" \"*.ts\" --max-warnings=0",
+    "lint": "npm run lint:src && npm run lint:scripts",
+    "test:e2e:preflight": "node scripts/playwright-preflight.mjs",
+    "test:e2e": "playwright test",
     "preview": "vite preview"
   },
   "dependencies": {

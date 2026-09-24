@@ -9,8 +9,8 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
 }
 
 function ConnectorNode({ data, selected }: NodeProps) {
-  const label = (data as any).label || '连接器'
-  const status = (data as any).status || 'idle'
+  const label = typeof data.label === 'string' ? data.label : '连接器'
+  const status = typeof data.status === 'string' ? data.status : 'idle'
 
   return (
     <div className={`px-3 py-2 rounded-xl border-2 shadow-sm bg-white text-xs min-w-[120px] relative ${

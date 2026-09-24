@@ -37,8 +37,6 @@ await page.waitForLoadState('networkidle');
 await new Promise(r => setTimeout(r, 2000));
 
 // 展开所有 pipeline（点击向下箭头）
-const chevrons = page.locator('button:has(svg)').filter({ hasText: '' });
-const expandBtns = await page.locator('svg').all();
 
 // 点击每个 pipeline 的展开按钮（最后一列的按钮）
 const allBtns = await page.locator('div.border.rounded-xl > div > div > button').all();

@@ -1,23 +1,26 @@
 """v2 Search API — 关键词/语义统一搜索"""
 from __future__ import annotations
 import json
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import cast, or_, String as SAString
 from sqlalchemy.orm import Session
-from app.database import SessionLocal
-from app.deps import get_current_user
+from app.deps import get_current_user, get_db
+from app.models.ontology import OntologyProject
 from app.models.entity import Entity
+from app.services.v2.graph.falkordb_service import FalkorDBService
+from app.services.v2.object_query.core import QueryCore, QueryPolicy, FalkorReadAdapter
+from app.services.v2.object_query.metadata import load_sql_metadata
+from app.services.v2.object_query.errors import ObjectQueryError
+from app.schemas.v2.object_query import BaseObjectSet, EmptyObjectSet, FilterObjectSet, OrFilter, TextFilter, PropertyRef, TypeRef, LoadObjectSetRequest, ExecutionContext, ReadOptions
 
-router = APIRouter(dependencies=[Depends(get_current_user)])
+def authorize_search(ontology_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    ontology = db.get(OntologyProject, ontology_id)
+    if ontology is None or (user.role != 'admin' and ontology.created_by != user.id):
+        raise HTTPException(status_code=404, detail='Ontology not found or inaccessible')
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+router = APIRouter(dependencies=[Depends(authorize_search)])
 
 
 class SearchRequest(BaseModel):
@@ -25,6 +28,13 @@ class SearchRequest(BaseModel):
     mode: str = "keyword"  # keyword | semantic
     entity_type: str | None = None
     n_results: int = 10
+
+
+class ObjectSearchRequest(BaseModel):
+    type_name: str = Field(min_length=1, max_length=200)
+    query: str = Field(min_length=1, max_length=1000)
+    select: list[str] = Field(default_factory=list, max_length=100)
+    page_size: int = Field(default=50, ge=1, le=200)
 
 
 def _sql_keyword_search(db: Session, ontology_id: str, q: str, n: int) -> list[dict]:
@@ -82,7 +92,7 @@ def semantic_search(
     from app.services.v2.vector.chroma_service import ChromaService
     svc = ChromaService()
     if not svc.available:
-        return {"results": [], "chroma_available": False}
+        raise HTTPException(503, detail={"code": "search_unavailable", "message": "Semantic search is unavailable"})
     results = svc.semantic_search(ontology_id, q, n_results=n, entity_type=entity_type)
     return {"results": results, "chroma_available": True, "query": q}
 
@@ -96,7 +106,7 @@ def unified_search(ontology_id: str, body: SearchRequest, db: Session = Depends(
         if body.mode == "keyword":
             results = _sql_keyword_search(db, ontology_id, body.query, body.n_results)
             return {"results": results, "chroma_available": False, "mode": body.mode}
-        return {"results": [], "chroma_available": False, "mode": body.mode}
+        raise HTTPException(503, detail={"code": "search_unavailable", "message": "Semantic search is unavailable"})
 
     if body.mode == "semantic":
         results = svc.semantic_search(
@@ -108,3 +118,34 @@ def unified_search(ontology_id: str, body: SearchRequest, db: Session = Depends(
         results = svc.keyword_search(ontology_id, body.query, n_results=body.n_results)
 
     return {"results": results, "chroma_available": True, "mode": body.mode}
+
+
+@router.post("/{ontology_id}/search/objects")
+def object_instance_search(ontology_id: str, body: ObjectSearchRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Deterministic object-instance search backed by the shared Query Core.
+
+    Semantic Chroma search remains a separate candidate-discovery path; this
+    endpoint always returns typed ontology instances and never accepts query
+    language from the client.
+    """
+    graph_service = FalkorDBService()
+    if not graph_service.available:
+        raise HTTPException(status_code=503, detail={"code": "graph_unavailable", "path": "execution", "message": "FalkorDB is unavailable", "details": {"retryable": True}})
+    try:
+        metadata = load_sql_metadata(db, ontology_id)
+        type_meta = metadata.resolve_type("object", body.type_name, "type_name")
+        properties = [prop for prop in type_meta.properties.values() if prop.searchable and prop.data_type == "string" and not prop.api_name.startswith("_")]
+        base = BaseObjectSet(kind="base", type_ref=TypeRef(kind="object", api_name=body.type_name))
+        if properties:
+            where = OrFilter(kind="or", items=[TextFilter(kind="text", property=PropertyRef(api_name=prop.api_name), mode="contains", query=body.query) for prop in properties])
+            expression = FilterObjectSet(kind="filter", input=base, where=where)
+        else:
+            expression = EmptyObjectSet(kind="empty", type_ref=TypeRef(kind="object", api_name=body.type_name))
+        request = LoadObjectSetRequest(expression=expression, context=ExecutionContext(ontology_id=ontology_id),
+            read=ReadOptions(select=[PropertyRef(api_name=name) for name in body.select], page_size=body.page_size))
+        graph = graph_service._graph(ontology_id)
+        core = QueryCore(metadata, FalkorReadAdapter(graph), QueryPolicy(principal=user.id))
+        return core.load(request)
+    except ObjectQueryError as exc:
+        from app.routers.v2.object_sets import http_error
+        raise http_error(exc) from exc

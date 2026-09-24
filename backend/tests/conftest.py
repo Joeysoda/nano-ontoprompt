@@ -1,6 +1,12 @@
 import atexit
 import os
 import tempfile
+
+# The application default is Docker's host.docker.internal. Test processes run
+# on the host, where the real local FalkorDB service is exposed on loopback.
+os.environ.setdefault("FALKORDB_HOST", "127.0.0.1")
+os.environ.setdefault("FALKORDB_PORT", "6381")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -11,7 +17,12 @@ from app.deps import get_db
 from app.limiter import limiter
 from app.services.auth_service import hash_password
 from app.models.user import User
+from app.config import settings
 import uuid
+
+# The Docker desktop overlay may set local_single_user for manual use. Tests
+# exercise the JWT contract explicitly and must remain deterministic.
+settings.auth_mode = "jwt"
 
 # 测试环境关闭限流，避免连续登录/注册被 429
 limiter.enabled = False
@@ -38,6 +49,8 @@ def setup_db():
     # Import all models
     from app.models import user, ontology, file, prompt, model_config, entity
     from app.models import logic, action, relation, extraction_task, rules_config
+    from app.models.v2 import query_view  # noqa: F401
+    from app.models.v2 import query_job  # noqa: F401
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)

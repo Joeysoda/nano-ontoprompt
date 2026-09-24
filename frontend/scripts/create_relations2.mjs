@@ -44,7 +44,6 @@ for (const logE of logSample) {
   const props = logE.properties || {};
   const carrierName = props['承运商'];
   const supplierName = props['供应商'];
-  const region = props['目的区域'];
 
   if (carrierName && carrierMap[carrierName]) {
     await api('POST', '/api/v1/ontologies/' + oid + '/graph/relations', {

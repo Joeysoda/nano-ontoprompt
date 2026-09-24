@@ -94,7 +94,7 @@ export default function OverviewPage() {
   const navigate = useNavigate()
   const query = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats'],
-    queryFn: () => apiClientV2.get('/dashboard') as any,
+    queryFn: () => apiClientV2.get<DashboardStats>('/dashboard'),
   })
   const data = { ...FALLBACK, ...(query.data ?? {}) }
   const classCounts = data.data_class_counts ?? FALLBACK.data_class_counts

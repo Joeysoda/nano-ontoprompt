@@ -407,7 +407,7 @@ export default function EntityDetailPage() {
               </thead>
               <tbody>
                 {instances.map((inst: any) => {
-                  const { name_cn, name_en, object_type, ...rest } = inst.row_data ?? {}
+                  const { name_cn, ...rest } = inst.row_data ?? {}
                   return (
                     <tr key={inst.id} className="border-t align-top">
                       <td className="px-3 py-2 text-xs font-medium text-gray-700 whitespace-nowrap">

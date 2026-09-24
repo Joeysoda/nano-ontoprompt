@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Search } from "lucide-react";
 import { apiClientV2 } from "@/api/client";
+import { useNavigate } from "react-router-dom";
 
 type Rule = {
   id: string;
@@ -29,6 +30,7 @@ function printed(value: unknown) {
 }
 
 export default function LogicTab({ ontologyId }: { ontologyId: string }) {
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const { data, isLoading, error } = useQuery({
     queryKey: ["ontology-logic-rules", ontologyId],
@@ -73,6 +75,13 @@ export default function LogicTab({ ontologyId }: { ontologyId: string }) {
     );
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4">
+        <div>
+          <p className="font-semibold text-violet-950">需要运行本地异构逻辑？</p>
+          <p className="mt-1 text-xs text-violet-800">业务规则、数学、统计、机器学习、优化和规划逻辑都在这里绑定和执行。</p>
+        </div>
+        <button onClick={() => navigate(`/ontologies/${ontologyId}?tab=logic-assets`)} className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">打开逻辑绑定</button>
+      </div>
       <div className="relative max-w-md">
         <Search
           size={15}

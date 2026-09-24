@@ -15,7 +15,7 @@ export const ontologyApi = {
   deleteFile: (oid: string, fid: string) => apiClient.delete(`/ontologies/${oid}/files/${fid}`),
 
   // Graph
-  getGraph: (oid: string) => apiClient.get<{ nodes: object[]; edges: object[]; meta: object }>(`/ontologies/${oid}/graph`),
+  getGraph: (oid: string) => apiClient.get<{ nodes: Array<{ data: { id: string; label: string; type?: string } }>; edges: Array<{ data: { id: string; source: string; target: string; label?: string; type?: string; confidence?: number } }>; meta: { entity_count?: number; relation_count?: number } }>(`/ontologies/${oid}/graph`),
   createRelation: (oid: string, body: object) => apiClient.post(`/ontologies/${oid}/graph/relations`, body),
   deleteRelation: (oid: string, rid: string) => apiClient.delete(`/ontologies/${oid}/graph/relations/${rid}`),
 

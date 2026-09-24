@@ -24,6 +24,8 @@ import MultimodalDataPage from "@/pages/data-management/multimodal/MultimodalDat
 import TemporalConstructionWizard from "@/pages/data-management/temporal/TemporalConstructionWizard";
 import TemporalWorkbenchPage from "@/pages/data-management/temporal/TemporalWorkbenchPage";
 import BenchmarksPage from "@/pages/benchmarks/BenchmarksPage";
+import WhatIfWorkbenchPage, { WhatIfDemoLandingPage } from "@/pages/what-if/SupplierStudyPage";
+import GenericScenarioWorkbenchPage, { ScenarioCatalogPage } from "@/pages/what-if/GenericScenarioWorkbenchPage";
 
 class AppErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -207,6 +209,22 @@ export default function App() {
                   <OntologyDetailPage />
                 </ProtectedRoute>
               }
+            />
+            <Route
+              path="/what-if"
+              element={<ProtectedRoute><WhatIfDemoLandingPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/scenarios"
+              element={<ProtectedRoute><ScenarioCatalogPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/ontologies/:id/scenarios"
+              element={<ProtectedRoute><GenericScenarioWorkbenchPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/ontologies/:id/what-if"
+              element={<ProtectedRoute><WhatIfWorkbenchPage /></ProtectedRoute>}
             />
             <Route
               path="/ontologies/:id/entities/:eid"

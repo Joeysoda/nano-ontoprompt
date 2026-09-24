@@ -1,18 +1,17 @@
 import { useState, useEffect } from 'react'
-import { HardDrive, Loader2 } from 'lucide-react'
 import { apiClientV2 } from '@/api/client'
 
 export default function StorageInspector({ config, onChange, readOnly = false, pipelineId }: { config: Record<string, unknown>; onChange: (key: string, value: unknown) => void; readOnly?: boolean; pipelineId?: string }) {
   const schemaOn = config.schema_inference !== false
-  const [runtimeData, setRuntimeData] = useState<{ columns: string[]; rows_in: number; sample: any } | null>(null)
+  const [runtimeData, setRuntimeData] = useState<{ columns: string[]; rows_in: number; sample: Record<string, unknown> } | null>(null)
 
   // Load runtime data when in read-only mode and pipeline has been run
   useEffect(() => {
     if (!readOnly || !pipelineId) return
-    apiClientV2.get(`/pipelines/${pipelineId}/runs`).then((runs: any) => {
+    apiClientV2.get<Array<{ id: string }>>(`/pipelines/${pipelineId}/runs`).then(runs => {
       const lastRun = Array.isArray(runs) && runs.length > 0 ? runs[runs.length - 1] : null
       if (!lastRun) return
-      apiClientV2.get(`/pipelines/runs/${lastRun.id}`).then((detail: any) => {
+      apiClientV2.get<{ stats?: { rows_in: number; meta?: { inferred_schema?: Record<string, unknown> } } }>(`/pipelines/runs/${lastRun.id}`).then(detail => {
         if (detail?.stats) {
           const meta = detail.stats.meta || {}
           const schema = meta.inferred_schema || {}
@@ -42,7 +41,7 @@ export default function StorageInspector({ config, onChange, readOnly = false, p
               {runtimeData.columns.map((col: string, i: number) => (
                 <div key={i} className="flex justify-between text-gray-600">
                   <span>{col}</span>
-                  <span className="text-gray-400">{String((runtimeData.sample as any)[col] || '?')}</span>
+                  <span className="text-gray-400">{String(runtimeData.sample[col] || '?')}</span>
                 </div>
               ))}
             </div>

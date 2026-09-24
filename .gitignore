@@ -49,7 +49,13 @@ AGENTS.md
 CLAUDE.md
 nano-ontoprompt-requirements.md
 prompt-harness-rules-for-coding-agent.md
-docs/
+docs/*
+!docs/DEMO_SUPPLIER_SCENARIO_WORKBENCH.md
+!docs/VERIFY_SUPPLIER_SCENARIO_WORKBENCH.md
+!docs/PLAN_SCENARIO_CONTEXT_PROVIDER.md
+!docs/PALANTIR_ONTOLOGY_GAP_AUDIT_2026_09_23.md
+!docs/PLAN_PERSON_A_SEMANTIC_CORE_SECURITY_DATA_PLANE.md
+!docs/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md
 pipeline-builder-redesign-plan.md
 PRD_AND_ARCHITECTURE_v1.1_logic_actions.md
 PRD_AND_ARCHITECTURE.md

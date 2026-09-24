@@ -1,0 +1,31 @@
+services:
+  backend:
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=10)\" || exit 1"]
+      interval: 5s
+      timeout: 12s
+      retries: 12
+
+  frontend-playwright:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.playwright
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+      VITE_AUTH_MODE: local_single_user
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:5173
+      CI: "true"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./frontend:/app
+      - frontend_playwright_node_modules:/app/node_modules
+      - ./frontend/test-results:/app/test-results
+      - ./frontend/playwright-report:/app/playwright-report
+    ipc: host
+    init: true
+    command: npm run test:e2e
+
+volumes:
+  frontend_playwright_node_modules:

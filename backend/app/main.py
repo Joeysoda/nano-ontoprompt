@@ -43,6 +43,14 @@ from app.routers.v2 import model_routes as model_routes_v2
 from app.routers.v2 import reasoning_workbench as reasoning_v2
 from app.routers.v2 import decisions as decisions_v2
 from app.routers.v2 import agent as agent_v2
+from app.routers.v2 import manufacturing_data as manufacturing_data_v2
+from app.routers.v2 import logic_assets as logic_assets_v2
+from app.routers.v2 import object_query as object_query_v2
+from app.routers.v2 import object_sets as object_sets_v2
+from app.routers.v2 import scenarios as scenarios_v2
+from app.routers.v2 import scenario_workbench as scenario_workbench_v2
+from app.routers.v2 import what_if_demo as what_if_demo_v2
+from app.routers.v2 import supplier_studies as supplier_studies_v2
 
 def _run_schema_migration():
     """统一 schema 迁移入口。
@@ -70,6 +78,11 @@ def _run_schema_migration():
     except Exception:
         # 开发环境兜底：alembic 失败时用 create_all 保证表结构就位
         logger.warning("alembic upgrade failed; falling back to Base.metadata.create_all", exc_info=True)
+        # Alembic may leave a pooled PostgreSQL connection in an aborted
+        # transaction (for example when an external deployment has a
+        # revision absent from this checkout).  Drop that connection before
+        # the fallback and before startup seeding opens its session.
+        engine.dispose()
         Base.metadata.create_all(bind=engine)
 
 
@@ -94,6 +107,10 @@ def _seed_db():
         from app.models.v2.multimodal import ExtractedFragment  # noqa: F401
         from app.models.v2.multimodal_install import MultimodalInstallTask  # noqa: F401
         from app.models.v2.construction_draft import ConstructionDraft  # noqa: F401
+        from app.models.v2.logic_asset import LogicAsset, LogicAssetRun  # noqa: F401
+        from app.models.v2.query_view import QueryDataView  # noqa: F401
+        from app.models.v2.query_job import QueryJob  # noqa: F401
+        from app.models.v2.scenario import ScenarioResource, ScenarioRevision, ScenarioChangeSet, ScenarioRun, ScenarioRunStage, ScenarioMetricSnapshot, ScenarioGrant, ScenarioAudit, ScenarioStudy, ScenarioStudyCase  # noqa: F401
         from app.models.v2.workbench_task import MappingTask, DataImportTask, ModelInvocation  # noqa: F401
         _run_schema_migration()
 
@@ -143,7 +160,15 @@ def _seed_db():
 
         # 重启时清理遗留的 running 任务 — daemon 线程被杀后 task 会永久卡在 85%
         from app.models.extraction_task import ExtractionTask
-        stale = db.query(ExtractionTask).filter(ExtractionTask.status == "running").all()
+        try:
+            stale = db.query(ExtractionTask).filter(ExtractionTask.status == "running").all()
+        except Exception:
+            # A deployment with an external/unknown Alembic revision can leave
+            # the first pooled connection aborted.  Startup seeding is best
+            # effort; rollback and let the API start with the existing schema.
+            db.rollback()
+            logger.warning("Stale extraction-task cleanup skipped", exc_info=True)
+            stale = []
         for t in stale:
             t.status = "failed"
             t.error  = "服务重启，任务中断。请重新触发提取。"
@@ -299,6 +324,14 @@ app.include_router(model_routes_v2.invocations_router, prefix="/api/v2", tags=["
 app.include_router(reasoning_v2.router, prefix="/api/v2/ontologies", tags=["v2-reasoning"])
 app.include_router(decisions_v2.router, prefix="/api/v2/ontologies", tags=["v2-decisions"])
 app.include_router(agent_v2.router, prefix="/api/v2/ontologies", tags=["v2-agent"])
+app.include_router(manufacturing_data_v2.router, prefix="/api/v2/ontologies", tags=["v2-manufacturing-data"])
+app.include_router(logic_assets_v2.router, prefix="/api/v2/ontologies", tags=["v2-logic-assets"])
+app.include_router(object_query_v2.router, prefix="/api/v2/ontologies", tags=["v2-object-query"])
+app.include_router(object_sets_v2.router, prefix="/api/v2/ontologies", tags=["v2-object-sets"])
+app.include_router(scenarios_v2.router, prefix="/api/v2/ontologies", tags=["v2-scenarios"])
+app.include_router(scenario_workbench_v2.router, prefix="/api/v2/ontologies", tags=["v2-scenario-workbench"])
+app.include_router(what_if_demo_v2.router, prefix="/api/v2/what-if", tags=["v2-what-if-demo"])
+app.include_router(supplier_studies_v2.router, prefix="/api/v2/ontologies", tags=["v2-supplier-studies"])
 
 def get_db():
     db = SessionLocal()

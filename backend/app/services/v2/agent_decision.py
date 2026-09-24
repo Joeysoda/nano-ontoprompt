@@ -63,6 +63,31 @@ class AgentToolbox:
         from app.services.v2.agent_context import context_for
         return context_for(self, task)
 
+    def manufacturing_context(self, object_id: str) -> dict[str, Any]:
+        """Read complete imported manufacturing dependencies for an object.
+
+        This is a source snapshot, not live scenario state and not a simulation.
+        Return explicit missing inputs; never invent timing or cost outcomes.
+        """
+        from app.models.v2.construction import ConstructionRun
+        from app.services.v2.manufacturing_data import context
+        run = self.db.get(ConstructionRun, self.ontology_id + ':import')
+        if not run or run.config.get('adapter') != 'frepple_fixture_v1':
+            return {'available': False, 'reason': '当前本体没有制造业务导入快照'}
+        if run.status != 'completed':
+            raise ValueError('制造业务导入未完成，不能提供已就绪上下文')
+        report = run.config['report']
+        try:
+            result = context(report, object_id)
+        except KeyError:
+            raise ValueError('对象不属于当前制造业务数据集')
+        result.update({'source_url': report['source_url'], 'sha256': report['sha256'],
+            'readiness': report['readiness'], 'limitations': report['limitations'],
+            'field_semantics': report['field_semantics'], 'snapshot_only': True})
+        self.trace.append({'tool': 'manufacturing_context', 'object_id': object_id,
+            'nodes': len(result['nodes']), 'edges': len(result['edges']), 'source_sha256': report['sha256']})
+        return result
+
     def reasoning_context(self, run_id: str | None = None, conclusion: str | None = None) -> dict[str, Any]:
         query = self.db.query(ReasoningRun).filter_by(ontology_id=self.ontology_id)
         run = query.filter_by(id=run_id).first() if run_id else query.order_by(ReasoningRun.created_at.desc()).first()
@@ -200,7 +225,7 @@ def run_agno(toolbox: AgentToolbox, task: str, object_id: str | None, run_id: st
         model = OpenAIChat(id=model_id)
     agent = Agent(
         model=model,
-        tools=[toolbox.ontology_context, toolbox.object_context, toolbox.reasoning_context],
+        tools=[toolbox.ontology_context, toolbox.object_context, toolbox.reasoning_context, toolbox.manufacturing_context],
         instructions=[
             "只根据工具返回的对象、规则结论和证据生成建议。",
             "输出 JSON，字段为 category, scenario, reasoning, outcome, entity_ids, basis。",

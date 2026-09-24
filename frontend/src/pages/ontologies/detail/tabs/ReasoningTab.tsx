@@ -6,9 +6,14 @@ type Evidence = { fact: string; source: string; source_file?: string; source_row
 type Inference = { conclusion: string; rule: string; premises: string[]; evidence: Evidence[] };
 type Result = { run_id: string; status: string; facts: string[]; rules: string[]; inferred_facts: Inference[]; rules_fired: string[]; graph: { status: string; written: number; unary_facts?: number; reason?: string; missing_nodes?: string[] } };
 type Run = { run_id: string; status: string; created_at: string; derived_fact_count: number };
-type GraphData = { available: boolean; total_instances: number; nodes: Array<{ id: string; entity_type: string; properties: Record<string, any> }>; edges: Array<{ id: string; source: string; target: string; label: string; properties: Record<string, any> }> };
+type GraphProperties = { derived?: boolean; reasoning_run_id?: string; preview?: boolean; conclusion?: string; [key: string]: unknown };
+type GraphData = { available: boolean; total_instances: number; nodes: Array<{ id: string; entity_type: string; properties: GraphProperties }>; edges: Array<{ id: string; source: string; target: string; label: string; properties: GraphProperties }> };
 const button = "rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50";
-const message = (e: any) => typeof e?.detail === "string" ? e.detail : e?.detail?.message || e?.message || "请求失败";
+const message = (e: unknown) => {
+  if (typeof e !== "object" || e === null) return "请求失败";
+  const error = e as { detail?: string | { message?: string }; message?: string };
+  return typeof error.detail === "string" ? error.detail : error.detail?.message || error.message || "请求失败";
+};
 
 export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
   const base = `/ontologies/${ontologyId}/reasoning`;
@@ -21,7 +26,7 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [selected, setSelected] = useState<Inference | null>(null);
-  const [nodeDetails, setNodeDetails] = useState<Record<string, any> | null>(null);
+  const [nodeDetails, setNodeDetails] = useState<Record<string, unknown> | null>(null);
   const [derivedOnly, setDerivedOnly] = useState(false);
   const [query, setQuery] = useState("");
   const canvas = useRef<HTMLDivElement>(null);
@@ -38,7 +43,6 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
 
   useEffect(() => {
     let active = true;
-    setResult(null); setSelected(null); setError("");
     (async () => {
       const [inputs, history] = await Promise.all([
         apiClientV2.get<{facts: string[]; rules: string[]; truncated: boolean}>(`${base}/inputs`),
@@ -63,7 +67,7 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
       setFacts(data.facts.join("\n")); setRules(data.rules.join("\n"));
       setResult(null); setSelected(null);
       setNotice(`已加载 ${data.facts.length} 条原始图事实${data.truncated ? "（前 500 个实例的子图）" : ""}；规则来自当前本体的可执行规则定义。`);
-    } catch(e) { setError(message(e)); } finally { setBusy(false); }
+    } catch(e: unknown) { setError(message(e)); } finally { setBusy(false); }
   }
   async function run() {
     setBusy(true); setError(""); setSelected(null);
@@ -75,7 +79,7 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
       setResult(data);
       setNotice("推理完成：预览及证据已保存为运行记录，尚未写入实例图。");
       await refresh();
-    } catch(e) { setError(message(e)); } finally { setBusy(false); }
+    } catch(e: unknown) { setError(message(e)); } finally { setBusy(false); }
   }
   async function save() {
     if (!result) return;
@@ -85,7 +89,7 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
       setResult(data);
       setNotice(data.status === "applied" ? `结果已保存；${data.graph.written} 条二元关系投影到图。刷新页面后仍可查看。` : "投影未完成；预览记录保留，可修正后重试。");
       await refresh();
-    } catch(e) { setError(message(e)); } finally { setBusy(false); }
+    } catch(e: unknown) { setError(message(e)); } finally { setBusy(false); }
   }
   async function restore(id: string) {
     if (!id) return;
@@ -93,7 +97,7 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
     try {
       const data = await apiClientV2.get<Result>(`${base}/runs/${id}`);
       setResult(data); setSelected(null); setFacts(data.facts.join("\n")); setRules(data.rules.join("\n"));
-    } catch(e) { setError(message(e)); } finally { setBusy(false); }
+    } catch(e: unknown) { setError(message(e)); } finally { setBusy(false); }
   }
 
   useEffect(() => {
@@ -103,7 +107,7 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
     const knownIds = new Set(graph.nodes.map(n => n.id));
     const previewFacts = result && result.status !== "applied" ? result.inferred_facts : [];
     const previewEdges = previewFacts.flatMap(item => {
-      const match = item.conclusion.match(/^([A-Za-z_][A-Za-z0-9_]*)\(([^,]+),([^\)]+)\)$/);
+      const match = item.conclusion.match(/^([A-Za-z_][A-Za-z0-9_]*)\(([^,]+),([^)]*)\)$/);
       if (!match) return [];
       const source = match[2].trim(); const target = match[3].trim();
       if (!knownIds.has(source) || !knownIds.has(target)) return [];
@@ -193,10 +197,10 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
     </section>}
     <section className="rounded-xl border bg-white p-5" data-testid="instance-graph">
       <div className="flex flex-wrap items-center gap-4"><h3 className="font-semibold">实例与派生关系图</h3>
-        <span data-testid="graph-counts" className="text-sm">{graph?.nodes.length || 0} 个实例 · 已保存 {graph?.edges.filter(e => e.properties?.derived && e.properties.reasoning_run_id === result?.run_id).length || 0} 条 · 预览 {result?.status === "preview" ? result.inferred_facts.filter(f => /^\w+\([^,]+,[^\)]+\)$/.test(f.conclusion)).length : 0} 条</span>
+        <span data-testid="graph-counts" className="text-sm">{graph?.nodes.length || 0} 个实例 · 已保存 {graph?.edges.filter(e => e.properties?.derived && e.properties.reasoning_run_id === result?.run_id).length || 0} 条 · 预览 {result?.status === "preview" ? result.inferred_facts.filter(f => /^\w+\([^,]+,[^)]*\)$/.test(f.conclusion)).length : 0} 条</span>
         <label className="text-sm"><input type="checkbox" checked={derivedOnly} onChange={e => setDerivedOnly(e.target.checked)} /> 仅派生关系</label>
         <button className={button} onClick={() => cy.current?.fit(undefined, 30)}>显示全图</button>
-        <button className={button} onClick={() => refresh().catch(e => setError(message(e)))}>刷新实例图</button>
+      <button className={button} onClick={() => refresh().catch((e: unknown) => setError(message(e)))}>刷新实例图</button>
       </div>
       <p className="my-2 text-xs text-slate-500">灰色为来源关系；紫色虚线为本次运行的临时预览，紫色实线为已保存的派生关系。点击关系查看证据；滚轮缩放、拖拽平移。</p>
       {graph && !graph.available && <p className="text-red-700">图数据库不可用</p>}

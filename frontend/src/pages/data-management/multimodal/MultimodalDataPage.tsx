@@ -542,7 +542,7 @@ export default function MultimodalDataPage() {
     if (!restoredRunId || run?.id === restoredRunId) return;
     let cancelled = false;
     constructionApi
-      .getRun(restoredRunId)
+      .getRun<Run>(restoredRunId)
       .then((restored) => {
         if (cancelled) return;
         if (restored.mode !== "multimodal") {
@@ -620,7 +620,7 @@ export default function MultimodalDataPage() {
     const timer = window.setInterval(
       () =>
         constructionApi
-          .getRun(run.id)
+          .getRun<Run>(run.id)
           .then(setRun)
           .catch(() => {}),
       1600,

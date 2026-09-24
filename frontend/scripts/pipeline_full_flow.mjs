@@ -18,7 +18,6 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5173';
-const API  = 'http://localhost:8000';
 const SS   = path.join(__dirname, 'pipeline_screenshots');
 fs.mkdirSync(SS, { recursive: true });
 
@@ -142,15 +141,13 @@ console.log(`  🔄 Pipeline 2 → ${pl2Id?.slice(0,8)}`);
 
 // 4. 同步运行 Pipeline（绕过 Celery）
 console.log('\n▶️  [4] 运行 Pipeline（同步）...');
-let curated1Id, curated2Id;
 if (pl1Id) {
   const run1 = await apiCall('POST', `/api/v2/pipelines/${pl1Id}/run-sync`, null, token);
   console.log(`  Pipeline 1 状态: ${run1?.body?.status ?? run1?.body?.data?.status ?? JSON.stringify(run1?.body).slice(0,60)}`);
   // 获取该 pipeline 生成的 curated dataset id
   const runId1 = run1?.body?.run_id || run1?.body?.data?.run_id;
   if (runId1) {
-    const runDetail = await apiCall('GET', `/api/v2/pipelines/runs/${runId1}`, null, token);
-    curated1Id = runDetail?.body?.stats?.curated_dataset_id || runDetail?.body?.data?.stats?.curated_dataset_id;
+    await apiCall('GET', `/api/v2/pipelines/runs/${runId1}`, null, token);
   }
 }
 if (pl2Id) {
@@ -158,8 +155,7 @@ if (pl2Id) {
   console.log(`  Pipeline 2 状态: ${run2?.body?.status ?? run2?.body?.data?.status ?? JSON.stringify(run2?.body).slice(0,60)}`);
   const runId2 = run2?.body?.run_id;
   if (runId2) {
-    const runDetail = await apiCall('GET', `/api/v2/pipelines/runs/${runId2}`, null, token);
-    curated2Id = runDetail?.body?.stats?.curated_dataset_id;
+    await apiCall('GET', `/api/v2/pipelines/runs/${runId2}`, null, token);
   }
 }
 

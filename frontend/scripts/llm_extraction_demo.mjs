@@ -16,19 +16,18 @@
  */
 import { chromium } from '@playwright/test'
 import { mkdirSync, rmSync } from 'fs'
-import path from 'path'
 import { execSync } from 'child_process'
 
 const BASE   = 'http://localhost:5173'
 const SS_DIR = 'llm_extraction_screenshots'
-try { rmSync(SS_DIR, { recursive: true }) } catch {}
+try { rmSync(SS_DIR, { recursive: true }) } catch { /* directory may not exist */ }
 mkdirSync(SS_DIR, { recursive: true })
 
 // ── Pre-setup via Python script ───────────────────────────────────────────────
 console.log('  🔧 Creating ontology and uploading files via API...')
 const setupResult = JSON.parse(execSync('python llm_setup.py', { encoding: 'utf8' }).trim())
 
-const { oid, name: ontologyName, model_id, prompt_id, files } = setupResult
+const { oid, name: ontologyName, files } = setupResult
 console.log(`  ✓ Ontology: ${ontologyName} (${oid})`)
 console.log(`  ✓ Files uploaded: ${files.join(', ')}`)
 

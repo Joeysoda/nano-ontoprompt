@@ -2,12 +2,14 @@ import { useForm } from 'react-hook-form'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { authApi } from '@/api/auth'
+import { getApiErrorStatus } from '@/api/client'
 import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 
 export default function LoginPage() {
   const { register, handleSubmit } = useForm<{ username: string; password: string }>()
   const setAuth = useAuthStore(s => s.setAuth)
+  const logout = useAuthStore(s => s.logout)
   const navigate = useNavigate()
   const { t } = useTranslation()
   const [error, setError] = useState('')
@@ -17,17 +19,20 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await authApi.login(data.username, data.password) as any
+      const res = await authApi.login(data.username, data.password)
       localStorage.setItem('token', res.access_token)
-      const profile = await authApi.profile() as any
+      const profile = await authApi.profile()
       setAuth(profile, res.access_token)
       // `/` is intentionally the unauthenticated entry and redirects to the
       // login form. After a successful login go straight to the workbench.
       navigate('/overview')
-    } catch (e: any) {
-      localStorage.removeItem('token')
-      console.error('login failed:', e)
-      setError(e?.response ? t('auth.login_error') : t('auth.network_error'))
+    } catch (e: unknown) {
+      logout()
+      const status = getApiErrorStatus(e)
+      setError(status === 401 ? t('auth.login_error')
+        : status === 429 ? t('auth.rate_limit_error', '登录尝试过于频繁，请稍后重试')
+        : status !== undefined ? t('auth.service_error', '登录服务暂时不可用，请稍后重试')
+        : t('auth.network_error'))
     } finally {
       setLoading(false)
     }
@@ -49,7 +54,7 @@ export default function LoginPage() {
             <input {...register('password', { required: true })} type="password" placeholder="密码"
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
           </div>
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+          {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
           <button type="submit" disabled={loading}
             className="w-full bg-black text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50">
             {loading ? t('common.loading') : t('auth.login')}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ontologyApi } from '@/api/ontologies'
 import cytoscape from 'cytoscape'
@@ -41,19 +41,17 @@ function edgeColor(type: string): string {
 }
 
 export default function GraphTab({ ontologyId }: { ontologyId: string }) {
-  const containerRef = useRef<HTMLDivElement>(null)
   const cyRef = useRef<cytoscape.Core | null>(null)
-  const [selected, setSelected] = useState<any>(null)
+  const [selected, setSelected] = useState<{ id: string; source?: string } | null>(null)
   const [info, setInfo] = useState<string>('')
   const [layout, setLayout] = useState<'cose' | 'breadthfirst' | 'circle'>('cose')
-  const [legendTypes, setLegendTypes] = useState<{ type: string; color: string }[]>([])
   const [initError, setInitError] = useState<string | null>(null)
   const [searchQ, setSearchQ] = useState('')
   const qc = useQueryClient()
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['graph', ontologyId],
-    queryFn: () => ontologyApi.getGraph(ontologyId) as any,
+    queryFn: () => ontologyApi.getGraph(ontologyId),
   })
 
   const deleteMut = useMutation({
@@ -61,16 +59,16 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['graph', ontologyId] }),
   })
 
-  useEffect(() => {
+  const containerRef = useCallback((container: HTMLDivElement | null) => {
+    if (!container || !data) return
     setInitError(null)
-    if (!containerRef.current || !data) return
 
     // Sanitize: drop nodes with null/empty id or label, deduplicate by id
-    const rawNodes = (data.nodes || []) as any[]
-    const rawEdges = (data.edges || []) as any[]
+    const rawNodes = data.nodes || []
+    const rawEdges = data.edges || []
 
     const seenNodeIds = new Set<string>()
-    const nodes = rawNodes.filter((n: any) => {
+    const nodes = rawNodes.filter((n) => {
       if (!n.data?.id || !n.data?.label) return false
       if (seenNodeIds.has(n.data.id)) return false
       seenNodeIds.add(n.data.id)
@@ -78,7 +76,7 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
     })
 
     const seenEdgeIds = new Set<string>()
-    const edges = rawEdges.filter((e: any) => {
+    const edges = rawEdges.filter((e) => {
       if (!e.data?.id || !e.data?.source || !e.data?.target) return false
       if (e.data.source === e.data.target) return false  // skip self-loops
       if (!seenNodeIds.has(e.data.source) || !seenNodeIds.has(e.data.target)) return false
@@ -87,17 +85,9 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
       return true
     })
 
-    // Collect unique types for legend
-    const typeSet = new Map<string, string>()
-    nodes.forEach((n: any) => {
-      const t = n.data.type || '未分类'
-      if (!typeSet.has(t)) typeSet.set(t, typeColor(t))
-    })
-    setLegendTypes(Array.from(typeSet.entries()).map(([type, color]) => ({ type, color })))
-
     if (cyRef.current) cyRef.current.destroy()
 
-    const layoutOptions: Record<string, any> = {
+    const layoutOptions: Record<string, cytoscape.LayoutOptions> = {
       cose: {
         name: 'cose',
         animate: false,
@@ -130,8 +120,8 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
     }
 
     // Compute per-node size based on label length
-    const nodeElements = nodes.map((n: any) => {
-      const deg = edges.filter((e: any) =>
+    const nodeElements = nodes.map((n) => {
+      const deg = edges.filter((e) =>
         e.data.source === n.data.id || e.data.target === n.data.id
       ).length
       const labelLen = (n.data.label || '').length
@@ -150,10 +140,10 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
     let cy: cytoscape.Core
     try {
     cy = cytoscape({
-      container: containerRef.current,
+      container,
       elements: [
         ...nodeElements,
-        ...edges.map((e: any) => ({
+        ...edges.map((e) => ({
           data: {
             ...e.data,
             edgeColor: edgeColor(e.data.label || e.data.type || ''),
@@ -171,10 +161,10 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
             'font-weight': 'bold',
             'text-valign': 'center',
             'text-halign': 'center',
-            'width': 'data(size)' as any,
-            'height': 'data(size)' as any,
+            'width': 'data(size)',
+            'height': 'data(size)',
             'text-wrap': 'wrap',
-            'text-max-width': 'data(textMaxWidth)' as any,
+            'text-max-width': 'data(textMaxWidth)',
             'border-width': '0px',
             'text-outline-width': '2px',
             'text-outline-color': 'data(color)',
@@ -318,18 +308,20 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
         e.addClass('search-dim')
       }
     })
-  }, [searchQ])
+  }, [searchQ, data, layout])
 
   if (isLoading) return <div className="text-gray-400 text-center py-12">加载图谱中...</div>
+  if (isError) return <div role="alert">图谱加载失败<button onClick={() => void refetch()}>重试</button></div>
   if (initError) return (
     <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
       <p className="text-red-600 font-medium mb-2">本体关系渲染失败</p>
       <p className="text-red-400 text-sm font-mono mb-4">{initError}</p>
-      <button onClick={() => setInitError(null)} className="px-3 py-1.5 text-sm border border-red-300 text-red-500 rounded-lg hover:bg-red-100">重试</button>
+      <button onClick={() => {setInitError(null); void refetch();}} className="px-3 py-1.5 text-sm border border-red-300 text-red-500 rounded-lg hover:bg-red-100">重试</button>
     </div>
   )
 
-  const meta = data?.meta as any
+  const legendTypes = [...new Set((data?.nodes || []).map(n => n.data.type || '未分类'))].map(type => ({ type, color: typeColor(type) }))
+  const meta = data?.meta
   const isEmpty = !data?.nodes?.length
 
   return (
@@ -371,7 +363,7 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
         </div>
 
         {/* Zoom controls */}
-        {cyRef.current && (
+        {!isEmpty && (
           <div className="flex items-center gap-1">
             <button onClick={() => cyRef.current?.zoom(cyRef.current.zoom() * 1.2)}
               className="p-1 rounded hover:bg-gray-100 text-gray-600"><ZoomIn size={15} /></button>

@@ -1,7 +1,8 @@
-import React, { lazy, Suspense, useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ontologyApi } from "@/api/ontologies";
+import { getApiErrorStatus } from "@/api/client";
 import StatusBadge from "@/components/StatusBadge";
 import EntitiesTab from "./tabs/EntitiesTab";
 import LogicTab from "./tabs/LogicTab";
@@ -9,9 +10,12 @@ import AuditTab from "./tabs/AuditTab";
 import ReasoningTab from "./tabs/ReasoningTab";
 import DecisionsTab from "./tabs/DecisionsTab";
 import AgentDecisionTab from "./tabs/AgentDecisionTab";
+import ManufacturingDataTab from "./tabs/ManufacturingDataTab";
+import LogicAssetsTab from "./tabs/LogicAssetsTab";
+import ObjectQueryTab from "./tabs/ObjectQueryTab";
 
 const GraphTab = lazy(() => import("./tabs/GraphTabV2"));
-type Tab = "graph" | "entities" | "logic" | "audit" | "reasoning" | "decisions" | "agent";
+type Tab = "graph" | "entities" | "objects" | "logic" | "audit" | "reasoning" | "decisions" | "agent" | "manufacturing" | "logic-assets";
 
 class OntologyCanvasBoundary extends React.Component<
   { children: React.ReactNode },
@@ -47,14 +51,13 @@ export default function OntologyDetailPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requested = searchParams.get("tab") || "graph";
-  const initialTab: Tab =
-    requested === "entities" || requested === "logic" || requested === "audit" || requested === "reasoning" || requested === "decisions"
-      || requested === "agent"
+  const activeTab: Tab =
+    requested === "entities" || requested === "objects" || requested === "logic" || requested === "audit" || requested === "reasoning" || requested === "decisions"
+      || requested === "agent" || requested === "manufacturing" || requested === "logic-assets"
       ? requested
       : "graph";
-  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   useEffect(() => {
-    if (!id || ["graph", "entities", "logic", "audit", "reasoning", "decisions", "agent"].includes(requested))
+    if (!id || ["graph", "entities", "objects", "logic", "audit", "reasoning", "decisions", "agent", "manufacturing", "logic-assets"].includes(requested))
       return;
     const entity = searchParams.get("entity");
     navigate(
@@ -62,26 +65,33 @@ export default function OntologyDetailPage() {
       { replace: true },
     );
   }, [id, navigate, requested, searchParams]);
-  const { data: ontology, isLoading } = useQuery({
+  const { data: ontology, isLoading, error, refetch } = useQuery({
     queryKey: ["ontology", id],
-    queryFn: () => ontologyApi.get(id!) as any,
+    queryFn: () => ontologyApi.get(id!),
     enabled: !!id,
   });
   if (isLoading)
-    return <div className="p-6 text-sm text-slate-500">正在加载本体</div>;
+    return <div role="status" className="p-6 text-sm text-slate-500">正在加载本体</div>;
+  if (error)
+    return <div role="alert" className="p-6 text-sm text-red-600">
+      {getApiErrorStatus(error) === 404 ? "未找到本体或无访问权限" : "本体加载失败，请重试。"}
+      <button onClick={() => { void refetch(); }} className="ml-3 underline">重新加载</button>
+    </div>;
   if (!ontology)
     return <div className="p-6 text-sm text-red-600">未找到本体</div>;
   const tabs: Array<{ key: Tab; label: string }> = [
     { key: "graph", label: "本体" },
     { key: "entities", label: "实体" },
+    { key: "objects", label: "Objects" },
     { key: "logic", label: "逻辑规则" },
     { key: "audit", label: "质量审查" },
     { key: "reasoning", label: "推理验证" },
     { key: "decisions", label: "决策与影响链" },
     { key: "agent", label: "Agent 决策" },
+    { key: "manufacturing", label: "业务数据" },
+    { key: "logic-assets", label: "逻辑绑定" },
   ];
   const select = (tab: Tab) => {
-    setActiveTab(tab);
     const entity = searchParams.get("entity");
     navigate(
       `/ontologies/${id}?tab=${tab}${tab === "graph" && entity ? `&entity=${encodeURIComponent(entity)}` : ""}`,
@@ -103,7 +113,7 @@ export default function OntologyDetailPage() {
         </h1>
         {ontology.status && <StatusBadge status={ontology.status} />}
       </div>
-      <nav className="mb-5 flex gap-1 border-b border-slate-200">
+      <nav className="mb-5 flex flex-wrap gap-1 border-b border-slate-200">
         {tabs.map((tab) => (
           <button
             key={tab.key}
@@ -123,16 +133,19 @@ export default function OntologyDetailPage() {
               </div>
             }
           >
-            <GraphTab ontologyId={id!} />
+            <GraphTab key={id} ontologyId={id!} />
           </Suspense>
         </OntologyCanvasBoundary>
       )}
       {activeTab === "entities" && <EntitiesTab ontologyId={id!} />}
+      {activeTab === "objects" && <ObjectQueryTab key={id} ontologyId={id!} />}
       {activeTab === "logic" && <LogicTab ontologyId={id!} />}
       {activeTab === "audit" && <AuditTab ontologyId={id!} />}
-      {activeTab === "reasoning" && <ReasoningTab ontologyId={id!} />}
-      {activeTab === "decisions" && <DecisionsTab ontologyId={id!} />}
-      {activeTab === "agent" && <AgentDecisionTab ontologyId={id!} />}
+      {activeTab === "reasoning" && <ReasoningTab key={id} ontologyId={id!} />}
+      {activeTab === "decisions" && <DecisionsTab key={id} ontologyId={id!} />}
+      {activeTab === "agent" && <AgentDecisionTab key={id} ontologyId={id!} />}
+      {activeTab === "manufacturing" && <ManufacturingDataTab key={id} ontologyId={id!} />}
+      {activeTab === "logic-assets" && <LogicAssetsTab key={id} ontologyId={id!} />}
     </div>
   );
 }

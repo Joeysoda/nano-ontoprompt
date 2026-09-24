@@ -155,21 +155,21 @@ async function testPipelinesPage(page) {
     await page.click('a[href*="/pipelines/datasets"], a:has-text("Datasets")');
     await sleep(1500);
     await screenshot(page, '03_pipelines_datasets');
-  } catch(e) {}
+  } catch { /* optional page section unavailable */ }
 
   // 切换到 Transforms 子标签
   try {
     await page.click('a[href*="/pipelines/transforms"], a:has-text("Transforms")');
     await sleep(1500);
     await screenshot(page, '03_pipelines_transforms');
-  } catch(e) {}
+  } catch { /* optional page section unavailable */ }
 
   // 切换到 Curated 子标签
   try {
     await page.click('a[href*="/pipelines/curated"], a:has-text("Curated")');
     await sleep(1500);
     await screenshot(page, '03_pipelines_curated');
-  } catch(e) {}
+  } catch { /* optional page section unavailable */ }
 
   return { page: 'Pipelines', status: 'PASS', screenshot: '03_pipelines_connections.png' };
 }
@@ -217,7 +217,7 @@ async function testDomain(page, domain, index) {
       if (await domainInput.isVisible()) {
         await domainInput.fill(domain.domain);
       }
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     // 4. 如果有"简易 LLM 提取"选项就选它
     try {
@@ -226,7 +226,7 @@ async function testDomain(page, domain, index) {
         await simpleBtn.click();
         await sleep(1000);
       }
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     await screenshot(page, `${prefix}_02_form`);
 
@@ -281,7 +281,7 @@ async function testDomain(page, domain, index) {
 
     // 7. 当前 URL 获取本体 ID
     const currentUrl = page.url();
-    const urlMatch = currentUrl.match(/\/ontologies\/([^\/]+)/);
+    const urlMatch = currentUrl.match(/\/ontologies\/([^/]+)/);
     if (urlMatch) {
       result.ontologyId = urlMatch[1];
     }
@@ -299,7 +299,7 @@ async function testDomain(page, domain, index) {
         await screenshot(page, `${prefix}_06_graph`);
         result.screenshotGraph = `${prefix}_06_graph.png`;
       }
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     // 10. 尝试访问 Entities 标签
     try {
@@ -313,7 +313,7 @@ async function testDomain(page, domain, index) {
         const entCount = await page.locator('[class*="entity-item"], tr[class*="entity"], li[class*="entity"], .entity-row').count();
         result.entitiesExtracted = entCount;
       }
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     // 11. 尝试访问 Logic 标签
     try {
@@ -323,7 +323,7 @@ async function testDomain(page, domain, index) {
         await sleep(1500);
         await screenshot(page, `${prefix}_08_logic`);
       }
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     result.status = uploadedCount > 0 ? 'PASS' : 'PARTIAL';
     console.log(`  ✅ 完成: 上传 ${uploadedCount}/${domain.files.length} 个文件`);

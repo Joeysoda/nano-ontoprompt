@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Database, Loader2, X, Table2 } from 'lucide-react'
 import { apiClientV2 } from '@/api/client'
 
@@ -9,28 +10,27 @@ export default function OutputInspector({
   onChange: (key: string, value: unknown) => void
   readOnly?: boolean
 }) {
-  const curatedIds = ((config as any).curated_dataset_ids as string[] | undefined) || ((config as any).curated_dataset_id ? [(config as any).curated_dataset_id] : [])
-  const [previews, setPreviews] = useState<Record<string, any[]>>({})
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const [modalData, setModalData] = useState<{ title: string; rows: any[] } | null>(null)
-  const [datasetInfo, setDatasetInfo] = useState<Record<string, { name: string; rows: number; version_no: number }>>({})
-
-  useEffect(() => {
-    if (curatedIds.length === 0) return
-    setPreviewLoading(true)
-    Promise.all(curatedIds.map(async id => {
-      const info: any = await apiClientV2.get(`/curated/${id}`).catch(() => null)
-      const versions: any = await apiClientV2.get(`/datasets/${id}/versions`).catch(() => null)
+  const curatedIds = Array.isArray(config.curated_dataset_ids)
+    ? config.curated_dataset_ids.filter((id): id is string => typeof id === 'string')
+    : typeof config.curated_dataset_id === 'string' ? [config.curated_dataset_id] : []
+  const [modalData, setModalData] = useState<{ title: string; rows: Record<string, unknown>[] } | null>(null)
+  const preview = useQuery({
+    queryKey: ['pipeline-output-preview', curatedIds],
+    enabled: curatedIds.length > 0,
+    queryFn: () => Promise.all(curatedIds.map(async id => {
+      const info = await apiClientV2.get<{ name: string; row_count: number }>(`/curated/${id}`)
+      const versions = await apiClientV2.get<Array<{ version_no: number }>>(`/datasets/${id}/versions`)
       const versionNo = versions?.[0]?.version_no || 1
-      const rows: any = versions?.length
-        ? await apiClientV2.get(`/datasets/${id}/versions/${versionNo}/preview?limit=10000`).catch(() => [])
+      const rows = versions?.length
+        ? await apiClientV2.get<Record<string, unknown>[]>(`/datasets/${id}/versions/${versionNo}/preview?limit=10000`)
         : []
       return { id, info, versionNo, rows: Array.isArray(rows) ? rows : [] }
-    })).then(results => {
-      setDatasetInfo(Object.fromEntries(results.map(r => [r.id, { name: r.info?.name || r.id, rows: r.info?.row_count || r.rows.length, version_no: r.versionNo }])))
-      setPreviews(Object.fromEntries(results.map(r => [r.id, r.rows])))
-    }).finally(() => setPreviewLoading(false))
-  }, [curatedIds.join('|')])
+    })),
+  })
+  const previewLoading = preview.isLoading
+  const results = preview.data ?? []
+  const datasetInfo = Object.fromEntries(results.map(r => [r.id, { name: r.info.name || r.id, rows: r.info.row_count || r.rows.length, version_no: r.versionNo }]))
+  const previews = Object.fromEntries(results.map(r => [r.id, r.rows]))
 
   if (!readOnly) {
     return (
@@ -48,6 +48,7 @@ export default function OutputInspector({
 
   return (
     <div className="space-y-3">
+      {preview.error && <p role="alert" className="text-xs text-red-600">无法加载输出预览，请重试。</p>}
       <div className="bg-green-50 border border-green-200 rounded-lg p-3">
         <div className="flex items-center gap-1.5 text-xs text-green-700 font-medium mb-1"><Database size={12} />Curated Dataset(s)</div>
         <p className="text-xs text-green-600">{curatedIds.length} 张结构化输出表</p>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
 import { apiClientV2 } from '@/api/client'
 
@@ -14,25 +15,18 @@ interface SearchResult {
 export default function OntologySearchBox({ ontologyId }: { ontologyId: string }) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<SearchMode>('keyword')
-  const [results, setResults] = useState<SearchResult[]>([])
-  const [loading, setLoading] = useState(false)
-  const [searched, setSearched] = useState(false)
-
-  const handleSearch = async () => {
-    if (!query.trim()) return
-    setLoading(true)
-    try {
-      const endpoint = mode === 'semantic'
-        ? `/ontologies/${ontologyId}/search/semantic?q=${encodeURIComponent(query)}`
-        : `/ontologies/${ontologyId}/search/keyword?q=${encodeURIComponent(query)}`
-      const res: any = await apiClientV2.get(endpoint)
-      setResults(res.results || [])
-      setSearched(true)
-    } catch {
-      setResults([])
-    } finally {
-      setLoading(false)
-    }
+  const [submitted, setSubmitted] = useState<{ query: string; mode: SearchMode } | null>(null)
+  const search = useQuery({
+    queryKey: ['ontology-search', ontologyId, submitted],
+    enabled: Boolean(submitted),
+    queryFn: ({ signal }) => apiClientV2.get<{ results?: SearchResult[] }>(
+      `/ontologies/${ontologyId}/search/${submitted?.mode === 'semantic' ? 'semantic' : 'keyword'}?q=${encodeURIComponent(submitted?.query || '')}`, { signal }),
+  })
+  const results = search.data?.results || []
+  const loading = search.isFetching
+  const searched = search.isSuccess
+  const handleSearch = () => {
+    if (query.trim()) setSubmitted({ query: query.trim(), mode })
   }
 
   return (
@@ -42,7 +36,7 @@ export default function OntologySearchBox({ ontologyId }: { ontologyId: string }
           {(['keyword', 'semantic'] as const).map(m => (
             <button
               key={m}
-              onClick={() => setMode(m)}
+              onClick={() => { setMode(m); setSubmitted(null); }}
               className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                 mode === m ? 'bg-black text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
               }`}
@@ -53,7 +47,7 @@ export default function OntologySearchBox({ ontologyId }: { ontologyId: string }
         </div>
         <input
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={e => { setQuery(e.target.value); setSubmitted(null); }}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           placeholder={mode === 'semantic' ? '语义搜索...' : '关键词搜索...'}
           className="flex-1 border rounded px-3 py-1.5 text-sm"
@@ -67,6 +61,7 @@ export default function OntologySearchBox({ ontologyId }: { ontologyId: string }
         </button>
       </div>
 
+      {search.isError && <p role="alert">搜索服务不可用，请重试。<button onClick={() => void search.refetch()}>重试</button></p>}
       {searched && results.length === 0 && (
         <p className="text-sm text-gray-400">未找到相关结果。</p>
       )}
