@@ -331,6 +331,12 @@ Spike 后的接入门槛已经落地：三个依赖在 `package.json` 精确锁�
 
 本纵切面仍有明确边界：目前不支持外部副作用型 effect（review/repair/writeback 等）、不实现 configured Object View builder、不做自动 rebase，也不把页面图表或 legacy action shape 直接升级为长期 metadata contract。下一步应补齐 action metadata migration、ObjectPanel 在 Graph/Scenario 的复用，以及 save/compare/pivot 合同；这些不应通过重新分叉 compiler 实现。
 
+### 5.6 ObjectPanel 在 Scenario graph 的复用（已完成）
+
+Scenario study 的选中对象现在直接复用 Object Explorer 的 `ObjectPanel` 视觉壳、属性列表、关闭行为和操作区；Scenario-specific 的 model inputs、model outputs、warnings 作为 panel 内扩展内容注入。这样 Graph/Scenario 不再维护另一套 selection-card 外观，同时保留 pinned revision、run provenance 和模型结果的领域字段。
+
+本步只接入 Scenario object graph；ontology schema graph 的节点仍是 entity type metadata，不应伪装成 object instance，因此暂不强行套用对象 panel。下一步可在后端提供 instance-level graph contract 后，再接 Graph 的对象 panel adapter。
+
 ## 6. 与人员 A 的接口和文件所有权
 
 ### 人员 B 主要拥有

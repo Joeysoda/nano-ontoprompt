@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { X } from "lucide-react";
 
 export type ObjectPanelRecord = {
@@ -12,9 +13,23 @@ function displayValue(value: unknown): string {
   return String(value);
 }
 
-export default function ObjectPanel({ object, onClose }: { object: ObjectPanelRecord; onClose: () => void }) {
+export default function ObjectPanel({
+  object,
+  onClose,
+  children,
+  className = "",
+  showEmptyState = true,
+  testId,
+}: {
+  object: ObjectPanelRecord;
+  onClose: () => void;
+  children?: ReactNode;
+  className?: string;
+  showEmptyState?: boolean;
+  testId?: string;
+}) {
   return (
-    <aside className="oe-object-panel" aria-label={`${object.object_id} 对象预览`}>
+    <aside className={`oe-object-panel ${className}`.trim()} aria-label={`${object.object_id} 对象预览`} data-testid={testId}>
       <div className="oe-object-panel__header">
         <div className="min-w-0">
           <p className="oe-kicker">{object.object_type}</p>
@@ -34,7 +49,8 @@ export default function ObjectPanel({ object, onClose }: { object: ObjectPanelRe
           </div>
         ))}
       </dl>
-      {!Object.keys(object.properties).length && <p className="oe-empty-copy">该对象没有可显示的授权属性。</p>}
+      {showEmptyState && !Object.keys(object.properties).length && <p className="oe-empty-copy">该对象没有可显示的授权属性。</p>}
+      {children}
     </aside>
   );
 }
