@@ -55,3 +55,50 @@ def test_multiple_actions_use_prior_edits_as_expected_values():
         {"action_type_id": kind.id, "parameters": {"target": target, "value": "closed"}}],
         {kind.id: kind}, snapshot)
     assert [edit.expected_old_value for edit in edits if edit.op == "set_property"] == ["open", "review"]
+
+
+def test_legacy_effects_are_normalized_to_typed_edits():
+    kind = SimpleNamespace(
+        id="legacy_ticket_update",
+        version=1,
+        enabled=True,
+        status="published",
+        parameters=[{"name": "target_id", "type": "object_ref"},
+                    {"name": "status", "type": "string"}],
+        effects=[{"action": "set_property", "property": "status"}],
+        target_entity_type="Ticket",
+        permission_rules=None,
+        submission_criteria=None,
+    )
+    snapshot = SimpleNamespace(objects={("Ticket", "T-1"): {"status": "open"}}, edges=[])
+
+    edits = compile_actions(
+        "ontology",
+        "live",
+        [{"action_type_id": kind.id, "target_object_id": "T-1",
+          "parameters": {"status": "approved"}}],
+        {kind.id: kind},
+        snapshot,
+    )
+
+    assert [edit.op for edit in edits] == ["invoke_action", "set_property"]
+    assert edits[1].target.object_id == "T-1"
+    assert edits[1].expected_old_value == "open"
+    assert edits[1].value == "approved"
+
+
+def test_unknown_legacy_effect_fails_closed():
+    kind = SimpleNamespace(
+        id="legacy_unknown",
+        version=1,
+        enabled=True,
+        status="published",
+        parameters=[],
+        effects=[{"action": "external_side_effect"}],
+        permission_rules=None,
+        submission_criteria=None,
+    )
+
+    with pytest.raises(ScenarioError, match="Unknown Action effect"):
+        compile_actions("ontology", "live", [{"action_type_id": kind.id, "parameters": {}}],
+                        {kind.id: kind}, SimpleNamespace(objects={}, edges=[]))

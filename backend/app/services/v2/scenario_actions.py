@@ -1,7 +1,9 @@
-"""Compile user-authored, declarative Action types into isolated Scenario edits.
+"""Compile Action types into one target-neutral, ordered edit batch.
 
-The public form accepts values and object references only. Targets, edit order,
-and the hidden Scenario reference are resolved on the server.
+Both live execution and Scenario revisions consume the ``Edit`` values emitted
+here.  The compiler accepts the newer declarative ``op`` rules and the older
+runtime ``action`` rules, but third-party/UI syntax and unknown effects never
+cross this boundary.
 """
 from __future__ import annotations
 
@@ -108,8 +110,111 @@ def bind_parameters(definitions, submitted, objects):
     return values
 
 
-def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot):
-    """Return a complete, ordered ChangeSet; each invocation is auditable."""
+def _authorize(action_type, actor):
+    rules = getattr(action_type, "permission_rules", None) or []
+    if not rules:
+        return
+    if actor is None:
+        raise ScenarioError("forbidden", "Action permission context is required", 403, "permission_rules")
+    supported = {"role", "principal_id"}
+    for rule in rules:
+        if not isinstance(rule, dict) or not set(rule) or set(rule) - supported:
+            raise ScenarioError("invalid_permission_rule", "Unsupported Action permission rule", 422, "permission_rules")
+    if not any(
+        ("role" in rule and rule["role"] == getattr(actor, "role", None)) or
+        ("principal_id" in rule and rule["principal_id"] == getattr(actor, "id", None))
+        for rule in rules
+    ):
+        raise ScenarioError("forbidden", "Action permission denied", 403, "permission_rules")
+
+
+def _object_by_id(objects, object_id, expected_type=None):
+    matches = [(key, value) for key, value in objects.items()
+               if key[1] == object_id and (not expected_type or key[0] == expected_type)]
+    if len(matches) != 1:
+        raise ScenarioError("object_not_found" if not matches else "ambiguous_object",
+                            "Action target does not identify exactly one object", 404 if not matches else 422,
+                            "target_object_id")
+    return matches[0]
+
+
+def _validate_criteria(action_type, submitted, target_object_id, objects):
+    for index, criterion in enumerate(
+        getattr(action_type, "submission_criteria", None) or []
+    ):
+        if not isinstance(criterion, dict):
+            raise ScenarioError("invalid_submission_criterion", "Submission criterion must be an object",
+                                path=f"submission_criteria[{index}]")
+        ctype = str(criterion.get("type") or "").lower()
+        # Generated discovery metadata is descriptive until it is migrated to
+        # an executable criterion. It must not be mistaken for a passed check.
+        if not ctype and criterion.get("logic_type"):
+            continue
+        if ctype in {"required_target", "entity_exists", "field_equals"}:
+            object_id = target_object_id or submitted.get("target_id")
+            if not object_id:
+                raise ScenarioError("submission_criteria_failed", "target_object_id is required", 422,
+                                    f"submission_criteria[{index}]")
+            key, props = _object_by_id(
+                objects,
+                str(object_id),
+                getattr(action_type, "target_entity_type", None),
+            )
+            if ctype == "field_equals":
+                field, expected = criterion.get("field"), criterion.get("value")
+                if not field or props.get(field) != expected:
+                    raise ScenarioError("submission_criteria_failed",
+                                        f"{key[0]}.{field} does not match the required value", 422,
+                                        f"submission_criteria[{index}]")
+        elif ctype == "required_param":
+            name = criterion.get("name")
+            if not name or submitted.get(str(name)) in (None, ""):
+                raise ScenarioError("submission_criteria_failed", f"{name or 'parameter'} is required", 422,
+                                    f"submission_criteria[{index}]")
+        elif ctype:
+            raise ScenarioError("invalid_submission_criterion", f"Unsupported submission criterion: {ctype}",
+                                path=f"submission_criteria[{index}]")
+
+
+def _bind_legacy_parameters(definitions, submitted):
+    if not isinstance(submitted, dict):
+        raise ScenarioError("invalid_parameter", "Action parameters must be an object")
+    declared = {item.get("name") for item in definitions if isinstance(item, dict) and item.get("name")}
+    unknown = set(submitted) - declared
+    # target_id/source_id/target_id are historical routing fields and may be
+    # supplied even when an old definition omitted them.
+    unknown -= {"target_id", "source_id"}
+    if unknown:
+        raise ScenarioError("invalid_parameter", "Unknown Action parameter")
+    values = {}
+    for item in definitions:
+        if not isinstance(item, dict) or not item.get("name"):
+            raise ScenarioError("invalid_parameter", "Each parameter needs a name")
+        name = str(item["name"])
+        value = submitted.get(name, item.get("default"))
+        if value is None and item.get("required", True):
+            raise ScenarioError("missing_parameter", f"{name} is required")
+        kind = str(item.get("type") or "string")
+        if value is not None and kind in {"number", "integer", "decimal"} and (not isinstance(value, (int, float)) or isinstance(value, bool)):
+            raise ScenarioError("invalid_parameter", f"{name} must be numeric")
+        if value is not None and kind == "boolean" and not isinstance(value, bool):
+            raise ScenarioError("invalid_parameter", f"{name} must be true or false")
+        if value is not None and kind in {"object", "struct"} and name == "data" and not isinstance(value, dict):
+            raise ScenarioError("invalid_parameter", f"{name} must be an object")
+        values[name] = value
+    for routing_name in ("target_id", "source_id"):
+        if routing_name in submitted:
+            values[routing_name] = submitted[routing_name]
+    return values
+
+
+def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *, actor=None, id_factory=None):
+    """Return one complete, ordered edit batch for live or Scenario targets.
+
+    ``scenario_id`` is only used for deterministic Scenario-created IDs.  A
+    live caller can provide ``id_factory`` for its own IDs; the resulting
+    ``Edit`` objects are otherwise identical.
+    """
     if not isinstance(actions, list) or len(actions) > 30:
         raise ScenarioError("invalid_actions", "A Scenario supports at most 30 Actions")
     objects = {key: deepcopy(value) for key, value in snapshot.objects.items()}
@@ -123,18 +228,96 @@ def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot):
         return Target(ontology_id=ontology_id, concrete_type=value["object_type"], object_id=value["object_id"])
 
     for action_index, invocation in enumerate(actions):
-        if not isinstance(invocation, dict) or set(invocation) != {"action_type_id", "parameters"}:
+        if not isinstance(invocation, dict) or not {"action_type_id", "parameters"}.issubset(invocation) or set(invocation) - {"action_type_id", "parameters", "target_object_id"}:
             raise ScenarioError("invalid_actions", "Each Action needs a type and parameters")
         action_type = action_types.get(invocation["action_type_id"])
         if not action_type or not action_type.enabled or action_type.status != "published":
             raise ScenarioError("action_type_unavailable", "Select a published Action type", 422)
-        validate_definition(action_type.parameters, action_type.effects)
-        values = bind_parameters(action_type.parameters, invocation["parameters"], objects)
+        _authorize(action_type, actor)
+        values = {}
+        canonical_rules = all(isinstance(rule, dict) and "op" in rule for rule in (action_type.effects or []))
+        legacy_rules = all(isinstance(rule, dict) and "action" in rule for rule in (action_type.effects or []))
+        if action_type.effects and not (canonical_rules or legacy_rules):
+            raise ScenarioError("invalid_rule", "Action effects must use one supported rule format")
+        if canonical_rules:
+            validate_definition(action_type.parameters, action_type.effects)
+            values = bind_parameters(action_type.parameters, invocation["parameters"], objects)
+        elif legacy_rules:
+            legacy_submitted = dict(invocation["parameters"])
+            if invocation.get("target_object_id") and "target_id" not in legacy_submitted:
+                legacy_submitted["target_id"] = invocation["target_object_id"]
+            values = _bind_legacy_parameters(action_type.parameters or [], legacy_submitted)
+        _validate_criteria(action_type, invocation["parameters"], invocation.get("target_object_id"), objects)
         source = f"{action_type.id}@{action_type.version}"
         add(op="invoke_action", source_action=source, action_key=action_type.id,
             parameters={"action_type_version": action_type.version, "values": values})
         for rule_index, rule in enumerate(action_type.effects):
-            op = rule["op"]
+            op = rule.get("op") if canonical_rules else rule.get("action")
+            if not canonical_rules:
+                target_id = invocation.get("target_object_id") or values.get("target_id") or values.get("source_id")
+                if op in {"set_property", "create_object", "create_node", "update_object", "merge_relationship", "delete_relationship"} and op not in {"create_object", "create_node"} and not target_id and op == "set_property":
+                    raise ScenarioError("invalid_parameter", "Legacy property Action requires target_object_id")
+                if op == "set_property":
+                    key, props = _object_by_id(objects, str(target_id), action_type.target_entity_type)
+                    prop = rule.get("property")
+                    if not _public_name(prop):
+                        raise ScenarioError("invalid_rule", "Property rule needs a public property name")
+                    value = values.get(str(prop), invocation["parameters"].get(str(prop)))
+                    if isinstance(value, (dict, list)):
+                        raise ScenarioError("invalid_value", "Object and list values cannot be stored as scalar")
+                    ref = {"object_type": key[0], "object_id": key[1]}
+                    add(op="set_property", target=target(ref), property=prop, value=value,
+                        expected_old_value=props.get(prop), source_action=source)
+                    props[prop] = value
+                    continue
+                if op in {"create_object", "create_node"}:
+                    data = values.get("data") or invocation["parameters"].get("data") or {}
+                    if not isinstance(data, dict):
+                        raise ScenarioError("invalid_parameter", "create_object data must be an object")
+                    object_type = rule.get("entity_type") or rule.get("object_type") or action_type.target_entity_type or "Object"
+                    object_id = id_factory(action_index, rule_index) if id_factory else f"scenario:{scenario_id}:{action_index}:{rule_index}"
+                    props = {key: value for key, value in data.items() if _public_name(str(key))}
+                    props.setdefault("name", object_id)
+                    ref = {"object_type": object_type, "object_id": object_id}
+                    if (object_type, object_id) in objects:
+                        raise ScenarioError("duplicate_object", "Action creates the same object twice")
+                    add(op="create_object", target=target(ref), object_type=object_type, properties=props, source_action=source)
+                    objects[(object_type, object_id)] = props
+                    continue
+                if op == "update_object":
+                    target_id = invocation.get("target_object_id") or values.get("target_id")
+                    key, props = _object_by_id(objects, str(target_id), action_type.target_entity_type)
+                    data = values.get("data") or invocation["parameters"].get("data") or {}
+                    if not isinstance(data, dict):
+                        raise ScenarioError("invalid_parameter", "update_object data must be an object")
+                    ref = {"object_type": key[0], "object_id": key[1]}
+                    for prop, value in data.items():
+                        if not _public_name(str(prop)) or isinstance(value, (dict, list)):
+                            raise ScenarioError("invalid_rule", "update_object only accepts scalar public properties")
+                        add(op="set_property", target=target(ref), property=str(prop), value=value,
+                            expected_old_value=props.get(prop), source_action=source)
+                        props[str(prop)] = value
+                    continue
+                if op in {"merge_relationship", "delete_relationship"}:
+                    source_id = values.get("source_id") or invocation["parameters"].get("source_id")
+                    target_id = values.get("target_id") or invocation["parameters"].get("target_id")
+                    relation_type = rule.get("relation_type")
+                    source_key, _ = _object_by_id(objects, str(source_id))
+                    target_key, _ = _object_by_id(objects, str(target_id))
+                    edge = (source_key, relation_type, target_key)
+                    if op == "merge_relationship":
+                        links.add(edge)
+                    else:
+                        links.discard(edge)
+                    add(op="add_link" if op == "merge_relationship" else "remove_link",
+                        link=LinkTarget(ontology_id=ontology_id, relation_type=relation_type,
+                                        source=target({"object_type": source_key[0], "object_id": source_key[1]}),
+                                        target=target({"object_type": target_key[0], "object_id": target_key[1]})),
+                        source_action=source)
+                    continue
+                if op in {"review", "repair", "writeback"}:
+                    raise ScenarioError("unsupported_effect", f"Effect '{op}' has no ontology edit contract")
+                raise ScenarioError("unsupported_effect", f"Unknown Action effect '{op}'")
             if op in {"set_property", "unset_property", "delete_object"}:
                 ref = values[rule["target_parameter"]]
                 key = (ref["object_type"], ref["object_id"])
@@ -160,7 +343,7 @@ def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot):
                         objects[key].pop(prop, None)
             elif op == "create_object":
                 object_type = rule["object_type"]
-                object_id = f"scenario:{scenario_id}:{action_index}:{rule_index}"
+                object_id = id_factory(action_index, rule_index) if id_factory else f"scenario:{scenario_id}:{action_index}:{rule_index}"
                 props = {}
                 for prop, mapping in rule.get("properties", {}).items():
                     if not isinstance(mapping, dict) or ("parameter" in mapping) == ("static" in mapping):

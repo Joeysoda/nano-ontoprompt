@@ -1,6 +1,7 @@
 """PRD v1.1 Ontology Logic & Actions API"""
 from __future__ import annotations
 import uuid
+from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -13,6 +14,12 @@ from app.models.v2.logic import OntologyLogicRule, OntologyStateMachine
 from app.models.v2.action import OntologyActionType, OntologyActionRun
 from app.schemas.v2.object_query import ExecutionContext
 from app.services.v2.action_context import ActionContextError, action_context_error, resolve_action_context
+from app.services.v2.scenario_actions import compile_actions
+from app.services.v2.scenarios import ScenarioError, ScenarioService
+from app.models.v2.query_view import QueryDataView
+from app.services.v2.graph.falkordb_service import FalkorDBService
+from app.services.v2.object_query.core import FalkorReadAdapter
+from app.schemas.v2.scenario import RevisionRequest
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -252,6 +259,8 @@ class ActionRunRequest(BaseModel):
     target_object_id: Optional[str] = None
     parameters: dict = {}
     context: Optional[ExecutionContext] = None
+    expected_etag: Optional[int] = None
+    client_request_id: Optional[str] = None
 
 
 class ActionReviewRequest(BaseModel):
@@ -423,6 +432,127 @@ def list_action_runs(ontology_id: str, limit: int = 20, db: Session = Depends(ge
              "started_at": r.started_at.isoformat() if r.started_at else None} for r in runs]
 
 
+def _live_action_snapshot(db, ontology_id):
+    from app.models.entity import Entity
+    from app.models.relation import Relation
+    entities = db.query(Entity).filter(Entity.ontology_id == ontology_id).all()
+    objects = {}
+    for entity in entities:
+        object_type = entity.type or entity.name_en or entity.name_cn or "Entity"
+        objects[(object_type, entity.id)] = dict(entity.properties or {})
+    edges = []
+    for relation in db.query(Relation).filter(Relation.ontology_id == ontology_id).all():
+        source = next((key for key in objects if key[1] == relation.source_entity), None)
+        target = next((key for key in objects if key[1] == relation.target_entity), None)
+        if source and target:
+            edges.append((source, relation.type, target))
+    return SimpleNamespace(objects=objects, edges=edges)
+
+
+def _scenario_action_snapshot(db, context, current_user):
+    view = db.get(QueryDataView, context.data_view_id) if context.data_view_id else None
+    if not view or view.status != "ready":
+        raise ScenarioError("view_unavailable", "Scenario data view is unavailable", 409, "context.data_view_id")
+    graph = FalkorDBService()
+    if not graph.available:
+        raise ScenarioError("graph_unavailable", "FalkorDB is unavailable", 503, "execution")
+    return FalkorReadAdapter(graph._graph(view.graph_key), graph_ontology_id=view.graph_key).read(view.ontology_id)
+
+
+def _compile_action_request(ontology_id, action, body, resolved_context, db, current_user):
+    if resolved_context.target == "scenario":
+        snapshot = _scenario_action_snapshot(db, resolved_context.context, current_user)
+        scenario_key = resolved_context.context.scenario_id or "scenario"
+    else:
+        snapshot = _live_action_snapshot(db, ontology_id)
+        scenario_key = "live"
+    invocation = {"action_type_id": action.id, "parameters": body.parameters or {}}
+    if body.target_object_id:
+        invocation["target_object_id"] = body.target_object_id
+    id_factory = (lambda action_index, rule_index: str(uuid.uuid4())) if resolved_context.target == "live" else None
+    return compile_actions(ontology_id, scenario_key, [invocation], {action.id: action}, snapshot,
+                           actor=current_user, id_factory=id_factory)
+
+
+def _apply_live_edits(db, ontology_id, action, edits):
+    from app.models.entity import Entity
+    from app.models.relation import Relation
+    before_snapshot = {}
+    after_snapshot = {}
+    results = []
+    for edit in edits:
+        if edit.op == "invoke_action":
+            continue
+        if edit.op in {"set_property", "unset_property", "delete_object"}:
+            entity = db.query(Entity).filter(Entity.id == edit.target.object_id, Entity.ontology_id == ontology_id).first()
+            if not entity:
+                raise ValueError(f"Target entity not found: {edit.target.object_id}")
+            props = dict(entity.properties or {})
+            before_snapshot[entity.id] = dict(props)
+            if edit.expected_old_value is not None and props.get(edit.property) != edit.expected_old_value:
+                raise ValueError(f"Target property changed: {edit.property}")
+            if edit.op == "set_property":
+                props[edit.property] = edit.value
+            elif edit.op == "unset_property":
+                props.pop(edit.property, None)
+            else:
+                db.delete(entity)
+                results.append({"op": edit.op, "target_id": entity.id})
+                continue
+            entity.properties = props
+            entity.updated_at = datetime.now(timezone.utc)
+            after_snapshot[entity.id] = props
+            results.append({"op": edit.op, "target_id": entity.id, "property": edit.property})
+        elif edit.op == "create_object":
+            data = dict(edit.properties or {})
+            entity_id = edit.target.object_id
+            entity = Entity(id=entity_id, ontology_id=ontology_id,
+                            name_cn=str(data.get("display_name") or data.get("name") or f"{edit.object_type} {entity_id[:8]}")[:200],
+                            name_en=edit.object_type, type=edit.object_type, properties=data, confidence=1.0)
+            db.add(entity)
+            after_snapshot[entity_id] = data
+            results.append({"op": edit.op, "entity_id": entity_id, "entity_type": edit.object_type})
+        elif edit.op in {"add_link", "remove_link"}:
+            link = edit.link
+            if edit.op == "add_link":
+                db.merge(Relation(id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{ontology_id}:{link.source.object_id}:{link.relation_type}:{link.target.object_id}:action")),
+                                  ontology_id=ontology_id, source_entity=link.source.object_id, target_entity=link.target.object_id,
+                                  type=link.relation_type, properties={"source": "action_runtime", "action_type_id": action.id}, confidence=1.0))
+            else:
+                db.query(Relation).filter(Relation.ontology_id == ontology_id,
+                                          Relation.source_entity == link.source.object_id,
+                                          Relation.target_entity == link.target.object_id,
+                                          Relation.type == link.relation_type).delete()
+            results.append({"op": edit.op, "relation_type": link.relation_type})
+        else:
+            raise ValueError(f"Unsupported compiled edit: {edit.op}")
+    return before_snapshot, after_snapshot, results
+
+
+@router.post("/{ontology_id}/actions/{action_id}/preview")
+def preview_action_type(
+    ontology_id: str,
+    action_id: str,
+    body: ActionRunRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        resolved_context = resolve_action_context(db, ontology_id, body.context, current_user)
+        action = db.query(OntologyActionType).filter(OntologyActionType.id == action_id, OntologyActionType.ontology_id == ontology_id).first()
+        if not action:
+            raise ScenarioError("not_found", "Action type not found", 404, "action_id")
+        if not action.enabled or action.status != "published":
+            raise ScenarioError("action_type_unavailable", "Action type must be enabled and published", 422, "action_id")
+        edits = _compile_action_request(ontology_id, action, body, resolved_context, db, current_user)
+        return {"valid": True, "target": resolved_context.target, "execution_context": resolved_context.context.model_dump(mode="json"),
+                "edits": [edit.model_dump(mode="json") for edit in edits], "edit_count": sum(edit.op != "invoke_action" for edit in edits)}
+    except ActionContextError as exc:
+        raise HTTPException(exc.status, detail=action_context_error(exc)) from exc
+    except ScenarioError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code, "path": exc.path, "message": exc.message, "details": {}}) from exc
+
+
 @router.post("/{ontology_id}/actions/{action_id}/run")
 def run_action_type(
     ontology_id: str,
@@ -431,26 +561,10 @@ def run_action_type(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from app.models.entity import Entity
-    from app.models.relation import Relation
-
     try:
         resolved_context = resolve_action_context(db, ontology_id, body.context, current_user)
     except ActionContextError as exc:
         raise HTTPException(exc.status, detail=action_context_error(exc)) from exc
-    if resolved_context.target == "scenario":
-        # Phase 1 is fail-closed.  The legacy executor writes live Entity/
-        # Relation rows and must not be allowed to impersonate a Scenario
-        # compiler until both paths produce the same typed edit batch.
-        raise HTTPException(
-            409,
-            detail={
-                "code": "scenario_action_requires_shared_compiler",
-                "path": "context.scenario_id",
-                "message": "Scenario Action execution is unavailable until the shared edit-batch compiler is enabled",
-                "details": {"scenario_id": body.context.scenario_id if body.context else None},
-            },
-        )
 
     action = db.query(OntologyActionType).filter(
         OntologyActionType.id == action_id,
@@ -462,10 +576,6 @@ def run_action_type(
         raise HTTPException(400, "Action type is disabled")
     if action.status != "published":
         raise HTTPException(400, "Action type must be published before runtime execution")
-
-    criteria_errors = _validate_action_submission(action, body.parameters or {}, body.target_object_id, db, ontology_id)
-    if criteria_errors:
-        raise HTTPException(400, {"errors": criteria_errors})
 
     run = OntologyActionRun(
         action_type_id=action.id,
@@ -484,74 +594,24 @@ def run_action_type(
     after_snapshot = {}
     side_effect_results = []
     try:
-        params = body.parameters or {}
-        for effect in action.effects or []:
-            effect_name = effect.get("action")
-            if effect_name == "set_property":
-                target_id = body.target_object_id or params.get("target_id")
-                prop = effect.get("property")
-                if not target_id or not prop:
-                    raise ValueError("set_property requires target_object_id and effect.property")
-                entity = db.query(Entity).filter(
-                    Entity.id == target_id,
-                    Entity.ontology_id == ontology_id,
-                ).first()
-                if not entity:
-                    raise ValueError(f"Target entity not found: {target_id}")
-                before_snapshot[target_id] = dict(entity.properties or {})
-                props = dict(entity.properties or {})
-                props[str(prop)] = params.get(str(prop))
-                entity.properties = props
-                entity.updated_at = datetime.now(timezone.utc)
-                after_snapshot[target_id] = props
-                side_effect_results.append({"action": effect_name, "target_id": target_id, "property": prop})
-
-            elif effect_name == "create_object":
-                data = dict(params.get("data") or {})
-                entity_type = effect.get("entity_type") or action.target_entity_type or "Object"
-                entity_id = str(uuid.uuid4())
-                entity = Entity(
-                    id=entity_id,
-                    ontology_id=ontology_id,
-                    name_cn=str(data.get("display_name") or data.get("name") or f"{entity_type} {entity_id[:8]}")[:200],
-                    name_en=entity_type,
-                    type=entity_type,
-                    properties=data,
-                    confidence=1.0,
-                )
-                db.add(entity)
-                after_snapshot[entity_id] = data
-                side_effect_results.append({"action": effect_name, "entity_id": entity_id, "entity_type": entity_type})
-
-            elif effect_name in ("merge_relationship", "delete_relationship"):
-                source_id = params.get("source_id")
-                target_id = params.get("target_id")
-                rel_type = effect.get("relation_type")
-                if not source_id or not target_id or not rel_type:
-                    raise ValueError(f"{effect_name} requires source_id, target_id and relation_type")
-                if effect_name == "merge_relationship":
-                    relation = Relation(
-                        id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{ontology_id}:{source_id}:{rel_type}:{target_id}:action")),
-                        ontology_id=ontology_id,
-                        source_entity=source_id,
-                        target_entity=target_id,
-                        type=rel_type,
-                        properties={"source": "action_runtime", "action_type_id": action.id},
-                        confidence=1.0,
-                    )
-                    db.merge(relation)
-                    side_effect_results.append({"action": effect_name, "relation_type": rel_type})
-                else:
-                    deleted = db.query(Relation).filter(
-                        Relation.ontology_id == ontology_id,
-                        Relation.source_entity == source_id,
-                        Relation.target_entity == target_id,
-                        Relation.type == rel_type,
-                    ).delete()
-                    side_effect_results.append({"action": effect_name, "relation_type": rel_type, "deleted": deleted})
-
-            else:
-                side_effect_results.append({"action": effect_name or "unknown", "status": "skipped"})
+        edits = _compile_action_request(ontology_id, action, body, resolved_context, db, current_user)
+        if resolved_context.target == "scenario":
+            scenario_service = ScenarioService(db, ontology_id, current_user)
+            scenario = scenario_service.get(resolved_context.context.scenario_id, write=True)
+            if body.expected_etag is None or not body.client_request_id:
+                raise ScenarioError("scenario_write_contract_required", "Scenario Action writes require expected_etag and client_request_id", 422, "expected_etag")
+            revision = scenario_service.revision(
+                scenario,
+                RevisionRequest(base_revision=scenario.head_revision, expected_etag=body.expected_etag,
+                                client_request_id=body.client_request_id, edits=edits),
+            )
+            run.status = "completed"
+            run.side_effect_results = [{"op": edit.op, "sequence": edit.sequence} for edit in edits if edit.op != "invoke_action"]
+            run.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            return {"run_id": run.id, "status": run.status, "target": "scenario", "revision": revision.revision,
+                    "execution_context": resolved_context.context.model_dump(mode="json"), "edits": [edit.model_dump(mode="json") for edit in edits]}
+        before_snapshot, after_snapshot, side_effect_results = _apply_live_edits(db, ontology_id, action, edits)
 
         run.status = "completed"
         run.before_snapshot = before_snapshot
@@ -565,6 +625,14 @@ def run_action_type(
             "execution_context": resolved_context.context.model_dump(mode="json"),
             "side_effect_results": side_effect_results,
         }
+    except ScenarioError as e:
+        db.rollback()
+        db.add(run)
+        run.status = "failed"
+        run.error = e.message
+        run.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        raise HTTPException(e.status, {"run_id": run.id, "code": e.code, "path": e.path, "error": e.message}) from e
     except Exception as e:
         db.rollback()
         db.add(run)

@@ -321,6 +321,16 @@ Spike 后的接入门槛已经落地：三个依赖在 `package.json` 精确锁�
 
 本纵切面没有跨越下一停止线：完整 aggregate 仍要求 pinned data view；当前页图表不能作为业务统计；`ObjectPanel` 尚未在 Graph/Scenario 复用；shared Action compiler、save resource、compare 与 pivot 仍是后续阶段。
 
+### 5.5 Shared Action compiler 纵切面（已完成）
+
+本节更新并 supersede 5.2 中“统一 compiler 尚未接通前”的临时 fail-closed 停止线：该停止线在 Phase 1 验收时成立，现已由下面的共享 compiler 纵切面取代；其余未实现项仍保持停止线。
+
+`backend/app/services/v2/scenario_actions.py` 现在是 live 与 Scenario 共用的 target-neutral edit-batch compiler。它统一执行 action authorization、参数绑定、submission criteria、目标对象解析与 typed edit 生成；canonical `op` effects 继续走既有 schema，旧的 `action` effects 则只在 compiler 边界内归一化为 `invoke_action`、`set_property`、`create_object`、`add_link`/`remove_link` 等 typed edits。未知 effect、未知参数、缺失 target、criteria 不满足和权限不匹配都会在任何写入前稳定失败。
+
+`logic_actions.py` 的 live preview/run 与 `scenario_workbench.py` 的 Scenario compile 均调用同一 compiler。live 路径将 edit batch 原子应用到 SQL snapshot，并保留 expected-old-value 检查；Scenario 路径要求 `expected_etag` 与 `client_request_id`，再交给现有 revision/idempotency contract。这样 preview、live execution 与 Scenario application 不再各自维护一套 action 语义。
+
+本纵切面仍有明确边界：目前不支持外部副作用型 effect（review/repair/writeback 等）、不实现 configured Object View builder、不做自动 rebase，也不把页面图表或 legacy action shape 直接升级为长期 metadata contract。下一步应补齐 action metadata migration、ObjectPanel 在 Graph/Scenario 的复用，以及 save/compare/pivot 合同；这些不应通过重新分叉 compiler 实现。
+
 ## 6. 与人员 A 的接口和文件所有权
 
 ### 人员 B 主要拥有

@@ -218,7 +218,7 @@ def _compiled(service, scenario, body):
         OntologyActionType.ontology_id == service.ontology_id,
         OntologyActionType.action_category == "scenario",
         OntologyActionType.id.in_(ids)).all()} if ids else {}
-    edits = compile_actions(service.ontology_id, scenario.id, actions, types, base)
+    edits = compile_actions(service.ontology_id, scenario.id, actions, types, base, actor=service.user)
     if not edits:
         edits = [Edit(sequence=0, op="invoke_action", action_key="scenario_reset",
                       parameters={}, source_action="scenario_reset")]
