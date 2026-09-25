@@ -28,6 +28,7 @@ import DynamicDataPage from "@/pages/data-management/dynamic/DynamicDataPage";
 import BenchmarksPage from "@/pages/benchmarks/BenchmarksPage";
 import WhatIfWorkbenchPage, { WhatIfDemoLandingPage } from "@/pages/what-if/SupplierStudyPage";
 import GenericScenarioWorkbenchPage, { ScenarioCatalogPage } from "@/pages/what-if/GenericScenarioWorkbenchPage";
+import ComponentSpikesPage from "@/pages/component-spikes/ComponentSpikesPage";
 
 class AppErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -291,6 +292,10 @@ export default function App() {
                   <BenchmarksPage />
                 </ProtectedRoute>
               }
+            />
+            <Route
+              path="/component-spikes"
+              element={<ProtectedRoute><ComponentSpikesPage /></ProtectedRoute>}
             />
           </Routes>
         </AppErrorBoundary>

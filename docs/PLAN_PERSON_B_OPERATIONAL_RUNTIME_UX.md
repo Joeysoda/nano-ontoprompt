@@ -301,6 +301,16 @@ Phase 1 的完成标准是：同一个 Action 请求能明确报告 live/scenari
 
 本次启动的代码落点：`backend/app/services/v2/action_context.py`（解析与稳定错误合同）、`logic_actions.py`（执行前 fail-closed 门禁与响应回显）、`OntologyActionRun.execution_context` 及迁移 `0032_action_run_execution_context`（持久化上下文），并配套 `tests/test_action_context.py`。
 
+### 5.3 三个开源组件 spike 结果
+
+Spike 页面位于 `/component-spikes`，代码在 `frontend/src/pages/component-spikes/`，只使用静态样例数据：
+
+- React Query Builder `8.24.3`：通过。嵌套 rule group、AND/OR 和 JSON AST preview 可用；生产接入仍必须由项目维护 Object Set AST adapter、字段权限和视觉覆盖。
+- TanStack Table `9.2.4`：通过。headless table、selection 和自有 markup 可用；当前 spike 使用其 legacy compatibility API，正式接入前应决定升级到 current API 还是锁定兼容版本。
+- Apache ECharts `6.1.0`：通过。Actual/Scenario overlay、tooltip 和 resize 可用；构建输出出现大 chunk 警告，因此正式页面必须 dynamic import/code splitting，不能把 ECharts 直接并入主 bundle。
+
+三个 spike 均没有接生产 API，也没有改变后端语义。下一步只有在确认 bundle 预算、版本锁定和 adapter contract 后，才可把其中任一组件接入 Object Explorer。
+
 ## 6. 与人员 A 的接口和文件所有权
 
 ### 人员 B 主要拥有
