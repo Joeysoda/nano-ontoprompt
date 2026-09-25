@@ -11,6 +11,8 @@ from app.deps import get_current_user
 from app.models.user import User
 from app.models.v2.logic import OntologyLogicRule, OntologyStateMachine
 from app.models.v2.action import OntologyActionType, OntologyActionRun
+from app.schemas.v2.object_query import ExecutionContext
+from app.services.v2.action_context import ActionContextError, action_context_error, resolve_action_context
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -249,6 +251,7 @@ class ActionTypeCreate(BaseModel):
 class ActionRunRequest(BaseModel):
     target_object_id: Optional[str] = None
     parameters: dict = {}
+    context: Optional[ExecutionContext] = None
 
 
 class ActionReviewRequest(BaseModel):
@@ -416,6 +419,7 @@ def list_action_runs(ontology_id: str, limit: int = 20, db: Session = Depends(ge
     ).order_by(OntologyActionRun.started_at.desc()).limit(limit).all()
     return [{"id": r.id, "action_type_id": r.action_type_id, "status": r.status,
              "target_object_id": r.target_object_id, "error": r.error,
+             "execution_context": r.execution_context or {},
              "started_at": r.started_at.isoformat() if r.started_at else None} for r in runs]
 
 
@@ -429,6 +433,24 @@ def run_action_type(
 ):
     from app.models.entity import Entity
     from app.models.relation import Relation
+
+    try:
+        resolved_context = resolve_action_context(db, ontology_id, body.context, current_user)
+    except ActionContextError as exc:
+        raise HTTPException(exc.status, detail=action_context_error(exc)) from exc
+    if resolved_context.target == "scenario":
+        # Phase 1 is fail-closed.  The legacy executor writes live Entity/
+        # Relation rows and must not be allowed to impersonate a Scenario
+        # compiler until both paths produce the same typed edit batch.
+        raise HTTPException(
+            409,
+            detail={
+                "code": "scenario_action_requires_shared_compiler",
+                "path": "context.scenario_id",
+                "message": "Scenario Action execution is unavailable until the shared edit-batch compiler is enabled",
+                "details": {"scenario_id": body.context.scenario_id if body.context else None},
+            },
+        )
 
     action = db.query(OntologyActionType).filter(
         OntologyActionType.id == action_id,
@@ -450,6 +472,7 @@ def run_action_type(
         ontology_id=ontology_id,
         target_object_id=body.target_object_id,
         parameters=body.parameters or {},
+        execution_context=resolved_context.context.model_dump(mode="json"),
         status="running",
         executed_by=getattr(current_user, "id", None),
     )
@@ -536,7 +559,12 @@ def run_action_type(
         run.side_effect_results = side_effect_results
         run.completed_at = datetime.now(timezone.utc)
         db.commit()
-        return {"run_id": run.id, "status": run.status, "side_effect_results": side_effect_results}
+        return {
+            "run_id": run.id,
+            "status": run.status,
+            "execution_context": resolved_context.context.model_dump(mode="json"),
+            "side_effect_results": side_effect_results,
+        }
     except Exception as e:
         db.rollback()
         db.add(run)

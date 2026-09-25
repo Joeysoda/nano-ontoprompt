@@ -272,6 +272,35 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 5. 让统一 `ExecutionContext` 贯穿 Query/Function/Action/View/Graph；实现 Tracking/Pinned 两种 Scenario，并让 Pinned 显式引用 published temporal snapshot。
 6. 在已合并 temporal data plane 上补通用 source/time/late-event contract，并 materialize/adapter 到 Event Object、TSP/sensor/time-series sync，再扩展 Vertex 式 events/time/layers/version 和开展盲测。
 
+### 5.1 开源组件决策矩阵（第一阶段前置审查）
+
+这张表只评估“通用基础设施/组件”是否值得复用，不把组件能力当成 Palantir 领域合同。许可证和能力以 2026-09-25 访问到的官方仓库/文档为准；引入前仍需锁定版本、跑本项目构建与 license 检查。
+
+| 组件 | 对本项目的准确作用 | 决策 | 仍由项目负责的部分 | 许可证/证据 |
+| --- | --- | --- | --- | --- |
+| React Query Builder | Object Explorer 的嵌套 AND/OR/NOT、rule group、可拖拽条件编辑；支持自定义 field/operator 和导入导出 | **adopt narrow role**，先做小型 spike | Object Set AST、linked traversal、权限裁剪、参数绑定、稳定错误和 Palantir 视觉样式；不能直接把其 query 输出当后端合同 | MIT；官方仓库说明支持可定制 query builder、DND、SQL/MongoDB 等 formatter，但这些 formatter 不是本项目语义：[repo](https://github.com/react-querybuilder/react-querybuilder)、[DND docs](https://react-querybuilder.js.org/docs/dnd) |
+| TanStack Table | Object Explorer dense result table、排序、筛选状态、分组、row selection、server-side pagination 的 headless state/adapter | **adopt narrow role**；保留自有 table markup | Object Set cursor、snapshot/live consistency、field authorization、compare selection、inline Action 状态和截图级布局 | MIT；官方文档明确是 headless、可完全自定义并提供 React adapter：[docs](https://tanstack.com/table/latest/docs/overview)、[repo](https://github.com/TanStack/table) |
+| Apache ECharts | Explore charts、aggregate card、time-series plot、compare overlays | **adopt narrow role**，只负责渲染 | 聚合语义、数据权限、时间范围、scenario context、loading/partial/degraded 状态和 Palantir card layout | Apache-2.0；官方仓库和许可证说明其为浏览器可视化库：[repo](https://github.com/apache/echarts)、[license](https://github.com/apache/echarts/blob/master/LICENSE) |
+| JSON Forms | Configured Object View 的 JSON Schema + UI schema runtime；自定义 renderer 可承载 ObjectPanel widget | **spike first**，不在第一阶段引入 | canonical view schema、Object/Object Set/Action binding、权限和版本兼容；完整 low-code builder 不由 JSON Forms 自动提供 | MIT；官方仓库说明支持 React/Angular/Vue、JSON Schema 和自定义 renderer：[repo](https://github.com/eclipsesource/jsonforms)、[React API](https://jsonforms.io/api/react/) |
+| Cytoscape.js / XYFlow | 现有 Graph/Vertex 原型的布局、selection、关系交互 | **preserve**，不更换引擎 | Search Around、Object Panel、Event Object/TSP、Scenario overlay、授权和图资源保存 | 已在当前仓库使用；组件只提供图交互，不拥有 Ontology 语义 |
+| Temporal.io | 长任务、重试、取消、恢复、补偿和跨服务 durable execution 的候选 | **defer / threshold-gated**；第一阶段继续 Celery | Action transaction、edit batch、权限、审计和 Scenario merge；引入会增加独立服务和 worker 运维 | MIT server；官方仓库定位为 durable execution，但不能替代领域编排：[repo](https://github.com/temporalio/temporal)、[official site](https://temporal.io/) |
+| OpenFGA | relationship-based authorization 的参考或人员 A 的受控 spike | **reference / person A owns**，B 不直接接入 | 当前 ontology/object/property projection、field masking、Action criteria 与 permission 分离；不能把 FGA tuple 当完整权限合同 | Apache-2.0 SDK/模型生态；官方概念是 relationship tuple + authorization model：[concepts](https://openfga.dev/docs/concepts) |
+
+第一阶段只批准 React Query Builder、TanStack Table、ECharts 的 narrow spike，不立即安装依赖；JSON Forms、Temporal.io、OpenFGA 先不进入运行时。每个 spike 必须有小样例、bundle/运行时成本、许可证记录、可替换边界和“失败时回退到现有实现”的结论。不得为了使用组件而改变 Object Set、Action、Scenario 或授权语义。
+
+### 5.2 第一阶段实施范围与停止线
+
+本次只启动 Phase 1：
+
+- 接受已有 `ExecutionContext` 作为 Action runtime 的输入合同，并校验 ontology、scenario、revision/data view 的一致性；
+- live Action 明确进入 `live` target；带 Scenario context 的请求在统一 compiler 尚未接通前必须 fail-closed，不得写入 live Entity；
+- 为后续 shared Action compiler 保留稳定错误码和契约测试；
+- 不实现 Object Explorer UI、不安装上表组件、不实现 Tracking Scenario auto-rebase、不实现 Event Object/TSP materializer、不实现 configured builder。
+
+Phase 1 的完成标准是：同一个 Action 请求能明确报告 live/scenario target；伪造或越权 Scenario context 在执行前失败；任何失败都没有 live write；现有 live Action 和 Scenario action 测试保持通过。达到这些标准后，才进入 Object Explorer 组件 spike 和 shared compiler 重构。
+
+本次启动的代码落点：`backend/app/services/v2/action_context.py`（解析与稳定错误合同）、`logic_actions.py`（执行前 fail-closed 门禁与响应回显）、`OntologyActionRun.execution_context` 及迁移 `0032_action_run_execution_context`（持久化上下文），并配套 `tests/test_action_context.py`。
+
 ## 6. 与人员 A 的接口和文件所有权
 
 ### 人员 B 主要拥有
