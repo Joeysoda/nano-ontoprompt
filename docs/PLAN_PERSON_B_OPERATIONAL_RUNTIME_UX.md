@@ -306,10 +306,20 @@ Phase 1 的完成标准是：同一个 Action 请求能明确报告 live/scenari
 Spike 页面位于 `/component-spikes`，代码在 `frontend/src/pages/component-spikes/`，只使用静态样例数据：
 
 - React Query Builder `8.24.3`：通过。嵌套 rule group、AND/OR 和 JSON AST preview 可用；生产接入仍必须由项目维护 Object Set AST adapter、字段权限和视觉覆盖。
-- TanStack Table `9.2.4`：通过。headless table、selection 和自有 markup 可用；当前 spike 使用其 legacy compatibility API，正式接入前应决定升级到 current API 还是锁定兼容版本。
+- TanStack Table `9.2.4`：通过。headless table、selection 和自有 markup 可用；后续纵切面已切换到 v9 current `useTable` API，不再依赖 legacy compatibility API。
 - Apache ECharts `6.1.0`：通过。Actual/Scenario overlay、tooltip 和 resize 可用；构建输出出现大 chunk 警告，因此正式页面必须 dynamic import/code splitting，不能把 ECharts 直接并入主 bundle。
 
 三个 spike 均没有接生产 API，也没有改变后端语义。下一步只有在确认 bundle 预算、版本锁定和 adapter contract 后，才可把其中任一组件接入 Object Explorer。
+
+### 5.4 Object Explorer 第一条生产纵切面（已完成）
+
+Spike 后的接入门槛已经落地：三个依赖在 `package.json` 精确锁定为 React Query Builder `8.24.3`、TanStack Table `9.2.4`、ECharts `6.1.0`；ECharts 使用 `echarts/core` 按需模块并由 `React.lazy` 拆成独立 chunk，组件实验页也从主入口拆包。主 bundle 仍超过 Vite 默认 500 kB 预算，因此后续还要继续拆分 Ontology detail，但不再因 ECharts 把完整图表运行时直接并入入口。
+
+`frontend/src/pages/ontologies/detail/object-explorer/contract.ts` 是正式 adapter 边界：它只把受控 Query Builder rule group 转换为项目自己的 `ObjectSetExpression/FilterExpression`，完成数字/布尔值类型转换、未知字段拒绝、AND/OR/NOT 映射和 URL 无损恢复；第三方 AST 不进入后端。契约测试覆盖嵌套过滤、URL 往返和不在已发布 query metadata 中的字段拒绝。
+
+`ObjectQueryTab` 已成为第一条真实 Object Explorer 纵切面：使用 ontology property metadata 限制字段/操作符，点击 Apply 后调用既有 `/object-query/load`；TanStack Table v9 渲染高密度 Results，ECharts 仅渲染明确标注为“不完整”的当前页分布，cursor pagination 仍由后端拥有；Explore/Results 切换、Object Type、filter state 写入 URL；选择对象时打开共享 `ObjectPanel`。List/Exploration save、Compare、Pivot、Action/Open in Graph 保留在正确位置但 disabled，并解释尚缺合同，避免伪成功。
+
+本纵切面没有跨越下一停止线：完整 aggregate 仍要求 pinned data view；当前页图表不能作为业务统计；`ObjectPanel` 尚未在 Graph/Scenario 复用；shared Action compiler、save resource、compare 与 pivot 仍是后续阶段。
 
 ## 6. 与人员 A 的接口和文件所有权
 

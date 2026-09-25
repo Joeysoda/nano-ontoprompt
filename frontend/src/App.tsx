@@ -28,7 +28,7 @@ import DynamicDataPage from "@/pages/data-management/dynamic/DynamicDataPage";
 import BenchmarksPage from "@/pages/benchmarks/BenchmarksPage";
 import WhatIfWorkbenchPage, { WhatIfDemoLandingPage } from "@/pages/what-if/SupplierStudyPage";
 import GenericScenarioWorkbenchPage, { ScenarioCatalogPage } from "@/pages/what-if/GenericScenarioWorkbenchPage";
-import ComponentSpikesPage from "@/pages/component-spikes/ComponentSpikesPage";
+const ComponentSpikesPage = React.lazy(() => import("@/pages/component-spikes/ComponentSpikesPage"));
 
 class AppErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -295,7 +295,7 @@ export default function App() {
             />
             <Route
               path="/component-spikes"
-              element={<ProtectedRoute><ComponentSpikesPage /></ProtectedRoute>}
+              element={<ProtectedRoute><React.Suspense fallback={<div className="p-6 text-sm text-slate-500">Loading component lab…</div>}><ComponentSpikesPage /></React.Suspense></ProtectedRoute>}
             />
           </Routes>
         </AppErrorBoundary>

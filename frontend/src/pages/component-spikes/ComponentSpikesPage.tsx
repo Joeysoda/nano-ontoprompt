@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QueryBuilder, formatQuery, type Field, type RuleGroupType } from "react-querybuilder";
-import { flexRender } from "@tanstack/react-table";
-import { getCoreRowModel, legacyCreateColumnHelper, useLegacyTable } from "@tanstack/react-table/legacy";
+import { createColumnHelper, tableFeatures, useTable } from "@tanstack/react-table";
 import * as echarts from "echarts";
 
 import "./component-spikes.css";
@@ -19,6 +18,8 @@ const SAMPLE_ROWS: ObjectRow[] = [
   { id: "order-1041", type: "Purchase Order", status: "At risk", value: 84200, updated: "2026-09-24" },
   { id: "order-1038", type: "Purchase Order", status: "Planned", value: 196000, updated: "2026-09-23" },
 ];
+const spikeTableFeatures = tableFeatures({});
+const spikeColumnHelper = createColumnHelper<typeof spikeTableFeatures, ObjectRow>();
 
 const fields: Field[] = [
   { name: "status", label: "Status", valueEditorType: "select", values: [
@@ -62,9 +63,8 @@ function QueryBuilderSpike() {
 function TableSpike() {
   const [rows, setRows] = useState(SAMPLE_ROWS);
   const [selected, setSelected] = useState<string[]>([]);
-  const columnHelper = useMemo(() => legacyCreateColumnHelper<ObjectRow>(), []);
-  const columns = useMemo(() => [
-    columnHelper.display({
+  const columns = useMemo(() => spikeColumnHelper.columns([
+    spikeColumnHelper.display({
       id: "select",
       header: "",
       cell: ({ row }: { row: { original: ObjectRow } }) => (
@@ -78,13 +78,13 @@ function TableSpike() {
         />
       ),
     }),
-    columnHelper.accessor("id", { header: "Object ID" }),
-    columnHelper.accessor("type", { header: "Type" }),
-    columnHelper.accessor("status", { header: "Status" }),
-    columnHelper.accessor("value", { header: "Value", cell: (info) => `$${info.getValue().toLocaleString()}` }),
-    columnHelper.accessor("updated", { header: "Updated" }),
-  ], [columnHelper, selected]);
-  const table = useLegacyTable<ObjectRow>({ data: rows, columns: columns as never[], getCoreRowModel: getCoreRowModel() });
+    spikeColumnHelper.accessor("id", { header: "Object ID" }),
+    spikeColumnHelper.accessor("type", { header: "Type" }),
+    spikeColumnHelper.accessor("status", { header: "Status" }),
+    spikeColumnHelper.accessor("value", { header: "Value", cell: (info) => `$${info.getValue().toLocaleString()}` }),
+    spikeColumnHelper.accessor("updated", { header: "Updated" }),
+  ]), [selected]);
+  const table = useTable({ features: spikeTableFeatures, data: rows, columns });
 
   return (
     <section className="spike-card" aria-labelledby="table-spike">
@@ -102,8 +102,8 @@ function TableSpike() {
       </div>
       <div className="table-scroll">
         <table className="spike-table">
-          <thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => <th key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</th>)}</tr>)}</thead>
-          <tbody>{table.getRowModel().rows.map((row) => <tr key={row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody>
+          <thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => <th key={header.id}>{header.isPlaceholder ? null : <table.FlexRender header={header} />}</th>)}</tr>)}</thead>
+          <tbody>{table.getRowModel().rows.map((row) => <tr key={row.id}>{row.getAllCells().map((cell) => <td key={cell.id}><table.FlexRender cell={cell} /></td>)}</tr>)}</tbody>
         </table>
       </div>
     </section>
