@@ -1763,7 +1763,7 @@ export default function MultimodalDataPage() {
                   <button
                     onClick={() =>
                       navigate(
-                        `/ontologies/${run.ontology_id || ontologyId}?tab=graph`,
+                        `/ontologies/${run.ontology_id || ontologyId}?tab=data_model`,
                       )
                     }
                     className="wb-button-secondary mt-3 text-xs"

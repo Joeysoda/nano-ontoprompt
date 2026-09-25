@@ -8,7 +8,8 @@ from app.database import SessionLocal
 from app.deps import get_current_user, require_editor
 from app.models.ontology import OntologyProject
 from app.models.ontology_revision import OntologyRevision
-from app.services.v2.revision_service import compare_revisions, create_revision, serialize_revision
+from app.models.v2.dynamic_ontology import OntologyChange
+from app.services.v2.revision_service import compare_revisions, create_revision, materialize_snapshot, serialize_revision, snapshot_ontology
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -43,5 +44,39 @@ def restore(ontology_id: str, revision_id: str, db: Session = Depends(get_db), _
     target = db.query(OntologyRevision).filter(OntologyRevision.id == revision_id, OntologyRevision.ontology_id == ontology_id).first()
     if not target:
         raise HTTPException(404, "版本不存在")
-    revision = create_revision(db, ontology_id, snapshot=target.snapshot_json or {}, parent_revision_id=target.id, summary={**(target.summary or {}), "restored_from": target.id})
+    current = db.query(OntologyRevision).filter(
+        OntologyRevision.ontology_id == ontology_id, OntologyRevision.is_current.is_(True)
+    ).order_by(OntologyRevision.revision_no.desc()).first()
+    before = snapshot_ontology(db, ontology_id)
+    try:
+        materialize_snapshot(db, ontology_id, target.snapshot_json or {})
+        restored_snapshot = snapshot_ontology(db, ontology_id)
+        revision = create_revision(
+            db, ontology_id, snapshot=restored_snapshot, parent_revision_id=current.id if current else target.id,
+            summary={**(target.summary or {}), "restored_from": target.id}, commit=False,
+        )
+        change = OntologyChange(
+            id=str(__import__("uuid").uuid4()), ontology_id=ontology_id,
+            base_revision_id=current.id if current else None, result_revision_id=revision.id,
+            target_kind="ontology", operation="restore", target_id=target.id,
+            before_json=before, after_json=restored_snapshot,
+            impact_json={"restored_from": target.id}, validation_json={"ok": True}, status="applied",
+        )
+        db.add(change)
+        db.commit(); db.refresh(revision)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc))
+    except Exception:
+        db.rollback()
+        raise
+    # Restoring a revision changes the published schema, so it receives the
+    # same asynchronous local audit as a normal editor save.  The audit is
+    # queued after the revision transaction has committed and cannot roll the
+    # restoration back if Ollama is unavailable.
+    try:
+        from app.services.v2.audit_runner import queue_local_audit
+        queue_local_audit(db, ontology_id=ontology_id, revision_id=revision.id, construction_run_id=None)
+    except Exception:
+        pass
     return serialize_revision(revision)

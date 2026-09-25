@@ -32,6 +32,81 @@ PROPERTY_TYPES = {"string", "integer", "decimal", "date", "datetime", "boolean",
 CARDINALITIES = {"one-to-one", "one-to-many", "many-to-one", "many-to-many"}
 
 
+def _cardinality_side(value: str) -> tuple[str | None, bool]:
+    """Return the ``one``/``many`` bucket and whether the side is optional.
+
+    M3 and other ontology authoring tools commonly use compact UML notation
+    (``1``, ``N``, ``0..1`` and ``1..*``) instead of the canonical English
+    values used by the persistence model.  We intentionally keep this parser
+    small and deterministic: an unknown token is rejected rather than being
+    guessed as a many-valued relationship.
+    """
+    token = str(value or "").strip().casefold()
+    token = token.replace("…", "..").replace("−", "-").replace("–", "-").replace("—", "-")
+    token = re.sub(r"\s+", "", token)
+    if token in {"1", "1..1", "one", "exactlyone", "one..one"}:
+        return "one", False
+    if token in {"0..1", "0-1", "zero..one", "zero-one", "optional", "0/1"}:
+        return "one", True
+    if token in {"n", "m", "*", "many", "0..*", "1..*", "n..*", "m..*", "0-*", "1-*", "n-*", "m-*"}:
+        return "many", token.startswith(("0..", "0-"))
+    # Also accept a bounded range such as 0..N or 1..M.  The upper bound
+    # determines the one/many bucket and a zero lower bound is retained as
+    # optional metadata.
+    match = re.fullmatch(r"(0|1|n|m|\*)\.\.(1|n|m|\*)", token)
+    if match:
+        lower, upper = match.groups()
+        return ("one" if upper == "1" else "many"), lower == "0"
+    return None, False
+
+
+def _normalise_cardinality(value: Any) -> tuple[str | None, dict[str, bool]]:
+    """Normalise English and UML cardinality forms to our four-value enum.
+
+    The raw value is deliberately handled by the caller so it can be kept in
+    the mapping result for auditability.  Both ASCII and full-width colons are
+    accepted; arbitrary strings and malformed ranges remain invalid.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return None, {}
+    key = raw.casefold().replace("–", "-").replace("—", "-").replace("−", "-")
+    compact = re.sub(r"\s+", "", key).replace("：", ":")
+    aliases = {
+        "one-to-one": "one-to-one", "onetoone": "one-to-one", "1:1": "one-to-one",
+        "one-to-many": "one-to-many", "onetomany": "one-to-many", "1:n": "one-to-many",
+        "1:m": "one-to-many", "1:*": "one-to-many",
+        "many-to-one": "many-to-one", "manytoone": "many-to-one", "n:1": "many-to-one",
+        "m:1": "many-to-one", "*:1": "many-to-one",
+        "many-to-many": "many-to-many", "manytomany": "many-to-many", "n:n": "many-to-many",
+        "n:m": "many-to-many", "m:n": "many-to-many", "m:m": "many-to-many",
+        "n:*": "many-to-many", "m:*": "many-to-many", "*:n": "many-to-many",
+        "*:m": "many-to-many", "*:*": "many-to-many",
+    }
+    if compact in aliases:
+        return aliases[compact], {}
+
+    parts = re.split(r"\s*[:：]\s*", key)
+    if len(parts) != 2:
+        return None, {}
+    source_kind, source_optional = _cardinality_side(parts[0])
+    target_kind, target_optional = _cardinality_side(parts[1])
+    if source_kind is None or target_kind is None:
+        return None, {}
+    kind = {
+        ("one", "one"): "one-to-one",
+        ("one", "many"): "one-to-many",
+        ("many", "one"): "many-to-one",
+        ("many", "many"): "many-to-many",
+    }[(source_kind, target_kind)]
+    metadata: dict[str, bool] = {}
+    if source_optional:
+        metadata["optional_from"] = True
+    if target_optional:
+        metadata["optional_to"] = True
+    return kind, metadata
+
+
 def _slug(value: Any, fallback: str = "item") -> str:
     text = re.sub(r"[^a-zA-Z0-9_]+", "-", str(value or "").strip()).strip("-").lower()
     return text or fallback
@@ -239,16 +314,21 @@ def normalise_mapping(mapping: dict[str, Any] | None, *, data_class: str) -> Map
         if source not in ids or target not in ids:
             errors.append(f"关系 {name} 引用了不存在的实体")
             continue
-        cardinality = str(item.get("cardinality") or "one-to-many")
-        if cardinality not in CARDINALITIES:
-            errors.append(f"关系 {name} 的基数无效：{cardinality}")
+        raw_cardinality = str(item.get("cardinality") or "one-to-many").strip()
+        cardinality, cardinality_meta = _normalise_cardinality(raw_cardinality)
+        if cardinality is None or cardinality not in CARDINALITIES:
+            errors.append(f"关系 {name} 的基数无效：{raw_cardinality}")
             continue
+        if raw_cardinality != cardinality:
+            warnings.append(f"关系 {name} 的基数 {raw_cardinality} 已规范为 {cardinality}")
         relationship_items.append({
             "id": _slug(item.get("id") or name, f"relation-{index + 1}"),
             "name": name,
             "from": source,
             "to": target,
             "cardinality": cardinality,
+            "cardinality_raw": raw_cardinality if raw_cardinality != cardinality else item.get("cardinality_raw"),
+            **cardinality_meta,
             "description": item.get("description") or "",
             "attributes": [entry for entry in _as_list(item.get("attributes")) if isinstance(entry, dict)],
             "source_fields": [str(value) for value in _as_list(item.get("source_fields") or item.get("source_field") or []) if value],
@@ -401,6 +481,9 @@ def materialize_ontology(
         properties = {
             "schema_version": "ontology-mapping-v2", "name": definition["name"],
             "description": definition.get("description") or "", "cardinality": definition["cardinality"],
+            "cardinality_raw": definition.get("cardinality_raw"),
+            "optional_from": bool(definition.get("optional_from")),
+            "optional_to": bool(definition.get("optional_to")),
             "attributes": definition.get("attributes") or [], "source_fields": definition.get("source_fields") or [],
             "evidence": definition.get("evidence") or {}, "data_class": data_class,
         }

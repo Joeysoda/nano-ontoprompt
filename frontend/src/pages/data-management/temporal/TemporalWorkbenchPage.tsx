@@ -116,7 +116,7 @@ export default function TemporalWorkbenchPage() {
           </button>
           {isComplete && run?.ontology_id && (
             <button
-              onClick={() => navigate(`/ontologies/${run.ontology_id}`)}
+              onClick={() => navigate(`/ontologies/${run.ontology_id}?tab=data_model`)}
               className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-700"
             >
               打开本体

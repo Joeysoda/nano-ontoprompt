@@ -23,6 +23,8 @@ import RegularDataPage from "@/pages/data-management/regular/RegularDataPage";
 import MultimodalDataPage from "@/pages/data-management/multimodal/MultimodalDataPage";
 import TemporalConstructionWizard from "@/pages/data-management/temporal/TemporalConstructionWizard";
 import TemporalWorkbenchPage from "@/pages/data-management/temporal/TemporalWorkbenchPage";
+import TemporalReplayPage from "@/pages/data-management/temporal/TemporalReplayPage";
+import DynamicDataPage from "@/pages/data-management/dynamic/DynamicDataPage";
 import BenchmarksPage from "@/pages/benchmarks/BenchmarksPage";
 import WhatIfWorkbenchPage, { WhatIfDemoLandingPage } from "@/pages/what-if/SupplierStudyPage";
 import GenericScenarioWorkbenchPage, { ScenarioCatalogPage } from "@/pages/what-if/GenericScenarioWorkbenchPage";
@@ -130,6 +132,14 @@ export default function App() {
               }
             />
             <Route
+              path="/data/temporal/replays/:replayId"
+              element={
+                <ProtectedRoute>
+                  <TemporalReplayPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/data/regular"
               element={
                 <ProtectedRoute>
@@ -142,6 +152,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <MultimodalDataPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/data/dynamic"
+              element={
+                <ProtectedRoute>
+                  <DynamicDataPage />
                 </ProtectedRoute>
               }
             />

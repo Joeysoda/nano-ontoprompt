@@ -7,6 +7,7 @@ export interface OntologyListItem {
   version: string
   status: OntologyStatus
   build_mode?: string
+  data_class?: 'regular' | 'temporal' | 'multimodal'
   entity_count: number
   relation_count: number
   created_by: string

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.deps import get_db, get_current_user, require_admin, require_editor
+from app.deps import get_db, get_current_user, require_editor
 from app.models.entity import Entity
 from app.models.relation import Relation
 from app.models.ontology import OntologyProject
@@ -129,25 +129,22 @@ def create_relation(
     ontology_id: str,
     body: dict,
     db: Session = Depends(get_db),
-    _=Depends(require_editor)
+    user=Depends(require_editor)
 ):
-    from app.models.relation import Relation
-    import uuid
-    relation = Relation(
-        id=str(uuid.uuid4()),
-        ontology_id=ontology_id,
-        source_entity=body["source_entity"],
-        target_entity=body["target_entity"],
-        type=body.get("type", "关联"),
-        properties=body.get("properties", {}),
-        confidence=body.get("confidence", 1.0),
-    )
-    db.add(relation); db.commit(); db.refresh(relation)
+    from app.services.v2.dynamic_ontology_service import OntologyEditError, apply_change
+    try:
+        result = apply_change(db, ontology_id, {"target_kind": "relationship", "operation": "add", "payload": body}, user_id=user.id)
+    except OntologyEditError as exc:
+        raise HTTPException(409 if exc.code in {"CHANGE_BLOCKED", "REVISION_CONFLICT"} else 422, {"code": exc.code, "message": str(exc), **exc.details})
+    relation = db.query(Relation).filter(Relation.id == result["change"]["target_id"], Relation.ontology_id == ontology_id).first()
+    if not relation:
+        raise HTTPException(422, "关系创建后未找到")
     return {"data": {"id": relation.id, "source": relation.source_entity, "target": relation.target_entity, "type": relation.type}}
 
 @router.delete("/relations/{relation_id}", status_code=204)
-def delete_relation(ontology_id: str, relation_id: str, db: Session = Depends(get_db), _=Depends(require_admin)):
-    r = db.query(Relation).filter(Relation.id == relation_id, Relation.ontology_id == ontology_id).first()
-    if not r:
-        raise HTTPException(404, "Not found")
-    db.delete(r); db.commit()
+def delete_relation(ontology_id: str, relation_id: str, db: Session = Depends(get_db), user=Depends(require_editor)):
+    from app.services.v2.dynamic_ontology_service import OntologyEditError, apply_change
+    try:
+        apply_change(db, ontology_id, {"target_kind": "relationship", "operation": "delete", "target_id": relation_id}, user_id=user.id)
+    except OntologyEditError as exc:
+        raise HTTPException(404 if exc.code == "NOT_FOUND" else 409, {"code": exc.code, "message": str(exc), **exc.details})

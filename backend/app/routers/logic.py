@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.deps import get_db, get_current_user
+from app.deps import get_db, get_current_user, require_editor
 from app.models.logic import LogicRule
 from app.schemas.logic import LogicRuleCreate, LogicRuleUpdate, LogicRuleOut
 import uuid
@@ -13,10 +13,13 @@ def list_logic(ontology_id: str, db: Session = Depends(get_db), _=Depends(get_cu
     return {"data": [LogicRuleOut.model_validate(r).model_dump() for r in items]}
 
 @router.post("", status_code=201)
-def create_logic(ontology_id: str, body: LogicRuleCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    data = {k: v for k, v in body.model_dump().items() if v is not None}
-    r = LogicRule(id=str(uuid.uuid4()), ontology_id=ontology_id, **data)
-    db.add(r); db.commit(); db.refresh(r)
+def create_logic(ontology_id: str, body: LogicRuleCreate, db: Session = Depends(get_db), user=Depends(require_editor)):
+    from app.services.v2.dynamic_ontology_service import OntologyEditError, apply_change
+    try:
+        result = apply_change(db, ontology_id, {"target_kind": "logic_rule", "operation": "add", "payload": {k: v for k, v in body.model_dump().items() if v is not None}}, user_id=user.id)
+    except OntologyEditError as exc:
+        raise HTTPException(422, {"code": exc.code, "message": str(exc), **exc.details})
+    r = db.query(LogicRule).filter(LogicRule.id == result["change"]["target_id"], LogicRule.ontology_id == ontology_id).first()
     return {"data": LogicRuleOut.model_validate(r).model_dump()}
 
 @router.get("/{logic_id}")
@@ -27,21 +30,22 @@ def get_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), _=
     return {"data": LogicRuleOut.model_validate(r).model_dump()}
 
 @router.put("/{logic_id}")
-def update_logic(ontology_id: str, logic_id: str, body: LogicRuleUpdate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def update_logic(ontology_id: str, logic_id: str, body: LogicRuleUpdate, db: Session = Depends(get_db), user=Depends(require_editor)):
+    from app.services.v2.dynamic_ontology_service import OntologyEditError, apply_change
+    try:
+        apply_change(db, ontology_id, {"target_kind": "logic_rule", "operation": "update", "target_id": logic_id, "payload": body.model_dump(exclude_none=True)}, user_id=user.id)
+    except OntologyEditError as exc:
+        raise HTTPException(404 if exc.code == "NOT_FOUND" else 422, {"code": exc.code, "message": str(exc), **exc.details})
     r = db.query(LogicRule).filter(LogicRule.id == logic_id, LogicRule.ontology_id == ontology_id).first()
-    if not r:
-        raise HTTPException(404, "Not found")
-    for k, v in body.model_dump(exclude_none=True).items():
-        setattr(r, k, v)
-    db.commit(); db.refresh(r)
     return {"data": LogicRuleOut.model_validate(r).model_dump()}
 
 @router.delete("/{logic_id}", status_code=204)
-def delete_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    r = db.query(LogicRule).filter(LogicRule.id == logic_id, LogicRule.ontology_id == ontology_id).first()
-    if not r:
-        raise HTTPException(404, "Not found")
-    db.delete(r); db.commit()
+def delete_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), user=Depends(require_editor)):
+    from app.services.v2.dynamic_ontology_service import OntologyEditError, apply_change
+    try:
+        apply_change(db, ontology_id, {"target_kind": "logic_rule", "operation": "delete", "target_id": logic_id}, user_id=user.id)
+    except OntologyEditError as exc:
+        raise HTTPException(404 if exc.code == "NOT_FOUND" else 409, {"code": exc.code, "message": str(exc), **exc.details})
 
 
 @router.post("/{logic_id}/toggle")

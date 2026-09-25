@@ -2,7 +2,7 @@
 
 > 计划性质：责任边界与差距说明；不是工期承诺，也不授权实施。
 > 负责人：人员 B
-> 基准日期：2026-09-24
+> 基准日期：2026-09-25
 > 上游审计：`docs/PALANTIR_ONTOLOGY_GAP_AUDIT_2026_09_23.md`
 
 ## 1. 目标与不做事项
@@ -178,22 +178,43 @@ Palantir 区分：
 
 | 提交 | 实际能力，不只是提交标题 | 应保留 | 合并后仍需补齐或收敛 |
 | --- | --- | --- | --- |
-| `d1637e2` | 增加动态本体 change/impact/batch、可编辑 Data Model、FactoryNet 分批 replay、独立图 namespace、持久化 batch、时间轴图、基于固定 revision 的 What-if runner；54 个文件，约 6.4k 行 | ontology change audit、impact preview、replay checkpoint、隔离图、固定 revision 推理和 UI 时间轴均是可复用资产 | 其中 `WhatIfScenario/WhatIfRun` 与当前 `Scenario/ScenarioRevision/ScenarioRun` 重叠；动态本体编辑属于人员 A 的 canonical metadata 边界；不能把 FactoryNet 专用 schema/字段当通用 temporal contract |
+| `d1637e2` | 增加动态本体 change/impact/batch、可编辑 Data Model、FactoryNet 分批 replay、独立图 namespace、持久化 batch、时间轴图、基于固定 revision 的 What-if runner；54 个文件，约 6.4k 行 | ontology change audit、impact preview、replay checkpoint、隔离图、固定 revision 推理和 UI 时间轴均是可复用资产 | `WhatIfScenario/WhatIfRun` 是未 present、未形成团队验收证据的原型，并与当前更完整的 `Scenario/ScenarioRevision/ScenarioRun` 重叠；动态本体编辑属于人员 A 的 canonical metadata 边界；不能把 FactoryNet 专用 schema/字段当通用 temporal contract |
 | `a5159b3` | 在 replay 上增加逐事件 stream、push/file 两种来源、事件幂等、watermark、valid-from/to temporal facts、SSE、当前/历史关系读取和 immutable published snapshot；19 个文件，约 2.7k 行 | `TemporalStreamEvent`、`TemporalFact`、`DataModelSnapshot`、run-scoped namespace、publish gate 与 snapshot hash 应作为统一时间数据底座 | 第一版明确拒绝 late event；时间主键主要是 numeric ordinal；尚未定义 event-time/ingestion-time、时区、乱序容忍窗口、correction/retraction、schema evolution、retention；这些是扩展差距，不是重写理由 |
 | `ba6567d` | 增加 Ontology detail 的 Dynamic Evolution tab，提供 run 选择、时间滑块、current/history relation 和事件列表 | 作为 temporal workbench 的入口与可视化原型保留 | 节点详情仍是页面自有 key/value UI，未复用 `ObjectPanel`；查询也未统一为 Object Set/execution context；需在共享合同完成后重接，而不是删除页面 |
 | `fd90622` | 增加从空白开始的 simulated-live FactoryNet 会话、readiness/自动准备、未知未来 horizon、逐事件图增长及独立 Dynamic Data 页面；10 个文件，约 1k 行 | blind/live 演示、未知终点、单步/暂停/发布和来源耗尽状态是很好的验收夹具 | `dynamic_data` router 会自动创建 FactoryNet ontology，并调用 service 私有函数；这是 demo bootstrap，不应成为通用 ingest API。前端还包含轮询与 SSE 双刷新、全图分页后客户端布局、`any`/lint 豁免，需治理性能和类型边界 |
 
 #### 2.6.2 合并后的领域归属与重复模型裁决
 
-这四个提交不是“已经完成整个 Vertex/Scenario”的证据，而是可靠的 temporal data-plane 原型。合并后按以下边界使用：
+这四个提交不是“已经完成整个 Vertex/Scenario”的证据。代码审查只能证明功能存在，不能替代 present、产品验收和使用证据；其中 temporal 部分是值得集成验证的数据平面原型，What-if 部分则是待收敛的实验实现。合并后按以下边界使用：
 
-- `TemporalReplay/TemporalStreamEvent/TemporalFact/DataModelSnapshot` 是时间数据到达、有效期、证据和发布快照的 canonical 模型；Plan B 直接消费，不再创建第二套 event/fact/snapshot 表。
-- 当前分支的 `Scenario/ScenarioRevision/ScenarioChangeSet/ScenarioRun` 是用户可协作的决策分支与 edit overlay canonical 模型；远端 `WhatIfScenario/WhatIfRun` 暂作 compatibility source。其固定 revision 推理逻辑迁到统一 Scenario runner，旧表/API 在数据迁移和调用方切换后退役，不能让两个 scenario catalog 同时面向用户。
+- `TemporalReplay/TemporalStreamEvent/TemporalFact/DataModelSnapshot` 只作为时间数据到达、幂等处理、内部有效期投影、证据和发布 checkpoint 的数据平面；Plan B 可复用该底座，但不能把这些表直接暴露成 Palantir-compatible Ontology 时间语义。
+- 当前分支的 `Scenario/ScenarioRevision/ScenarioChangeSet/ScenarioRun` 在 revision、change set、digest、grants、audit、Action preview/submit、compare/merge 上明显更完整，因此是用户可协作的决策分支与 edit overlay canonical 模型。Joey 的 `WhatIfScenario/WhatIfRun` 只作为待提取算法的 source code 随历史保留，不注册正式 router、不展示第二个 What-if tab；其固定 revision 推理 diff 经测试后迁到统一 Scenario runner，旧表/model 再退役。
 - `OntologyChange`、Data Model editor、batch impact 属于 canonical ontology schema 编辑链，应由人员 A 审核 revision、identifier、authorization 和 migration aliases；人员 B 只消费发布后的 schema revision，并负责把影响/历史正确展示在运行时 UI。
 - `DynamicDataPage` 的 FactoryNet 自动准备是 demo adapter；通用产品入口必须要求显式 source、mapping、ontology、schema revision、event-time policy 和授权，不允许靠名字或实体集合猜 ontology。
 - published `DataModelSnapshot` 应成为 Object Query data view、Pinned Scenario base 和 Graph history 的可引用资源；不能只更新 `OntologyProject.current_data_snapshot_id` 后让其余运行时继续读取隐式 live 图。
 
-#### 2.6.3 何时合并、怎样合并
+#### 2.6.3 以 Palantir 公开设计为准的采纳裁决
+
+提交时间、作者和已有代码量都不是采纳依据。Palantir 的公开合同给出三条不能混淆的资源模型：
+
+1. **Event 是 Object Type。** Vertex 文档要求 event object 至少有 start/end 两个 timestamp，并通过标准 link 与业务对象相连。因此 Joey 的 `TemporalStreamEvent` 是 ingestion envelope，不是最终 Event Object；它被处理后应 materialize 成标准 object/link/property，才能被 Object Query、Object View、Action、权限和 Vertex 一致消费。
+2. **连续测量是 Time Series Property。** TSP 是 object property，通过 string series ID 连接一个或多个 time-series sync；sensor object type 用标准 link 关联 root object，并具有 default TSP、unit、interpolation 等 capability metadata。因此 `TemporalFact(subject,predicate,object,valid_from/to)` 可以支持内部状态投影，却不能替代 TSP/sensor/time-series sync 合同。
+3. **Ontology Scenario 是 edit overlay，不是历史 snapshot。** Palantir Scenario 默认 30 天 TTL、每 10 分钟 auto-rebase、按 execution context 执行 Function/Action，并由 merge Action 写回；官方明确说它不是 historical data version。`DataModelSnapshot` 只能作为本项目 Pinned/审计扩展或查询 checkpoint，不能被命名或解释成 Palantir Scenario base 的标准行为。
+
+据此逐项裁决：
+
+| Joey 实现 | Palantir 对照 | 裁决 |
+| --- | --- | --- |
+| event key 幂等、watermark、pause/resume、file/push replay | 属于 streaming ingestion/runtime，Palantir Ontology 文档不规定内部实现 | **采纳为内部底座**，但补 event-time/ingestion-time、乱序与 correction policy |
+| `TemporalFact` valid-from/to 与 run graph namespace | 可支撑历史查询，但不是官方 Event Object 或 TSP 类型表面 | **仅保留为内部 projection**；新增标准 Event Object materialization 与 TSP adapter，所有产品 UI 经 canonical object/property/link contract 读取 |
+| `DataModelSnapshot` 和 snapshot hash | 有利于可重复测试；官方 Scenario 明确不是 snapshot | **保留为 Pinned/审计扩展**，名称、banner 和 API 不伪装成 Tracking Scenario |
+| `DynamicEvolutionTab`/Dynamic Data graph | 部分对应 Vertex time selection/events，但节点 panel、event object、TSP chart、search-around 尚未按官方合同统一 | **保留为实验入口并重接共享组件**，不能据此宣称 Vertex 已完成 |
+| `WhatIfScenario/WhatIfRun/WhatIfTab` | Vertex model scenario 强调 configured model inputs/outputs、time window、baseline run、actions/overrides；Ontology Scenario 另有 overlay/rebase/merge 合同 | **不作为正式入口采纳**；仅提取有证据价值的 fixed-revision reasoning diff 到当前 Scenario/Logic runner |
+| ontology change impact/editor | 对应 builder 对 object/link/property schema 的治理，不属于最终用户 Scenario | **由人员 A 审核后采纳**；schema revision/authorization/identifier 不通过则不发布 |
+
+因此“合并 Joey 分支”只表示把代码历史放到共同集成点，并不自动授予任何模块 canonical 地位。正式路由、导航、数据库读写路径和 Plan B ownership 以上表为准；未通过裁决的模块可以保留源码和测试，但默认不注册、不展示，直到适配完成。
+
+#### 2.6.4 何时合并、怎样合并
 
 合并窗口是**当前 208 文件工作区先形成一个可回滚提交之后、人员 B 开始按本计划继续实现之前**；不是等两人各自再做完一轮。两条分支共同祖先为 `72396a2`，当前分支独有 2 个提交，temporal 分支独有上述 4 个提交。采用保留历史的 `--no-ff` integration merge，不 squash，也不逐文件复制；这样 blame、回滚和四个提交的验收边界仍清楚。
 
@@ -201,7 +222,7 @@ Palantir 区分：
 
 迁移图也必须显式收敛：temporal 链从 `0015_ontology_mapping_v2` 分出 `0016_dynamic_ontology_what_if → 0017_temporal_replays → 0018_temporal_stream_facts`，当前链则是 `0016_reasoning → … → 0030_supplier_run_evidence`。合并后新增 Alembic merge revision，以这两个 head 为 `down_revision`；随后分别验证空库 `upgrade head`、从每条已部署 head 升级、`alembic heads` 只有一个 head。不得改写已经可能被组员运行过的历史 migration ID。
 
-Integration merge 的完成定义不是“Git 无冲突”，而是：应用能导入全部 routers/models；migration 单 head；现有 Scenario 与 temporal tests 同时通过；创建 stream、处理事件、发布 snapshot 后能以 snapshot ID 创建 Pinned Scenario/Object Query view；旧 What-if API 有明确 compatibility 行为；前端同时可达 Object Query、Scenario、Dynamic Evolution，且共享导航没有丢项。
+Integration merge 的完成定义不是“Git 无冲突”，而是：应用能导入选定 routers/models；migration 单 head；现有 Scenario 与 temporal tests 同时通过；ingestion event 可 materialize/适配为标准 Event Object 或 TSP；历史 checkpoint 与 Scenario overlay 在命名和执行语义上分离；Joey 的旧 What-if router/tab 默认不注册；前端同时可达 Object Query、当前 Scenario 和标为实验性的 Dynamic Evolution，且共享导航没有丢项。
 
 ### 2.7 现有测试不能单独证明 Ontology 可被发现和正确使用
 
@@ -221,8 +242,9 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 8. Scenario context 显式、可见、可比较，不允许用户误把 scenario edit 当 live write。
 9. 所有异步操作展示 empty、loading、partial、expired、permission denied、unavailable、conflict 和 failed 的不同状态。
 10. 用户与 Agent 验收必须使用未预演问题和真实数据，不把内部演示脚本当作可发现性证据。
-11. Temporal event/fact/snapshot 与 Scenario overlay 是两层资源：snapshot 提供可引用 baseline，Scenario 表示相对 baseline 的决策 edits；任何 UI 或 API 不得把 replay 进度、历史时点和 scenario revision 混成同一个“版本”。
+11. Ingestion event、internal temporal fact、published checkpoint 与 Scenario overlay 是不同层资源；任何 UI 或 API 不得把 replay 进度、历史时点和 scenario revision 混成同一个“版本”。
 12. 合并后的正式 API 不依赖 FactoryNet 私有字段、按名称猜 ontology 或 service 私有函数；demo adapter 必须与通用 contract 分层。
+13. 对外 temporal ontology 只暴露标准 Event Object、link、TSP/sensor/time-series capability；内部 `TemporalFact` 不绕过 Object Query、Object View、Action 和授权合同。
 
 ## 4. Design corrections
 
@@ -235,20 +257,20 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 | Entity detail 可同时当类型管理和对象工作台 | 当前页面职责混合；官方 full/panel views 可跨应用复用 | 拆 Type Manager 与 reusable Object View/Panel | 页面路由和组件边界改变 | refactor |
 | Scenario revision 可以被描述成历史版本 | 官方明确 Scenario 不是历史 data version；本项目 immutable view 是自有扩展 | 同时提供 Palantir-compatible Tracking 与项目扩展 Pinned；二者都仍是 edit overlay，不冒充历史仓库 | 工作台创建流程、context、TTL、rebase、compare/merge 合同调整 | extend + clarify |
 | 图页面自己查询和展示对象最直接 | 会复制 Object Set、权限和 Object View 语义 | Graph 消费统一 Object Set + Object Panel + Scenario context | 图数据加载和 selection sidebar 重接 | refactor |
-| Vertex 时间/事件模型尚未实现 | 远端 4 个提交已实现 replay、event、temporal fact、snapshot 和 Dynamic Evolution UI，但当前分支未集成 | 保留 temporal data plane，补 late-event/time policy 与统一 snapshot reference；禁止平行创建第二套 temporal domain | 涉及跨分支 integration、双 Alembic head 和 9 个重叠文件 | preserve + integrate |
-| 远端 What-if 可与当前 Scenario 并列上线 | 两者都有 scenario/run/base revision，却使用不同表、API、执行器和 UI | 当前 `v2_scenarios` 为产品 canonical catalog；迁移远端固定 revision runner，旧 `v2_what_if_*` 只做兼容与数据迁移 | 需要 adapter、数据迁移和 endpoint deprecation，而不是第三套 UI | converge |
+| Vertex 时间/事件模型尚未实现 | 远端 4 个提交实现了内部 replay/event/fact/snapshot 和 Dynamic Evolution UI，但不等于 Palantir 的 Event Object + TSP/sensor 模型 | 保留 ingestion data plane，增加 canonical Event/TSP adapter、late-event/time policy；禁止把内部 fact table 当产品 ontology | 涉及跨分支 integration、双 Alembic head、9 个重叠文件与领域适配 | preserve substrate + adapt surface |
+| 远端 What-if 可与当前 Scenario 并列上线 | Joey 的实现未 present/验收；两者都有 scenario/run/base revision，却使用不同表、API、执行器和 UI；当前实现的治理、Action 和 merge 更完整 | 当前 `v2_scenarios` 为唯一产品 catalog；远端 router/tab 默认不注册，只迁移其固定 revision reasoning diff | 需要算法提取与 model/table 退役，不创建第三套 UI | converge |
 | Dynamic Data demo 就是通用实时接入 | 它按 FactoryNet 实体集合猜 ontology、可自动建 schema，并调用私有 helper | 保留为 demo adapter；正式 API 显式声明 source/mapping/revision/time policy/auth | router/service 分层并补 contract tests | preserve + isolate |
 | “信息架构参考”足以指导 Explorer UI | 92 张官方截图给出明确布局、密度、控件位置和状态反馈 | 默认高保真复刻，偏离必须有记录和理由 | `ObjectQueryTab` 需要按 reference screenshot 进行视觉验收 | replace UI shell |
 
 ## 5. 目标边界（简要行动建议）
 
-0. 当前工作区提交后立即完成 temporal integration merge：解决 9 个重叠文件、双 migration head 和双 Scenario 模型裁决；在此 gate 前不继续新增 Scenario/Vertex 领域表。
+0. 当前工作区提交后完成基于 Palantir 合同的 selective integration merge：解决重叠文件、双 migration head 和双 Scenario 模型裁决；只注册通过裁决的 temporal runtime，Joey What-if 保留源码但不上正式入口。
 1. 建立统一 Action compiler/edit batch，并让 preview、live submit、scenario submit 共用；旧 endpoint 做兼容 facade。
 2. 给 Logic Asset 增加 typed signature/version policy；把 edit-producing function 的唯一提交口绑定到 Action。
 3. 用现有 Object Query/Object Set APIs 建 Object Explorer state model，并以 92 张官方截图为默认视觉基准开放 filter、pivot、charts/results、save、compare、Action/open-in。
 4. 提取 standard `ObjectView` 与 `ObjectPanel`；Explorer、Graph、Scenario、Dynamic Evolution 先复用 panel，再做 configured views。
 5. 让统一 `ExecutionContext` 贯穿 Query/Function/Action/View/Graph；实现 Tracking/Pinned 两种 Scenario，并让 Pinned 显式引用 published temporal snapshot。
-6. 在已合并 temporal data plane 上补通用 source/time/late-event contract，再扩展 Vertex 式 events/time/layers/version 和开展盲测。
+6. 在已合并 temporal data plane 上补通用 source/time/late-event contract，并 materialize/adapter 到 Event Object、TSP/sensor/time-series sync，再扩展 Vertex 式 events/time/layers/version 和开展盲测。
 
 ## 6. 与人员 A 的接口和文件所有权
 
@@ -288,6 +310,7 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 | Browser E2E | 覆盖键盘操作、刷新/前进后退、慢网/失败/expired view、权限拒绝、重复提交、conflict、窄屏；断言业务结果而非仅页面存在。 |
 | Graph/Scenario | 同一 Object Set 在 live 与两个 scenario 中结果可比较；Graph selection 使用共享 panel；多步 traversal 与保存/恢复一致。 |
 | Temporal integration | `alembic heads` 单 head；空库与两条旧 head 均可升级；file/push 相同事件产生相同 snapshot hash；重复事件幂等；late event 得到明确政策结果；snapshot ID 可被 Pinned Scenario、Object Query 和 Graph history 一致引用。 |
+| Palantir temporal surface | Event 至少有 start/end timestamp 并作为标准 Object Type 被查询；TSP 通过 series ID + sync 解析，sensor link/default TSP/unit/interpolation 可发现；内部 TemporalFact 不能成为 UI 的专用旁路。 |
 | Product validation | 10–15 个未预演问题，由新用户、领域用户、Agent 分别完成；记录答案、选择路径、耗时、困惑、求助和错误类型。 |
 | Performance/soak | 记录 Explorer load/pivot/compare 和 Action preview/submit 的 p50/p95/p99、请求 fan-out、内存、取消与恢复；无重复请求和无界 trace。 |
 | Static gates | `frontend`: `npm run lint:src`、`npm run lint:scripts`、`npm run build`、相关 `npm run test:e2e`；changed files 零 error/零 warning。Backend 执行相关 pytest contract/integration suites。 |
@@ -343,6 +366,10 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 - [Explore object relationships](https://www.palantir.com/docs/foundry/vertex/explore-object-relationships/)
 - [Vertex save/share/version](https://www.palantir.com/docs/foundry/vertex/save-share/)
 - [Vertex scenarios](https://www.palantir.com/docs/foundry/vertex/scenarios-overview/)
+- [Vertex events and time series](https://www.palantir.com/docs/foundry/vertex/events-overview/)
+- [Time series overview](https://www.palantir.com/docs/foundry/time-series/time-series-overview/)
+- [Time series properties](https://www.palantir.com/docs/foundry/time-series/time-series-properties/)
+- [Time series concepts glossary](https://www.palantir.com/docs/foundry/time-series/time-series-concepts-glossary/)
 - [Ontology design validation](https://www.palantir.com/docs/foundry/ontology/ontology-design-validation/)
 
 ### Palantir 官方公开源码
@@ -383,10 +410,10 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 
 ## 10. 决策摘要
 
-- **保留：** Object Query/Object Set 后端、Scenario immutable revision/data view、Logic Asset contracts/runs/traces、现有图组件，以及远端已实现的 temporal replay/event/fact/snapshot 模型。
+- **保留：** Object Query/Object Set 后端、Scenario immutable revision/data view、Logic Asset contracts/runs/traces、现有图组件，以及 Joey 的 temporal ingestion/replay/checkpoint 底座；内部 temporal fact 不等于 canonical Ontology 时间表面。
 - **实施前必须改变：** Action 只能有一个 compiler/edit batch 语义；Function edit 必须经 Action；Explorer/View/Graph 不得各自解释类型和权限。
 - **视觉决定：** Object Explorer 默认高保真复刻 Palantir 官方截图；保持本项目品牌、中文、可访问性和响应式，所有其他偏离都需记录。
 - **组件决定：** 继续采用 React Query、Cytoscape/XYFlow、Playwright 的现有角色；低代码 builder 在稳定配置 runtime 后独立立项，不引入新的图数据库产品。
-- **Integration gate：** 当前工作区形成可回滚提交后，立即把 `origin/factorynet-temporal-workbench` 以 `--no-ff` 合入；解决双 migration head、9 个重叠文件和双 Scenario catalog，并通过 temporal + Scenario 联合验证。
+- **Integration gate：** 当前工作区形成可回滚提交后，把 `origin/factorynet-temporal-workbench` 以保留历史的 `--no-ff` 方式选择性集成；解决双 migration head、重叠注册/UI 文件和双 Scenario catalog，只启用符合 Palantir 资源边界的入口，并通过 temporal + Scenario 联合验证。
 - **第一阶段：** 在 integration gate 通过后，完成 Action semantic inventory 与统一 edit-batch contract，同时按官方 UI 搭建 Explorer shell/state reducer 和共享 Object Panel。
 - **进入后续阶段的证据：** preview/live/scenario 对同一 Action 产生一致 edits；Object Set expression 能从 URL/UI 无损往返；核心 Explorer 状态通过 reference screenshot review；Object Panel 在 Explorer/Graph/Scenario 三处使用同一组件和授权结果。

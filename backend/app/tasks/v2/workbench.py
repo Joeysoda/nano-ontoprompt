@@ -34,3 +34,9 @@ def run_mapping_task(task_id: str) -> None:
 def run_regular_construction_task(run_id: str, sample_limit: int = 5000) -> None:
     from app.routers.v2.construction_drafts import _execute_regular_run
     _execute_regular_run(run_id, sample_limit)
+
+
+@celery_app.task(name="v2.what_if_run")
+def run_what_if_task(run_id: str) -> None:
+    from app.routers.v2.what_if import _execute_run
+    _execute_run(run_id)

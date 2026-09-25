@@ -439,7 +439,34 @@ def create_temporal_analysis(source_id: str, body: TemporalAnalysisRequest | Non
             existing.error = None
             existing.status = "completed"
             db.commit()
-        elif existing.status == "queued":
+        elif existing.status == "completed" and existing.llm_used:
+            # A successful standard analysis is reusable.  Do not create a
+            # second profile (or invoke M3 again) for repeated clicks.
+            return serialize_profile(existing)
+        elif existing.status in {"queued", "running"}:
+            # A duplicate click must not reset a live task.  A queued profile
+            # can still need its first dispatch when the broker was briefly
+            # unavailable, so keep the existing retry behaviour for that one
+            # state only.
+            if existing.status == "queued":
+                _queue_temporal_profile(existing.id, background)
+        else:
+            # Older FactoryNet profiles were marked completed after the
+            # deterministic pass even though no cloud model had run
+            # (``llm_used`` stayed false).  The build endpoint deliberately
+            # rejects those profiles in standard mode, so turn them into an
+            # explicit, retryable M3 task instead of returning a stale
+            # success that can never pass the build gate.  Failed profiles
+            # use the same path when the user asks to retry.
+            existing.status = "queued"
+            existing.error = None
+            existing.llm_suggestion = {}
+            existing.llm_used = False
+            existing.model_name = None
+            existing.model_config_id = None
+            existing.prompt_version = None
+            existing.response_hash = None
+            db.commit()
             _queue_temporal_profile(existing.id, background)
         return serialize_profile(existing)
     if privacy == "private":
@@ -499,6 +526,7 @@ def source_preview(
                 "rows": selected, "columns": [key for key in all_rows[0].keys() if not str(key).startswith("_")] if all_rows else [],
                 "total_rows": len(all_rows), "total_source_rows": len(all_rows),
                 "summary": {"rows": len(all_rows), "episodes": len({str(row.get("episode_id")) for row in all_rows}),
+                            "episode_ids": sorted({str(row.get("episode_id")) for row in all_rows if row.get("episode_id") not in (None, "")}),
                             "machines": len({str(row.get("machine_type")) for row in all_rows}), "time_kind": "ordinal",
                             "time_column": "time_s", "time_from": min((row.get("time_s") for row in all_rows if row.get("time_s") is not None), default=None),
                             "time_to": max((row.get("time_s") for row in all_rows if row.get("time_s") is not None), default=None)}}
@@ -573,9 +601,30 @@ def query_temporal_source(source_id: str, body: TemporalQueryBody, db: Session =
     selected = _filter_generic_rows(rows, body.model_dump(exclude_none=True), entity_column=body.entity_column)
     page = selected[body.offset:body.offset + body.limit]
     columns = [key for key in rows[0].keys() if not str(key).startswith("_")] if rows else []
+    # Keep the query response useful for the next wizard step.  The first
+    # preview endpoint exposes the full FactoryNet episode list, but applying
+    # a filter replaces that preview; without this summary the UI could only
+    # render the 25 rows on the current page and would hide most processes.
+    summary: dict[str, Any] = {
+        "rows": len(selected),
+        "source_rows": len(rows),
+        "time_kind": item.get("time_kind") or "unknown",
+    }
+    episode_column = next((name for name in ("episode_id", "episode", "series_id", "stream_id") if name in columns), None)
+    if episode_column:
+        episode_ids = sorted({str(row.get(episode_column)) for row in rows if row.get(episode_column) not in (None, "")})
+        summary["episode_ids"] = episode_ids
+        summary["episodes"] = len(episode_ids)
+    machine_column = next((name for name in ("machine_type", "machine_id", "device_id", "equipment_id") if name in columns), None)
+    if machine_column:
+        summary["machines"] = len({str(row.get(machine_column)) for row in rows if row.get(machine_column) not in (None, "")})
+    for candidate in ("time_s", "event_seq", "cycle", "step", "timestamp", "event_time"):
+        if candidate in columns:
+            summary["time_column"] = candidate
+            break
     return {"source_id": source_id, "dataset_id": item["dataset_id"], "offset": body.offset, "limit": body.limit,
             "rows": page, "columns": columns, "total_rows": len(selected), "total_source_rows": len(rows),
-            "summary": {"rows": len(selected), "source_rows": len(rows), "time_kind": item.get("time_kind") or "unknown"}}
+            "summary": summary}
 
 
 @router.get("/catalog")
@@ -728,6 +777,7 @@ def temporal_run_graph(
     offset: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=500),
     entity_type: str | None = None,
+    episode_id: str | None = None,
     seq_from: int | None = None,
     seq_to: int | None = None,
     relation_state: str = Query("all", pattern="^(all|current)$"),
@@ -745,6 +795,7 @@ def temporal_run_graph(
         raise HTTPException(409, "构建任务尚未完成")
     return get_falkordb().get_graph_data(
         run.ontology_id, offset=offset, limit=limit, entity_type=entity_type,
+        episode_id=episode_id,
         seq_from=seq_from, seq_to=seq_to, relation_state=relation_state,
     ) | {"run_id": run_id, "ontology_id": run.ontology_id}
 
@@ -764,6 +815,7 @@ def list_temporal_runs_alias(ontology_id: str, limit: int = Query(50, ge=1, le=2
 def snapshot(
     ontology_id: str, at: str | None = None,
     mode: str = Query("cumulative", pattern="^(window|cumulative)$"),
+    episode_id: str | None = None,
     date_from: str | None = None, date_to: str | None = None,
     country: str | None = None, event_type: str | None = None,
     category: str | None = None,
@@ -771,7 +823,7 @@ def snapshot(
     participant: str | None = None, limit: int = Query(200, ge=1, le=1000),
 ):
     return get_falkordb().temporal_snapshot(
-        ontology_id, at=at, mode=mode, date_from=date_from, date_to=date_to,
+        ontology_id, at=at, mode=mode, episode_id=episode_id, date_from=date_from, date_to=date_to,
         country=country, event_type=event_type, category=category,
         intensity_min=intensity_min,
         intensity_max=intensity_max, participant=participant, limit=limit,
@@ -779,8 +831,8 @@ def snapshot(
 
 
 @ontology_router.get("/timeline")
-def timeline(ontology_id: str, entity_id: str | None = None, category: str | None = None, limit: int = Query(200, ge=1, le=1000)):
-    return get_falkordb().temporal_timeline(ontology_id, entity_id=entity_id, category=category, limit=limit)
+def timeline(ontology_id: str, entity_id: str | None = None, category: str | None = None, episode_id: str | None = None, limit: int = Query(200, ge=1, le=1000)):
+    return get_falkordb().temporal_timeline(ontology_id, entity_id=entity_id, category=category, episode_id=episode_id, limit=limit)
 
 
 @ontology_router.get("/diff")
@@ -800,6 +852,7 @@ def growth(ontology_id: str, limit: int = Query(200, ge=1, le=1000)):
 def snapshot_legacy(
     ontology_id: str, at: str | None = None,
     mode: str = Query("cumulative", pattern="^(window|cumulative)$"),
+    episode_id: str | None = None,
     date_from: str | None = None, date_to: str | None = None,
     country: str | None = None, event_type: str | None = None,
     category: str | None = None,
@@ -807,7 +860,7 @@ def snapshot_legacy(
     participant: str | None = None, limit: int = Query(200, ge=1, le=1000),
 ):
     return get_falkordb().temporal_snapshot(
-        ontology_id, at=at, mode=mode, date_from=date_from, date_to=date_to,
+        ontology_id, at=at, mode=mode, episode_id=episode_id, date_from=date_from, date_to=date_to,
         country=country, event_type=event_type, category=category,
         intensity_min=intensity_min,
         intensity_max=intensity_max, participant=participant, limit=limit,
@@ -815,8 +868,8 @@ def snapshot_legacy(
 
 
 @router.get("/ontologies/{ontology_id}/timeline")
-def timeline_legacy(ontology_id: str, entity_id: str | None = None, category: str | None = None, limit: int = Query(200, ge=1, le=1000)):
-    return get_falkordb().temporal_timeline(ontology_id, entity_id=entity_id, category=category, limit=limit)
+def timeline_legacy(ontology_id: str, entity_id: str | None = None, category: str | None = None, episode_id: str | None = None, limit: int = Query(200, ge=1, le=1000)):
+    return get_falkordb().temporal_timeline(ontology_id, entity_id=entity_id, category=category, episode_id=episode_id, limit=limit)
 
 
 @router.get("/ontologies/{ontology_id}/diff")

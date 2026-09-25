@@ -111,6 +111,14 @@ def test_all_v2_tables_registered():
         "v2_scenario_run_artifacts",
         "v2_scenario_grants",
         "v2_scenario_audits",
+        "v2_ontology_changes",
+        "v2_what_if_scenarios",
+        "v2_what_if_runs",
+        "v2_temporal_replays",
+        "v2_temporal_replay_batches",
+        "v2_temporal_stream_events",
+        "v2_temporal_facts",
+        "v2_data_model_snapshots",
     }
 
 

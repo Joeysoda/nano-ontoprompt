@@ -105,7 +105,7 @@
       "info": "基本信息",
       "files": "文件上传",
       "extract": "LLM提取配置",
-      "graph": "知识图谱",
+      "graph": "本体",
       "entities": "实体",
       "logic": "逻辑规则",
       "actions": "动作",
