@@ -8,6 +8,7 @@ cross this boundary.
 from __future__ import annotations
 
 from copy import deepcopy
+from types import SimpleNamespace
 from math import isfinite
 import re
 
@@ -121,8 +122,8 @@ def _authorize(action_type, actor):
         if not isinstance(rule, dict) or not set(rule) or set(rule) - supported:
             raise ScenarioError("invalid_permission_rule", "Unsupported Action permission rule", 422, "permission_rules")
     if not any(
-        ("role" in rule and rule["role"] == getattr(actor, "role", None)) or
-        ("principal_id" in rule and rule["principal_id"] == getattr(actor, "id", None))
+        ("role" not in rule or rule["role"] == getattr(actor, "role", None)) and
+        ("principal_id" not in rule or rule["principal_id"] == getattr(actor, "id", None))
         for rule in rules
     ):
         raise ScenarioError("forbidden", "Action permission denied", 403, "permission_rules")
@@ -208,7 +209,7 @@ def _bind_legacy_parameters(definitions, submitted):
     return values
 
 
-def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *, actor=None, id_factory=None):
+def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *, actor=None, id_factory=None, function_resolver=None):
     """Return one complete, ordered edit batch for live or Scenario targets.
 
     ``scenario_id`` is only used for deterministic Scenario-created IDs.  A
@@ -234,6 +235,20 @@ def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *
         if not action_type or not action_type.enabled or action_type.status != "published":
             raise ScenarioError("action_type_unavailable", "Select a published Action type", 422)
         _authorize(action_type, actor)
+        if getattr(action_type, "side_effects", None):
+            raise ScenarioError("unsupported_side_effect", "External side effects require a configured delivery adapter", 422, "side_effects")
+        function_manifest = None
+        current_id_factory = id_factory
+        if getattr(action_type, "backed_by_function", None):
+            if action_type.effects:
+                raise ScenarioError('mutually_exclusive_rules', 'Function and ontology rules cannot be mixed')
+            if function_resolver is None:
+                raise ScenarioError("function_binding_unavailable", "Function binding must resolve before compiling ontology edits", 422, "backed_by_function")
+            _validate_criteria(action_type, invocation['parameters'], invocation.get('target_object_id'), objects)
+            definitions, submitted, rules, generated_ids, function_manifest = function_resolver(action_type, invocation, SimpleNamespace(objects=objects, edges=links))
+            action_type = SimpleNamespace(id=action_type.id, version=action_type.version, parameters=definitions, effects=rules, submission_criteria=[], target_entity_type=getattr(action_type, 'target_entity_type', None))
+            invocation = dict(invocation, parameters=submitted)
+            current_id_factory = lambda action_index, rule_index: generated_ids[rule_index]
         values = {}
         canonical_rules = all(isinstance(rule, dict) and "op" in rule for rule in (action_type.effects or []))
         legacy_rules = all(isinstance(rule, dict) and "action" in rule for rule in (action_type.effects or []))
@@ -250,7 +265,7 @@ def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *
         _validate_criteria(action_type, invocation["parameters"], invocation.get("target_object_id"), objects)
         source = f"{action_type.id}@{action_type.version}"
         add(op="invoke_action", source_action=source, action_key=action_type.id,
-            parameters={"action_type_version": action_type.version, "values": values})
+            parameters={"action_type_version": action_type.version, "values": values, **({'function': function_manifest} if function_manifest else {})})
         for rule_index, rule in enumerate(action_type.effects):
             op = rule.get("op") if canonical_rules else rule.get("action")
             if not canonical_rules:
@@ -275,7 +290,7 @@ def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *
                     if not isinstance(data, dict):
                         raise ScenarioError("invalid_parameter", "create_object data must be an object")
                     object_type = rule.get("entity_type") or rule.get("object_type") or action_type.target_entity_type or "Object"
-                    object_id = id_factory(action_index, rule_index) if id_factory else f"scenario:{scenario_id}:{action_index}:{rule_index}"
+                    object_id = current_id_factory(action_index, rule_index) if current_id_factory else f"scenario:{scenario_id}:{action_index}:{rule_index}"
                     props = {key: value for key, value in data.items() if _public_name(str(key))}
                     props.setdefault("name", object_id)
                     ref = {"object_type": object_type, "object_id": object_id}
@@ -343,7 +358,7 @@ def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *
                         objects[key].pop(prop, None)
             elif op == "create_object":
                 object_type = rule["object_type"]
-                object_id = id_factory(action_index, rule_index) if id_factory else f"scenario:{scenario_id}:{action_index}:{rule_index}"
+                object_id = current_id_factory(action_index, rule_index) if current_id_factory else f"scenario:{scenario_id}:{action_index}:{rule_index}"
                 props = {}
                 for prop, mapping in rule.get("properties", {}).items():
                     if not isinstance(mapping, dict) or ("parameter" in mapping) == ("static" in mapping):

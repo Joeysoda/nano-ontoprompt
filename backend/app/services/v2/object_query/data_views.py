@@ -1,5 +1,6 @@
 """Manifest and immutable view helpers for Object Query."""
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 from app.models.v2.query_view import QueryDataView
 from .core import FalkorReadAdapter, metadata_digest
 from .errors import ObjectQueryError
@@ -21,6 +22,7 @@ def as_response(view):
         "status": view.status,
         "metadata_digest": view.metadata_digest,
         "source_manifest_digest": view.source_manifest_digest,
+        "source_snapshot_id": view.source_snapshot_id,
         "base_view_id": view.base_view_id,
         "changeset_digest": view.changeset_digest,
         "changeset_version": view.changeset_version,
@@ -50,15 +52,17 @@ def require_ready(db, view_id, ontology_id, *, principal_id=None, is_admin=False
     return view
 
 
-def build_live_view(db, graph_service, metadata, ontology_id, principal_id, source_manifest_digest, retention_seconds):
+def build_live_view(db, graph_service, metadata, ontology_id, principal_id, source_manifest_digest, retention_seconds, *, source_graph_key=None, source_snapshot_id=None):
     """Copy a bounded live graph into an isolated immutable graph and publish atomically."""
-    source = graph_service._graph(ontology_id)
+    source_key = source_graph_key or ontology_id
+    source = graph_service._graph(source_key)
     source_data = FalkorReadAdapter(source, max_objects=100000, max_edges=500000).read(ontology_id)
     view = QueryDataView(
         ontology_id=ontology_id,
         source_manifest_digest=source_manifest_digest,
+        source_snapshot_id=source_snapshot_id,
         metadata_digest=metadata_digest(metadata),
-        graph_key=f"view_{stable_hash({'ontology': ontology_id, 'source': source_manifest_digest, 'digest': metadata_digest(metadata)})[:48]}",
+        graph_key=f"view_{uuid4().hex}",
         status="building",
         created_by=principal_id,
         retention_until=now() + timedelta(seconds=retention_seconds),
@@ -80,15 +84,15 @@ def build_live_view(db, graph_service, metadata, ontology_id, principal_id, sour
         # strict snapshot; a future coordinated source adapter can replace
         # this bounded consistency check.
         source_after = FalkorReadAdapter(source, max_objects=100000, max_edges=500000).read(ontology_id)
-        after_digest = stable_hash({"objects": sorted(source_after.objects), "edges": sorted(source_after.edges)})
-        before_digest = stable_hash({"objects": sorted(source_data.objects), "edges": sorted(source_data.edges)})
+        after_digest = stable_hash({"objects": sorted(source_after.objects.items()), "edges": sorted(source_after.edges)})
+        before_digest = stable_hash({"objects": sorted(source_data.objects.items()), "edges": sorted(source_data.edges)})
         if before_digest != after_digest:
             view.status = "failed"
             db.commit()
             raise ObjectQueryError("snapshot_unavailable", "data_view", "Source graph changed during snapshot capture")
         view.object_count = len(instances)
         view.edge_count = len(relations)
-        view.content_digest = stable_hash({"objects": sorted(source_data.objects), "edges": sorted(source_data.edges)})
+        view.content_digest = before_digest
         view.status = "ready"
         db.commit()
     except ObjectQueryError:

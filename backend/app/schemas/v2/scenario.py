@@ -41,6 +41,7 @@ class CreateScenarioRequest(ScenarioBase):
     base_view_id: str
     ttl_seconds: int | None = Field(default=None, ge=60, le=31_536_000)
     protected_demo: bool = False
+    mode: Literal['tracking', 'pinned'] = 'pinned'
 
 
 class ChangeSetRequest(ScenarioBase):

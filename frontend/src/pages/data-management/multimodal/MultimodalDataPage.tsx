@@ -57,7 +57,7 @@ type Dataset = {
   data_class: string;
   privacy_level: "standard" | "private";
   version_id?: string;
-  manifest?: Record<string, any>;
+  manifest?: Record<string, unknown>;
 };
 type InstallTask = {
   id: string;
@@ -66,7 +66,7 @@ type InstallTask = {
   status: string;
   progress?: { stage?: string; completed?: number; total?: number };
   dataset_id?: string;
-  result?: Record<string, any>;
+  result?: Record<string, unknown>;
   error?: string;
   cancel_requested?: boolean;
 };
@@ -125,6 +125,13 @@ type MappingTask = {
   result?: { suggestions?: Record<string, unknown>[] };
   error?: string;
 };
+type ModelStatus = { configured?: boolean; upstream_authorized?: boolean; model_id?: string };
+type DraftResponse = { id?: string; privacy_level?: "standard" | "private" };
+type MappingResponse = {
+  mapping_task_id?: string;
+  mapping?: { status?: string; error?: string; suggestions?: Record<string, unknown>[] };
+};
+type PreflightResponse = { preflight?: { allowed?: boolean; reason?: string } };
 
 const STEPS = ["数据集", "内容选择", "处理配置", "本体映射", "确认构建"];
 const statusLabel: Record<string, string> = {
@@ -146,14 +153,15 @@ const roleLabel: Record<string, string> = {
   docx: "DOCX 证据",
 };
 
-function errorText(error: any) {
-  return (
-    error?.response?.data?.detail?.message ||
-    error?.response?.data?.detail ||
-    error?.detail ||
-    error?.message ||
-    "请求失败"
-  );
+function errorText(error: unknown) {
+  if (typeof error !== "object" || error === null) return "请求失败";
+  const record = error as Record<string, unknown>;
+  const response = typeof record.response === "object" && record.response !== null ? record.response as Record<string, unknown> : null;
+  const data = response && typeof response.data === "object" && response.data !== null ? response.data as Record<string, unknown> : null;
+  const detail = data?.detail ?? record.detail;
+  if (typeof detail === "object" && detail !== null && "message" in detail && typeof detail.message === "string") return detail.message;
+  if (typeof detail === "string") return detail;
+  return typeof record.message === "string" ? record.message : "请求失败";
 }
 
 function ProgressPill({ task }: { task: InstallTask | null }) {
@@ -193,7 +201,7 @@ type PointCloudPayload = {
 };
 
 /** Dependency-free bounded point-cloud viewer for the evidence canvas. */
-function PointCloudPreview({ asset }: { asset: Asset }) {
+export function PointCloudPreview({ asset }: { asset: Asset }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{
     x: number;
@@ -208,8 +216,12 @@ function PointCloudPreview({ asset }: { asset: Asset }) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError("");
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        setLoading(true);
+        setError("");
+      }
+    });
     const endpoint =
       asset.pointcloud_url?.replace(/^\/api\/v2/, "") ||
       `/multimodal/assets/${asset.id}/pointcloud`;
@@ -218,9 +230,9 @@ function PointCloudPreview({ asset }: { asset: Asset }) {
       .then((result) => {
         if (!cancelled) setPayload(result);
       })
-      .catch((err: any) => {
+      .catch((error: unknown) => {
         if (!cancelled)
-          setError(err?.detail || err?.message || "点云预览加载失败");
+          setError(errorText(error) || "点云预览加载失败");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -402,7 +414,7 @@ export default function MultimodalDataPage() {
   const [ontologyId, setOntologyId] = useState("");
   const [targetMode, setTargetMode] = useState<"create" | "append">("append");
   const [newOntologyName, setNewOntologyName] = useState("I-BADAS 多模态本体");
-  const [modelStatus, setModelStatus] = useState<any>(null);
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [step, setStep] = useState(0);
   const [task, setTask] = useState<InstallTask | null>(null);
   const [draftId, setDraftId] = useState("");
@@ -466,7 +478,7 @@ export default function MultimodalDataPage() {
         apiClient.get<{ items: Ontology[] }>("/ontologies?page_size=100"),
         // Opening the page is not permission to call the cloud model. The
         // confirmed mapping task performs the real authorization check.
-        apiClientV2.get("/multimodal/status?probe=false"),
+        apiClientV2.get<ModelStatus>("/multimodal/status?probe=false"),
       ]);
       const nextDatasets = result?.datasets || [];
       setCatalog(result?.sources || []);
@@ -503,13 +515,8 @@ export default function MultimodalDataPage() {
         ["queued", "running", "cancel_requested"].includes(sourceTask.status)
       )
         setTask(sourceTask);
-    } catch (err: any) {
-      setError(
-        err?.detail?.message ||
-          err?.detail ||
-          err?.message ||
-          "多模态目录加载失败",
-      );
+    } catch (error: unknown) {
+      setError(errorText(error) || "多模态目录加载失败");
     } finally {
       setLoading(false);
     }
@@ -530,13 +537,13 @@ export default function MultimodalDataPage() {
           (result?.samples || []).some((sample) => sample.id === id),
         ),
       );
-    } catch (err: any) {
-      setError(err?.detail || err?.message || "样例列表加载失败");
+    } catch (error: unknown) {
+      setError(errorText(error) || "样例列表加载失败");
     }
   };
 
   useEffect(() => {
-    loadCatalog();
+    void Promise.resolve().then(loadCatalog);
   }, []);
   useEffect(() => {
     if (!restoredRunId || run?.id === restoredRunId) return;
@@ -584,21 +591,23 @@ export default function MultimodalDataPage() {
   }, [restoredRunId, run?.id]);
   useEffect(() => {
     if (selectedDatasetId) {
-      loadSamples(selectedDatasetId);
-      const ds = datasets.find((item) => item.id === selectedDatasetId);
-      if (ds) setPrivacy(ds.privacy_level || "standard");
+      void Promise.resolve().then(() => loadSamples(selectedDatasetId));
+      const datasetPrivacy = datasets.find((item) => item.id === selectedDatasetId)?.privacy_level;
+      if (datasetPrivacy) void Promise.resolve().then(() => setPrivacy(datasetPrivacy));
     }
-  }, [selectedDatasetId]);
+  }, [datasets, selectedDatasetId]);
+  const activeTaskId = task?.id;
+  const activeTaskStatus = task?.status;
   useEffect(() => {
     if (
-      !task ||
-      !["queued", "running", "cancel_requested"].includes(task.status)
+      !activeTaskId || !activeTaskStatus ||
+      !["queued", "running", "cancel_requested"].includes(activeTaskStatus)
     )
       return;
     const timer = window.setInterval(
       () =>
         apiClientV2
-          .get<InstallTask>(`/multimodal/catalog/install/${task.id}`)
+          .get<InstallTask>(`/multimodal/catalog/install/${activeTaskId}`)
           .then((next) => {
             setTask(next);
             if (next.status === "completed" && next.dataset_id) {
@@ -610,23 +619,25 @@ export default function MultimodalDataPage() {
       1800,
     );
     return () => window.clearInterval(timer);
-  }, [task?.id, task?.status]);
+  }, [activeTaskId, activeTaskStatus]);
+  const activeRunId = run?.id;
+  const activeRunStatus = run?.status;
   useEffect(() => {
     if (
-      !run ||
-      !["queued", "running", "waiting_for_model"].includes(run.status)
+      !activeRunId || !activeRunStatus ||
+      !["queued", "running", "waiting_for_model"].includes(activeRunStatus)
     )
       return;
     const timer = window.setInterval(
       () =>
         constructionApi
-          .getRun<Run>(run.id)
+          .getRun<Run>(activeRunId)
           .then(setRun)
           .catch(() => {}),
       1600,
     );
     return () => window.clearInterval(timer);
-  }, [run?.id, run?.status]);
+  }, [activeRunId, activeRunStatus]);
   useEffect(() => {
     if (!mappingTaskId || mappingGenerated) return;
     const timer = window.setInterval(
@@ -668,12 +679,16 @@ export default function MultimodalDataPage() {
   }, [mappingTaskId, mappingGenerated]);
   useEffect(() => {
     if (!previewSample?.id) {
-      setEvidence(null);
+      void Promise.resolve().then(() => setEvidence(null));
       return;
     }
     let cancelled = false;
-    setEvidenceLoading(true);
-    setEvidence(null);
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        setEvidenceLoading(true);
+        setEvidence(null);
+      }
+    });
     apiClientV2
       .get<MultimodalEvidence>(
         `/multimodal/samples/${previewSample.id}/evidence`,
@@ -707,13 +722,8 @@ export default function MultimodalDataPage() {
         status: created.status,
         progress: { stage: "等待开始", completed: 0, total: 12 },
       });
-    } catch (err: any) {
-      setError(
-        err?.detail?.message ||
-          err?.detail ||
-          err?.message ||
-          "样例安装任务创建失败",
-      );
+    } catch (error: unknown) {
+      setError(errorText(error) || "样例安装任务创建失败");
     } finally {
       setBusy(false);
     }
@@ -736,13 +746,8 @@ export default function MultimodalDataPage() {
         status: created.status,
         progress: { stage: "等待校验", completed: 0, total: 0 },
       });
-    } catch (err: any) {
-      setError(
-        err?.detail?.message ||
-          err?.detail ||
-          err?.message ||
-          "多模态清单导入失败",
-      );
+    } catch (error: unknown) {
+      setError(errorText(error) || "多模态清单导入失败");
     } finally {
       setBusy(false);
       if (importRef.current) importRef.current.value = "";
@@ -784,7 +789,7 @@ export default function MultimodalDataPage() {
       new_ontology_domain: "制造",
     };
     if (draftId) {
-      const patched = await apiClientV2.patch<any>(
+      const patched = await apiClientV2.patch<DraftResponse>(
         `/construction/drafts/${draftId}`,
         {
           privacy_level: privacy,
@@ -846,7 +851,7 @@ export default function MultimodalDataPage() {
     setError("");
     try {
       const id = await ensureDraft();
-      const result = await apiClientV2.post<any>(
+      const result = await apiClientV2.post<MappingResponse>(
         `/construction/drafts/${id}/generate-mapping`,
       );
       if (result?.mapping_task_id) {
@@ -880,13 +885,8 @@ export default function MultimodalDataPage() {
           (_: unknown, index: number) => index,
         ),
       );
-    } catch (err: any) {
-      setError(
-        err?.detail?.message ||
-          err?.detail ||
-          err?.message ||
-          "映射建议生成失败",
-      );
+    } catch (error: unknown) {
+      setError(errorText(error) || "映射建议生成失败");
     } finally {
       setBusy(false);
     }
@@ -922,13 +922,8 @@ export default function MultimodalDataPage() {
       setRun(created);
       setStep(4);
       setSearchParams({ run: created.id }, { replace: true });
-    } catch (err: any) {
-      setError(
-        err?.detail?.message ||
-          err?.detail ||
-          err?.message ||
-          "构建任务创建失败",
-      );
+    } catch (error: unknown) {
+      setError(errorText(error) || "构建任务创建失败");
     } finally {
       setBusy(false);
     }
@@ -964,11 +959,11 @@ export default function MultimodalDataPage() {
           if (privacy === "standard" && !standardConfigured) {
             throw new Error("MiniMax M3 尚未配置；标准数据不能开始映射");
           }
-          const preflight = await apiClientV2.post<any>(
+          const preflight = await apiClientV2.post<PreflightResponse>(
             `/construction/drafts/${id}/m3-preflight`,
           );
           if (preflight?.preflight?.allowed || privacy === "private") {
-            const result = await apiClientV2.post<any>(
+            const result = await apiClientV2.post<MappingResponse>(
               `/construction/drafts/${id}/generate-mapping`,
             );
             if (result?.mapping_task_id) {
@@ -1008,13 +1003,8 @@ export default function MultimodalDataPage() {
             );
           }
         }
-      } catch (err: any) {
-        setError(
-          err?.detail?.message ||
-            err?.detail ||
-            err?.message ||
-            "保存构筑草案失败",
-        );
+      } catch (error: unknown) {
+        setError(errorText(error) || "保存构筑草案失败");
         setBusy(false);
         return;
       }

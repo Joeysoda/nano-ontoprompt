@@ -12,7 +12,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta, timezone
+import socket
+from threading import Lock
+from time import monotonic
+from urllib.parse import urlparse
 
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
@@ -46,6 +51,7 @@ from app.routers.v2 import agent as agent_v2
 from app.routers.v2 import manufacturing_data as manufacturing_data_v2
 from app.routers.v2 import logic_assets as logic_assets_v2
 from app.routers.v2 import object_query as object_query_v2
+from app.routers.v2 import object_views as object_views_v2
 from app.routers.v2 import object_sets as object_sets_v2
 from app.routers.v2 import scenarios as scenarios_v2
 from app.routers.v2 import scenario_workbench as scenario_workbench_v2
@@ -389,6 +395,7 @@ app.include_router(agent_v2.router, prefix="/api/v2/ontologies", tags=["v2-agent
 app.include_router(manufacturing_data_v2.router, prefix="/api/v2/ontologies", tags=["v2-manufacturing-data"])
 app.include_router(logic_assets_v2.router, prefix="/api/v2/ontologies", tags=["v2-logic-assets"])
 app.include_router(object_query_v2.router, prefix="/api/v2/ontologies", tags=["v2-object-query"])
+app.include_router(object_views_v2.router, prefix="/api/v2/ontologies", tags=["v2-object-views"])
 app.include_router(object_sets_v2.router, prefix="/api/v2/ontologies", tags=["v2-object-sets"])
 app.include_router(scenarios_v2.router, prefix="/api/v2/ontologies", tags=["v2-scenarios"])
 app.include_router(scenario_workbench_v2.router, prefix="/api/v2/ontologies", tags=["v2-scenario-workbench"])
@@ -402,6 +409,63 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _host_port(endpoint: str, default_port: int) -> tuple[str, int]:
+    """Parse host[:port] and URL-shaped service endpoints consistently."""
+    parsed = urlparse(endpoint if "://" in endpoint else f"//{endpoint}")
+    return parsed.hostname or "localhost", parsed.port or default_port
+
+
+_TCP_PROBE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="health-probe")
+_TCP_PROBE_CACHE: dict[tuple[str, int], tuple[float, bool]] = {}
+_TCP_PROBE_LOCK = Lock()
+
+
+def _blocking_tcp_probe(host: str, port: int, timeout: float) -> bool:
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _cache_tcp_probe(key: tuple[str, int], value: bool, ttl: float = 15.0) -> None:
+    with _TCP_PROBE_LOCK:
+        _TCP_PROBE_CACHE[key] = (monotonic() + ttl, value)
+
+
+def _tcp_reachable(host: str, port: int, timeout: float = 0.2) -> bool:
+    """Bound TCP and Docker-DNS waits, caching the optional-service result."""
+    key = (host, int(port))
+    now = monotonic()
+    with _TCP_PROBE_LOCK:
+        cached = _TCP_PROBE_CACHE.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
+
+    future = _TCP_PROBE_EXECUTOR.submit(_blocking_tcp_probe, host, int(port), timeout)
+    try:
+        available = future.result(timeout=timeout)
+    except FutureTimeoutError:
+        # Docker's embedded DNS can ignore the socket timeout for service
+        # names that are not present in the selected Compose profile. Return
+        # promptly; the callback refreshes the cache when resolution finishes.
+        _cache_tcp_probe(key, False, ttl=2.0)
+
+        def remember_result(completed):
+            try:
+                _cache_tcp_probe(key, bool(completed.result()))
+            except Exception:
+                _cache_tcp_probe(key, False)
+
+        future.add_done_callback(remember_result)
+        return False
+    except Exception:
+        available = False
+
+    _cache_tcp_probe(key, available)
+    return available
 
 
 @app.get("/health")
@@ -423,50 +487,86 @@ def health(db: Session = Depends(get_db)):
     except Exception:
         checks["db"] = "error"
 
-    # Neo4j check
-    try:
-        from neo4j import GraphDatabase
-        driver = GraphDatabase.driver(
-            settings.neo4j_uri,
-            auth=(settings.neo4j_user, settings.neo4j_password),
-        )
-        driver.verify_connectivity()
-        driver.close()
-        checks["neo4j"] = "ok"
-    except Exception:
+    # Optional dependencies must never hold the liveness endpoint hostage.
+    # Probe the TCP listener before constructing clients, then give protocol
+    # handshakes explicit timeouts. This keeps /health useful when the local
+    # Compose profile intentionally omits Neo4j, MinIO, or Chroma.
+    neo4j_endpoint = urlparse(settings.neo4j_uri)
+    neo4j_host = neo4j_endpoint.hostname or "localhost"
+    neo4j_port = neo4j_endpoint.port or 7687
+    if _tcp_reachable(neo4j_host, neo4j_port):
+        driver = None
+        try:
+            from neo4j import GraphDatabase
+            driver = GraphDatabase.driver(
+                settings.neo4j_uri,
+                auth=(settings.neo4j_user, settings.neo4j_password),
+                connection_timeout=1.0,
+                connection_acquisition_timeout=1.0,
+            )
+            driver.verify_connectivity()
+            checks["neo4j"] = "ok"
+        except Exception:
+            checks["neo4j"] = "unavailable"
+        finally:
+            if driver is not None:
+                driver.close()
+    else:
         checks["neo4j"] = "unavailable"
 
     # FalkorDB is the authoritative backend for new instance/temporal builds.
-    try:
-        from app.services.v2.graph.falkordb_service import FalkorDBService
-        checks["falkordb"] = "ok" if FalkorDBService().available else "unavailable"
-    except Exception:
+    if _tcp_reachable(settings.falkordb_host, settings.falkordb_port):
+        try:
+            from app.services.v2.graph.falkordb_service import FalkorDBService
+            checks["falkordb"] = "ok" if FalkorDBService().available else "unavailable"
+        except Exception:
+            checks["falkordb"] = "unavailable"
+    else:
         checks["falkordb"] = "unavailable"
 
     # MinIO check
-    try:
-        from minio import Minio
-        client = Minio(
-            settings.minio_endpoint,
-            access_key=settings.minio_access_key,
-            secret_key=settings.minio_secret_key,
-            secure=settings.minio_use_ssl,
-        )
-        client.list_buckets()
-        checks["minio"] = "ok"
-    except Exception:
+    minio_host, minio_port = _host_port(
+        settings.minio_endpoint,
+        443 if settings.minio_use_ssl else 9000,
+    )
+    if _tcp_reachable(minio_host, minio_port):
+        try:
+            import urllib3
+            from minio import Minio
+            http_client = urllib3.PoolManager(
+                timeout=urllib3.Timeout(connect=0.5, read=1.0),
+                retries=False,
+            )
+            client = Minio(
+                settings.minio_endpoint,
+                access_key=settings.minio_access_key,
+                secret_key=settings.minio_secret_key,
+                secure=settings.minio_use_ssl,
+                http_client=http_client,
+            )
+            client.list_buckets()
+            checks["minio"] = "ok"
+        except Exception:
+            checks["minio"] = "unavailable"
+    else:
         checks["minio"] = "unavailable"
 
     # ChromaDB check
-    try:
-        import chromadb
-        client = chromadb.HttpClient(
-            host=settings.chroma_host,
-            port=settings.chroma_port,
-        )
-        client.heartbeat()
-        checks["chroma"] = "ok"
-    except Exception:
+    if _tcp_reachable(settings.chroma_host, settings.chroma_port):
+        try:
+            import urllib3
+            http = urllib3.PoolManager(
+                timeout=urllib3.Timeout(connect=0.5, read=1.0),
+                retries=False,
+            )
+            response = http.request(
+                "GET",
+                f"http://{settings.chroma_host}:{settings.chroma_port}/api/v2/heartbeat",
+            )
+            checks["chroma"] = "ok" if response.status < 500 else "unavailable"
+        except Exception:
+            checks["chroma"] = "unavailable"
+    else:
         checks["chroma"] = "unavailable"
 
     return checks

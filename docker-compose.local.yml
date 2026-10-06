@@ -23,7 +23,7 @@ services:
     ports: !override
       - "127.0.0.1:8000:8000"
     environment:
-      AUTH_MODE: local_single_user
+      AUTH_MODE: ${BACKEND_AUTH_MODE:-local_single_user}
       CELERY_ENABLED: "true"
       LITELLM_API_BASE: http://litellm:4000/v1
       LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-local-gateway}
@@ -36,10 +36,10 @@ services:
     ports: !override
       - "127.0.0.1:5173:5173"
     environment:
-      VITE_AUTH_MODE: local_single_user
+      VITE_AUTH_MODE: ${FRONTEND_AUTH_MODE:-local_single_user}
   celery_worker:
     environment:
-      AUTH_MODE: local_single_user
+      AUTH_MODE: ${BACKEND_AUTH_MODE:-local_single_user}
       CELERY_ENABLED: "true"
       LITELLM_API_BASE: http://litellm:4000/v1
       LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-local-gateway}
@@ -48,7 +48,7 @@ services:
       - "host.docker.internal:host-gateway"
   celery_beat:
     environment:
-      AUTH_MODE: local_single_user
+      AUTH_MODE: ${BACKEND_AUTH_MODE:-local_single_user}
       CELERY_ENABLED: "true"
       LITELLM_API_BASE: http://litellm:4000/v1
       LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-local-gateway}

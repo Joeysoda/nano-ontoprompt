@@ -337,6 +337,12 @@ Scenario study 的选中对象现在直接复用 Object Explorer 的 `ObjectPane
 
 本步只接入 Scenario object graph；ontology schema graph 的节点仍是 entity type metadata，不应伪装成 object instance，因此暂不强行套用对象 panel。下一步可在后端提供 instance-level graph contract 后，再接 Graph 的对象 panel adapter。
 
+### 5.7 Object Explorer 核心状态与视觉整改（已完成）
+
+本节 supersede 5.4 中“save、Compare、Pivot、Action/Open in Graph 仍 disabled”的初始纵切面记录。Object Explorer 现已提供 property/linked-object 筛选 popover 与条件 chips、可编辑图表卡片网格、Results 列显隐/顺序/宽度/排序、多对象 compact preview 与共享 `ObjectPanel`、顶层双色 Compare、可读 traversal chips、List/Exploration 独立保存弹窗，以及 Action 成功后关闭弹窗、刷新结果并显示绿色 toast 的完整状态转换。保存说明会写入 Object Set resource；静态 List 与动态 Exploration 继续使用不同定义语义。
+
+`backend/evidence/plan_b_object_explorer_visual_review_2026-10-05.md` 为复评记录：9 个确定性浏览器场景生成 12 张当前状态截图，并逐项与官方参考成对评审。主要缺口已通过结构验收；nested rule 的 token 密度、表格 frozen/direct-drag 和 Object Panel 宽度等仍列为精细保真项。Explorer contract/workflow 共 14 个用例覆盖表达式、URL、保存、pivot、Action、失败恢复、筛选/列/图表编辑、多选 preview、键盘和窄屏；盲测产品验证仍是独立的人工作业，不能由截图或自动化代替。
+
 ## 6. 与人员 A 的接口和文件所有权
 
 ### 人员 B 主要拥有

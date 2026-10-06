@@ -81,12 +81,29 @@ def _finite_number(value: Any, field: str = "ordinal") -> float:
     return number
 
 
+def _parse_event_time(value: Any) -> datetime:
+    try:
+        event_time = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if event_time.tzinfo is None or event_time.utcoffset() is None:
+            raise ValueError("timezone required")
+        _finite_number(event_time.timestamp(), "event_time")
+        return event_time
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise StreamError("event_time 必须是带时区的 ISO 8601 时间", "INVALID_EVENT_TIME") from exc
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def _hash(value: Any) -> str:
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+def _generic_payload_hash(payload: dict[str, Any], ordinal: float, entity_key: str, episode_id: str, source_sequence: int) -> str:
+    return _hash({"payload": payload, "ordinal": str(Decimal(str(ordinal))),
+                  "entity_key": entity_key, "episode_id": episode_id,
+                  "source_sequence": source_sequence})
 
 
 def _float_or_none(value: Any) -> float | None:
@@ -137,6 +154,7 @@ def _source_order(row: dict[str, Any], fallback: int = 0) -> tuple[int, int | st
 
 
 def _serialize_event(event: TemporalStreamEvent) -> dict[str, Any]:
+    source_ref = event.source_ref or {}
     return {
         "id": event.id,
         "event_id": event.event_key,
@@ -148,7 +166,9 @@ def _serialize_event(event: TemporalStreamEvent) -> dict[str, Any]:
         "source_sequence": event.source_sequence,
         "source_row_id": event.source_row_id,
         "payload": event.payload or {},
-        "source_ref": event.source_ref or {},
+        "source_ref": source_ref,
+        "event_time": source_ref.get("event_time"),
+        "ingestion_time": event.ingested_at.isoformat() if event.ingested_at else None,
         "payload_hash": event.payload_hash,
         "status": event.status,
         "error": event.error,
@@ -314,11 +334,11 @@ def _stage(replay: TemporalReplay) -> str:
 
 def _load_rows(db: Session, version: DatasetVersion) -> list[dict[str, Any]]:
     if not version.storage_uri:
-        raise StreamError("FactoryNet 数据版本没有可读取对象", "SOURCE_NOT_READY")
+        raise StreamError("数据版本没有可读取对象", "SOURCE_NOT_READY")
     try:
         raw = get_storage_service().get_object(version.storage_uri)
     except Exception as exc:
-        raise StreamError(f"FactoryNet 源文件无法读取：{exc}", "STORAGE_OBJECT_MISSING") from exc
+        raise StreamError(f"源文件无法读取：{exc}", "STORAGE_OBJECT_MISSING") from exc
     from app.routers.v2.temporal import parse_temporal_bytes
     rows = parse_temporal_bytes(raw)
     for index, row in enumerate(rows):
@@ -340,6 +360,18 @@ def _resolve_source(db: Session, dataset_id: str | None, version_id: str | None)
         version = db.query(DatasetVersion).filter(DatasetVersion.dataset_id == dataset.id).order_by(DatasetVersion.version_no.desc()).first()
     if not version:
         raise StreamError("FactoryNet 数据版本不存在", "SOURCE_NOT_READY")
+    return dataset, version, _load_rows(db, version)
+
+
+def _resolve_generic_source(db: Session, source_id: str, dataset_id: str | None, version_id: str | None) -> tuple[Dataset, DatasetVersion, list[dict[str, Any]]]:
+    if not dataset_id:
+        raise StreamError("文件来源必须显式指定 dataset_id", "SOURCE_NOT_READY")
+    dataset = db.get(Dataset, dataset_id)
+    if dataset is None or (dataset.schema_json or {}).get("source_id") != source_id:
+        raise StreamError("数据集来源标识与 source_id 不一致", "WRONG_SOURCE")
+    version = db.get(DatasetVersion, version_id or dataset.latest_version_id) if (version_id or dataset.latest_version_id) else None
+    if version is None or version.dataset_id != dataset.id:
+        raise StreamError("数据版本不属于指定来源", "SOURCE_NOT_READY")
     return dataset, version, _load_rows(db, version)
 
 
@@ -424,6 +456,7 @@ def _select_rows(
     start_ordinal: float | None = None,
     end_ordinal: float | None = None,
     time_column: str = "time_s",
+    time_kind: str = "ordinal",
     max_records: int | None = None,
 ) -> list[tuple[dict[str, Any], float, str]]:
     wanted = {str(value).strip() for value in (episode_ids or []) if str(value).strip()}
@@ -434,7 +467,8 @@ def _select_rows(
         if wanted and episode not in wanted:
             continue
         try:
-            ordinal = _source_time(row, index, time_column)
+            ordinal = (_parse_event_time(row.get(time_column)).timestamp()
+                       if time_kind == "event_time" else _source_time(row, index, time_column))
         except StreamError as exc:
             # Do not silently discard a source row.  A dynamic run must either
             # index every selected observation or fail with the exact source
@@ -464,6 +498,7 @@ def create_stream_run(
     time_column: str = "time_s",
     entity_column: str = "episode_id",
     source_mode: str = "file_replay",
+    source_id: str = FACTORYNET_SOURCE_ID,
     config: dict[str, Any] | None = None,
     created_by: str | None = None,
 ) -> TemporalReplay:
@@ -475,9 +510,30 @@ def create_stream_run(
         raise StreamError("动态演化只能用于时序本体", "DATA_CLASS_MISMATCH")
     if source_mode not in {"file_replay", "push", "simulated_live"}:
         raise StreamError("source_mode 必须是 file_replay、push 或 simulated_live", "INVALID_SOURCE_MODE")
+    generic_source = source_id != FACTORYNET_SOURCE_ID
+    if generic_source:
+        mapping = (config or {}).get("mapping")
+        if not isinstance(source_id, str) or not source_id.strip() or len(source_id) > 120:
+            raise StreamError("source_id 必须是非空来源标识", "INVALID_SOURCE_ID")
+        if source_mode not in {"push", "file_replay"} or not isinstance(mapping, dict) or not isinstance(mapping.get("entity_type"), str) or not mapping["entity_type"].strip() or not isinstance(mapping.get("properties"), dict) or not mapping["properties"] or (source_mode == "file_replay" and not isinstance(mapping.get("entity_key_field"), str)):
+            raise StreamError("通用来源需显式声明 mapping.entity_type、mapping.properties，文件来源还需 entity_key_field", "INVALID_SOURCE_MAPPING")
+        if any(not isinstance(source, str) or not source.strip() or not isinstance(target, str) or not target.strip() or target.startswith("_") for source, target in mapping["properties"].items()):
+            raise StreamError("属性映射必须使用非空字段名，且目标字段不能以 _ 开头", "INVALID_SOURCE_MAPPING")
+        revision = db.query(OntologyRevision).filter(OntologyRevision.id == project.current_revision_id, OntologyRevision.ontology_id == project.id).first() if project.current_revision_id else None
+        if revision is None:
+            raise StreamError("通用来源需要已发布的 schema revision", "SCHEMA_REVISION_REQUIRED")
+        entities = (revision.snapshot_json or {}).get("entities") or []
+        if not any(mapping["entity_type"] in {entity.get("id"), entity.get("name_en"), entity.get("name_cn"), entity.get("canonical_id")} for entity in entities if isinstance(entity, dict)):
+            raise StreamError("mapping.entity_type 不属于固定 schema revision", "INVALID_SOURCE_MAPPING")
+        if (config or {}).get("late_event_policy", "reject") != "reject":
+            raise StreamError("当前仅支持拒绝迟到事件", "UNSUPPORTED_LATE_EVENT_POLICY")
+        if (config or {}).get("time_kind", "ordinal") not in {"ordinal", "event_time"}:
+            raise StreamError("time_kind 必须是 ordinal 或 event_time", "INVALID_TIME_KIND")
     speed = _finite_number(speed, "speed")
     if speed <= 0 or speed > MAX_SPEED:
         raise StreamError(f"speed 必须在 0 和 {MAX_SPEED} 之间", "INVALID_SPEED")
+    if generic_source and source_mode == "push" and (dataset_id or dataset_version_id):
+        raise StreamError("通用 push 来源不能附带文件数据版本", "INVALID_SOURCE_MAPPING")
     if source_mode == "push":
         if not dataset_id and not dataset_version_id:
             dataset = None
@@ -486,7 +542,13 @@ def create_stream_run(
         else:
             dataset, version, rows = _resolve_source(db, dataset_id, dataset_version_id)
     else:
-        dataset, version, rows = _resolve_source(db, dataset_id, dataset_version_id)
+        dataset, version, rows = (_resolve_generic_source(db, source_id, dataset_id, dataset_version_id)
+                                  if generic_source else _resolve_source(db, dataset_id, dataset_version_id))
+    if generic_source and source_mode == "file_replay":
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict) or row.get(mapping["entity_key_field"]) in (None, ""):
+                raise StreamError(f"源记录 {index} 缺少实体键", "INVALID_EVENT", row_index=index)
+            row.setdefault("episode_id", str(row.get(entity_column) or row[mapping["entity_key_field"]]))
     available_episodes = {_episode(row) for row in rows}
     requested_episode_ids = {str(value).strip() for value in (episode_ids or []) if str(value).strip()}
     unknown = sorted(requested_episode_ids - available_episodes)
@@ -508,6 +570,7 @@ def create_stream_run(
             start_ordinal=start_ordinal,
             end_ordinal=end_ordinal,
             time_column=time_column,
+            time_kind=(config or {}).get("time_kind", "ordinal"),
             max_records=None,
         )
         episode_order: list[str] = []
@@ -523,6 +586,7 @@ def create_stream_run(
         start_ordinal=start_ordinal,
         end_ordinal=end_ordinal,
         time_column=time_column,
+        time_kind=(config or {}).get("time_kind", "ordinal"),
         max_records=(config or {}).get("max_records"),
     )
     if source_mode in {"file_replay", "simulated_live"} and not selected:
@@ -546,8 +610,8 @@ def create_stream_run(
     except (TypeError, ValueError):
         explicit_interval = None
     cfg.update({
-        "source_id": FACTORYNET_SOURCE_ID,
-        "source_file": (dict(dataset.schema_json or {}).get("filename") if dataset else None) or "FactoryNet CNC",
+        "source_id": source_id,
+        "source_file": (dict(dataset.schema_json or {}).get("filename") if dataset else None) or ("FactoryNet CNC" if not generic_source else None),
         "source_checksum": version.checksum if version else None,
         "current_state_dimensions": cfg.get("current_state_dimensions") or ["phase", "tool_condition", "inspection"],
         "event_order": "ordinal,source_sequence",
@@ -571,12 +635,12 @@ def create_stream_run(
         ontology_id=ontology_id,
         dataset_id=dataset.id if dataset else dataset_id,
         dataset_version_id=version.id if version else dataset_version_id,
-        source_id=FACTORYNET_SOURCE_ID,
+        source_id=source_id,
         source_mode=source_mode,
         schema_revision_id=project.current_revision_id,
         graph_namespace=namespace,
         status="created",
-        time_kind="ordinal",
+        time_kind=cfg.get("time_kind", "ordinal"),
         entity_column=entity_column,
         time_column=time_column,
         series_ids=selected_episodes or [str(v) for v in (episode_ids or [])],
@@ -607,24 +671,28 @@ def create_stream_run(
     if not live_mode:
         for source_sequence, (row, ordinal, source_row_id) in enumerate(selected):
             episode = _episode(row)
-            event_id = f"factorynet:{episode}:{source_row_id}"
+            event_id = f"{source_id}:{episode}:{source_row_id}"
             payload = {key: value for key, value in row.items() if not str(key).startswith("_")}
             db.add(TemporalStreamEvent(
                 id=str(uuid.uuid4()),
                 replay_id=replay.id,
                 event_key=event_id,
                 episode_id=episode,
-                entity_key=str(row.get("entity_key") or row.get("machine_type") or episode),
+                entity_key=str(row[mapping["entity_key_field"]]) if generic_source else str(row.get("entity_key") or row.get("machine_type") or episode),
                 ordinal=Decimal(str(ordinal)),
                 source_sequence=source_sequence,
                 source_row_id=source_row_id,
                 payload=payload,
-                source_ref={"dataset_id": replay.dataset_id, "dataset_version_id": replay.dataset_version_id, "source_row_id": source_row_id, "source_file": cfg.get("source_file")},
-                payload_hash=_hash(payload),
+                source_ref={"dataset_id": replay.dataset_id, "dataset_version_id": replay.dataset_version_id,
+                            "source_row_id": source_row_id, "source_file": cfg.get("source_file"),
+                            **({"event_time": _parse_event_time(row[time_column]).isoformat()} if generic_source and replay.time_kind == "event_time" else {})},
+                payload_hash=(_generic_payload_hash(payload, ordinal, str(row[mapping["entity_key_field"]]), episode, source_sequence)
+                              if generic_source else _hash(payload)),
                 status="queued",
             ))
-    _ensure_factorynet_schema(db, ontology_id)
-    ensure_schema_revision(db, project)
+    if not generic_source:
+        _ensure_factorynet_schema(db, ontology_id)
+        ensure_schema_revision(db, project)
     replay.schema_revision_id = project.current_revision_id
     db.commit()
     db.refresh(replay)
@@ -662,7 +730,7 @@ def _evidence_for_event(db: Session, replay: TemporalReplay, event: TemporalStre
         source_version=str((replay.config or {}).get("source_checksum") or replay.dataset_version_id or ""),
         source_file=(replay.config or {}).get("source_file"), source_row_id=event.source_row_id,
         revision_id=replay.schema_revision_id, extractor="rule", confidence=1.0,
-        confidence_method="factorynet_temporal_stream", evidence_text=text,
+        confidence_method="factorynet_temporal_stream" if replay.source_id == FACTORYNET_SOURCE_ID else "mapped_temporal_stream", evidence_text=text,
         content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
     )
     db.add(evidence)
@@ -762,6 +830,61 @@ def _state_object(row: dict[str, Any], kind: str) -> tuple[str, str] | None:
     return prefix + digest, text
 
 
+def _process_generic_event(db: Session, replay: TemporalReplay, event: TemporalStreamEvent, *, commit: bool) -> dict[str, Any]:
+    """Project an explicitly mapped push event without FactoryNet inference."""
+    mapping = dict((replay.config or {}).get("mapping") or {})
+    property_map = mapping.get("properties") or {}
+    if not isinstance(property_map, dict) or not property_map:
+        raise StreamError("通用来源需要 mapping.properties", "INVALID_SOURCE_MAPPING")
+    payload = dict(event.payload or {})
+    values = {str(target): payload[source] for source, target in property_map.items() if source in payload}
+    if not values:
+        raise StreamError("事件没有匹配映射的属性", "INVALID_EVENT")
+    ordinal = _finite_number(event.ordinal)
+    sequence = int(event.source_sequence)
+    graph = FalkorDBService()
+    namespace = replay.graph_namespace or f"stream_{replay.id.replace('-', '')}"
+    entity_id = str(event.entity_key)
+    entity_type = str(mapping["entity_type"])
+    evidence = _evidence_for_event(db, replay, event, payload)
+    facts: list[TemporalFact] = []
+    for key, value in values.items():
+        _close_state_fact(db, replay, entity_id, key, ordinal, graph)
+        facts.append(_add_fact(db, replay, subject_id=entity_id, predicate=key,
+                               object_id=None, object_value={"value": value}, state_key=key,
+                               ordinal=ordinal, event=event, evidence=evidence, graph=graph))
+    node = {"id": entity_id, "entity_type": entity_type, "properties": {
+        **values, "_replay_id": replay.id, "_event_id": event.id,
+        "event_ordinal": ordinal, "_graph_namespace": namespace,
+    }}
+    nodes_written = _graph_upsert_instances(graph, replay.ontology_id, [node], namespace)
+    replay.state = {**(replay.state or {}), "latest_event": {
+        "id": event.id, "event_key": event.event_key, "ordinal": ordinal,
+        "source_sequence": sequence, "entity_key": entity_id,
+    }}
+    replay.current_time = ordinal
+    replay.watermark_ordinal = Decimal(str(ordinal))
+    replay.watermark_sequence = sequence
+    replay.current_event_index = sequence
+    replay.committed_events = int(replay.committed_events or 0) + 1
+    replay.normalized_rows = int(replay.normalized_rows or 0) + 1
+    metrics = dict(replay.metrics or {})
+    metrics.update({"events_committed": replay.committed_events,
+                    "queue": max(0, int(replay.total_events or 0) - replay.committed_events),
+                    "nodes_written": int(metrics.get("nodes_written", 0)) + nodes_written,
+                    "facts_written": int(metrics.get("facts_written", 0)) + len(facts),
+                    "last_event_id": event.id, "last_event_ordinal": ordinal})
+    replay.metrics = metrics
+    event.status = "committed"
+    event.committed_at = _now()
+    replay.updated_at = _now()
+    if commit:
+        db.commit()
+        db.refresh(replay)
+    return {"event": _serialize_event(event), "facts": [_serialize_fact(item) for item in facts],
+            "nodes_written": nodes_written, "edges_written": 0, "state_transitions": len(facts)}
+
+
 def process_one_event(db: Session, replay: TemporalReplay, event: TemporalStreamEvent, *, commit: bool = True) -> dict[str, Any]:
     """Project exactly one observation and migrate its current-state facts."""
     if event.replay_id != replay.id:
@@ -775,6 +898,8 @@ def process_one_event(db: Session, replay: TemporalReplay, event: TemporalStream
         current_pair = (watermark, int(replay.watermark_sequence or -1))
         if (ordinal, sequence) <= current_pair:
             raise StreamError("事件早于或等于当前水位，不能在本版本重算", "LATE_EVENT_NOT_SUPPORTED", watermark_ordinal=watermark, watermark_sequence=replay.watermark_sequence)
+    if replay.source_id != FACTORYNET_SOURCE_ID:
+        return _process_generic_event(db, replay, event, commit=commit)
     payload = dict(event.payload or {})
     payload.setdefault("episode_id", event.episode_id)
     payload.setdefault("_source_row_index", event.source_row_id or sequence)
@@ -1160,25 +1285,30 @@ def ingest_push_event(db: Session, replay: TemporalReplay, body: dict[str, Any])
         raise StreamError("文件回放运行不能接收推送事件", "SOURCE_MODE_MISMATCH")
     if replay.status in {"published", "cancelled"}:
         raise StreamError("当前运行已结束，不能接收新事件", "RUN_PUBLISHED" if replay.status == "published" else "RUN_CANCELLED")
-    required = ["event_id", "episode_id", "entity_key", "ordinal", "source_sequence"]
+    required = ["event_id", "episode_id", "entity_key", "source_sequence", "event_time" if replay.time_kind == "event_time" else "ordinal"]
     missing = [key for key in required if body.get(key) in (None, "")]
     if missing:
         raise StreamError(f"缺少事件字段：{', '.join(missing)}", "INVALID_EVENT")
     event_id = str(body["event_id"])
     payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
-    payload_hash = _hash(payload)
-    existing = db.query(TemporalStreamEvent).filter(TemporalStreamEvent.replay_id == replay.id, TemporalStreamEvent.event_key == event_id).first()
-    if existing:
-        if existing.payload_hash == payload_hash:
-            return existing, True
-        raise StreamError("相同 event_id 的载荷不同", "EVENT_PAYLOAD_CONFLICT", event_id=event_id)
-    ordinal = _finite_number(body["ordinal"])
+    if replay.time_kind == "event_time":
+        event_time = _parse_event_time(body["event_time"])
+        ordinal = event_time.timestamp()
+    else:
+        ordinal = _finite_number(body["ordinal"])
     try:
         source_sequence = int(body["source_sequence"])
     except (TypeError, ValueError) as exc:
         raise StreamError("source_sequence 必须是整数", "INVALID_EVENT") from exc
     if source_sequence < 0:
         raise StreamError("source_sequence 不能小于 0", "INVALID_EVENT")
+    payload_hash = (_hash(payload) if replay.source_id == FACTORYNET_SOURCE_ID else
+                    _generic_payload_hash(payload, ordinal, str(body["entity_key"]), str(body["episode_id"]), source_sequence))
+    existing = db.query(TemporalStreamEvent).filter(TemporalStreamEvent.replay_id == replay.id, TemporalStreamEvent.event_key == event_id).first()
+    if existing:
+        if existing.payload_hash == payload_hash:
+            return existing, True
+        raise StreamError("相同 event_id 的载荷不同", "EVENT_PAYLOAD_CONFLICT", event_id=event_id)
     watermark = _float_or_none(replay.watermark_ordinal)
     if watermark is not None and (ordinal, source_sequence) <= (watermark, int(replay.watermark_sequence or -1)):
         raise StreamError("事件早于或等于当前水位，不能在本版本重算", "LATE_EVENT_NOT_SUPPORTED", watermark_ordinal=watermark, watermark_sequence=replay.watermark_sequence)
@@ -1187,7 +1317,7 @@ def ingest_push_event(db: Session, replay: TemporalReplay, body: dict[str, Any])
         episode_id=str(body["episode_id"]), entity_key=str(body["entity_key"]),
         ordinal=Decimal(str(ordinal)), source_sequence=source_sequence,
         source_row_id=str((body.get("source_ref") or {}).get("source_row_id") or event_id),
-        payload=payload, source_ref=body.get("source_ref") or {}, payload_hash=payload_hash, status="queued",
+        payload=payload, source_ref={**(body.get("source_ref") or {}), **({"event_time": event_time.isoformat(), "time_zone": str(event_time.tzinfo)} if replay.time_kind == "event_time" else {})}, payload_hash=payload_hash, status="queued",
     )
     db.add(event)
     replay.total_events = int(replay.total_events or 0) + 1
@@ -1221,6 +1351,35 @@ def _sql_stream_graph(
     entity_type: str | None = None,
     episode_id: str | None = None,
 ) -> dict[str, Any]:
+    if replay.source_id != FACTORYNET_SOURCE_ID:
+        facts = db.query(TemporalFact).filter(TemporalFact.replay_id == replay.id).all()
+        if at is not None:
+            facts = [fact for fact in facts if float(fact.valid_from_ordinal) <= at
+                     and (fact.valid_to_ordinal is None or float(fact.valid_to_ordinal) > at)]
+        elif relation_state == "current":
+            facts = [fact for fact in facts if fact.status == "active"]
+        if episode_id:
+            event_ids = {event.id for event in db.query(TemporalStreamEvent).filter(
+                TemporalStreamEvent.replay_id == replay.id,
+                TemporalStreamEvent.episode_id == episode_id).all()}
+            facts = [fact for fact in facts if fact.source_event_id in event_ids]
+        by_entity: dict[str, dict[str, Any]] = {}
+        for fact in sorted(facts, key=lambda item: (item.valid_from_ordinal, item.id)):
+            node = by_entity.setdefault(fact.subject_id, {"id": fact.subject_id,
+                "entity_type": (replay.config or {}).get("mapping", {}).get("entity_type"),
+                "labels": ["Instance"], "properties": {}, "node_kind": "instance"})
+            if isinstance(fact.object_value, dict):
+                node["properties"][fact.predicate] = fact.object_value.get("value")
+        nodes = list(by_entity.values())
+        if entity_type:
+            nodes = [node for node in nodes if node["entity_type"] == entity_type]
+        total = len(nodes)
+        page = nodes[offset:offset + limit]
+        return {"available": True, "graph_backend": "postgres-temporal-facts",
+                "graph_namespace": replay.graph_namespace, "nodes": page, "edges": [],
+                "total_instances": total, "total_edges": 0, "returned": len(page),
+                "offset": offset, "next_offset": offset + len(page) if offset + len(page) < total else None,
+                "sample_limit": limit, "relation_state": relation_state, "at": at, "mode": mode}
     events = db.query(TemporalStreamEvent).filter(
         TemporalStreamEvent.replay_id == replay.id,
         TemporalStreamEvent.status == "committed",
@@ -1296,6 +1455,13 @@ def stream_graph(
     episode_id: str | None = None,
 ) -> dict[str, Any]:
     limit = max(1, min(int(limit), MAX_GRAPH_NODES)); offset = max(0, int(offset))
+    if replay.source_id != FACTORYNET_SOURCE_ID:
+        # The graph projection holds the latest properties. Historical reads
+        # must use the fact intervals, even when FalkorDB is available.
+        return {**_sql_stream_graph(db, replay, limit=limit, offset=offset, at=at,
+                                    mode=mode, relation_state=relation_state,
+                                    entity_type=entity_type, episode_id=episode_id),
+                "run_id": replay.id, "ontology_id": replay.ontology_id}
     graph = FalkorDBService()
     if getattr(graph, "available", False):
         try:
@@ -1385,7 +1551,7 @@ def _validate_publish(db: Session, replay: TemporalReplay) -> list[str]:
         for fact in observations
         if str(fact.subject_id).startswith("FactoryNet:Episode:")
     }
-    if event_episodes - observation_episodes:
+    if replay.source_id == FACTORYNET_SOURCE_ID and event_episodes - observation_episodes:
         problems.append("存在已提交事件没有对应 HAS_OBSERVATION 事实")
     for episode in observation_episodes:
         count = sum(1 for fact in observations if fact.subject_id == f"FactoryNet:Episode:{episode}")

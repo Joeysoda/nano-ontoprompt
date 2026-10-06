@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -42,25 +42,73 @@ type Profile = {
   status: string;
   model_name?: string;
   llm_used?: boolean;
-  deterministic_profile?: any;
-  llm_suggestion?: any;
+  deterministic_profile?: { columns?: unknown[] };
+  llm_suggestion?: {
+    time_kind?: string;
+    measurement_columns?: string[];
+    time_column?: string;
+    entity_column?: string;
+    confidence_by_column?: Record<string, number>;
+  };
   response_hash?: string;
   error?: string;
 };
+type Preview = {
+  columns?: unknown[];
+  rows?: Array<Record<string, unknown>>;
+  total_rows?: number;
+  total_source_rows?: number;
+  summary?: { episode_ids?: string[] };
+};
+type TemporalFilters = {
+  max_records?: number;
+  equals?: Record<string, string>;
+  contains?: Record<string, string>;
+  ranges?: Record<string, { min?: string | number; max?: string | number }>;
+};
+type TemporalRunHistory = {
+  id?: string;
+  run_id?: string;
+  status: string;
+  config?: { source_id?: string; source?: string; adapter?: string };
+  metrics?: { rows_selected?: number; rows_normalized?: number; nodes_upserted?: number; edges_upserted?: number };
+  created_at?: string;
+};
+type ReplayHistory = {
+  id?: string;
+  replay_id?: string;
+  source_id?: string;
+  status: string;
+  selected_rows?: number;
+  metrics?: { committed_batches?: number };
+  series_ids?: string[];
+};
+type ExecutionResponse = { id?: string; run_id?: string; replay_id?: string; ontology_id?: string };
 const steps = ["选择数据", "筛选数据", "时间定义", "本体映射", "确认构建"];
-const fmt = (v: any) =>
+const fmt = (v: unknown) =>
   v === null || v === undefined || v === "" ? "—" : String(v);
-const errorText = (e: any) => {
-  const detail = e?.response?.data?.detail || e?.detail;
-  if (detail?.error === "PROFILE_NOT_READY") {
+const errorDetail = (error: unknown): { error?: string; message?: string } => {
+  if (typeof error !== "object" || error === null) return {};
+  const record = error as Record<string, unknown>;
+  const response = typeof record.response === "object" && record.response !== null ? record.response as Record<string, unknown> : null;
+  const data = response && typeof response.data === "object" && response.data !== null ? response.data as Record<string, unknown> : null;
+  const detail = data?.detail ?? record.detail;
+  if (typeof detail === "string") return { message: detail };
+  if (typeof detail === "object" && detail !== null) {
+    const value = detail as Record<string, unknown>;
+    return {
+      error: typeof value.error === "string" ? value.error : undefined,
+      message: typeof value.message === "string" ? value.message : undefined,
+    };
+  }
+  return { message: typeof record.message === "string" ? record.message : undefined };
+};
+const errorText = (error: unknown) => {
+  const detail = errorDetail(error);
+  if (detail.error === "PROFILE_NOT_READY") {
     return `${detail.message || "MiniMax M3 分析尚未成功，不能开始构建"} 请返回“时间定义”，重新执行 M3 分析，完成后再构建。`;
   }
-  return (
-    detail?.message ||
-    detail ||
-    e?.message ||
-    "请求失败"
-  );
+  return detail.message || "请求失败";
 };
 const columnName = (value: unknown) => {
   if (typeof value === "string") return value;
@@ -90,15 +138,15 @@ export default function TemporalConstructionWizard() {
   const navigate = useNavigate();
   const uploadRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(0);
-  const [history, setHistory] = useState<any[]>([]);
-  const [replayHistory, setReplayHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<TemporalRunHistory[]>([]);
+  const [replayHistory, setReplayHistory] = useState<ReplayHistory[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [source, setSource] = useState<Source | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [preview, setPreview] = useState<any>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
-  const [filters, setFilters] = useState<Record<string, any>>({
+  const [filters, setFilters] = useState<TemporalFilters>({
     max_records: 5000,
   });
   const [timeKind, setTimeKind] = useState<"instant" | "ordinal" | "interval">(
@@ -142,36 +190,33 @@ export default function TemporalConstructionWizard() {
     try {
       const [ss, oo, rr, rp] = await Promise.all([
         apiClientV2.get<Source[]>("/temporal/sources"),
-        apiClient.get<any>("/ontologies", {
+        apiClient.get<Ontology[] | { items?: Ontology[] }>("/ontologies", {
           params: { page: 1, page_size: 100 },
         }),
-        apiClientV2.get<any[]>("/temporal/runs", { params: { limit: 20 } }),
-        apiClientV2.get<any[]>("/temporal/replays", { params: { limit: 20 } }),
+        apiClientV2.get<TemporalRunHistory[]>("/temporal/runs", { params: { limit: 20 } }),
+        apiClientV2.get<ReplayHistory[]>("/temporal/replays", { params: { limit: 20 } }),
       ]);
       setSources(
         (Array.isArray(ss) ? ss : []).filter(
           (item) => item.id !== "cmapss_fd004",
         ),
       );
-      const ontologyRows = Array.isArray(oo) ? oo : oo?.items || [];
+      const ontologyRows = Array.isArray(oo) ? oo : oo.items || [];
       setOntologies(
         ontologyRows.filter((item: Ontology) => item.data_class === "temporal"),
       );
       setHistory(Array.isArray(rr) ? rr : []);
       setReplayHistory(Array.isArray(rp) ? rp : []);
       setUpdatedAt(new Date().toLocaleTimeString());
-    } catch (e: any) {
-      setError(errorText(e));
+    } catch (error: unknown) {
+      setError(errorText(error));
     } finally {
       setLoading(false);
     }
   };
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, []);
-  useEffect(() => {
-    if (step === 1 && source?.installed) query(filters);
-  }, [step, source?.id]);
   const pollProfile = (id: string) => {
     const timer = window.setInterval(async () => {
       try {
@@ -181,9 +226,9 @@ export default function TemporalConstructionWizard() {
           window.clearInterval(timer);
           if (p.status === "failed") setError(p.error || "MiniMax 分析失败");
         }
-      } catch (e: any) {
+      } catch (error: unknown) {
         window.clearInterval(timer);
-        setError(errorText(e));
+        setError(errorText(error));
       }
     }, 1200);
   };
@@ -226,13 +271,13 @@ export default function TemporalConstructionWizard() {
     if (!item.installed) return;
     try {
       setPreview(
-        await apiClientV2.get(
+        await apiClientV2.get<Preview>(
           `/temporal/sources/${encodeURIComponent(item.id)}/preview`,
           { params: { offset: 0, limit: 25 } },
         ),
       );
-    } catch (e: any) {
-      setError(errorText(e));
+    } catch (error: unknown) {
+      setError(errorText(error));
     }
   };
   const processAnalysis = async () => {
@@ -251,8 +296,8 @@ export default function TemporalConstructionWizard() {
       if (p.status === "failed") setError(p.error || "MiniMax 分析失败");
       else if (p.status === "queued" || p.status === "running")
         pollProfile(p.id);
-    } catch (e: any) {
-      setError(errorText(e));
+    } catch (error: unknown) {
+      setError(errorText(error));
     } finally {
       setBusy(false);
     }
@@ -266,8 +311,8 @@ export default function TemporalConstructionWizard() {
       setSources(ss);
       const item = ss.find((x) => x.id === "factorynet_cnc");
       if (item) await startAnalysis(item);
-    } catch (e: any) {
-      setError(errorText(e));
+    } catch (error: unknown) {
+      setError(errorText(error));
     } finally {
       setBusy(false);
     }
@@ -278,23 +323,23 @@ export default function TemporalConstructionWizard() {
     try {
       const form = new FormData();
       form.append("file", file);
-      const r = await apiClientV2.post<any>("/temporal/sources/upload", form);
+      const r = await apiClientV2.post<{ source_id: string }>("/temporal/sources/upload", form);
       const ss = await apiClientV2.get<Source[]>("/temporal/sources");
       setSources(ss);
       const item = ss.find((x) => x.id === r.source_id);
       if (item) await startAnalysis(item);
-    } catch (e: any) {
-      setError(errorText(e));
+    } catch (error: unknown) {
+      setError(errorText(error));
     } finally {
       setBusy(false);
       if (uploadRef.current) uploadRef.current.value = "";
     }
   };
-  const query = async (next: Record<string, any>) => {
+  async function query(next: TemporalFilters) {
     if (!source?.installed) return;
     try {
       setPreview(
-        await apiClientV2.post(
+        await apiClientV2.post<Preview>(
           `/temporal/sources/${encodeURIComponent(source.id)}/query`,
           {
             offset: 0,
@@ -307,30 +352,32 @@ export default function TemporalConstructionWizard() {
           },
         ),
       );
-    } catch (e: any) {
-      setError(errorText(e));
+    } catch (error: unknown) {
+      setError(errorText(error));
     }
-  };
+  }
   const updateMax = (v: string) => {
     const next = { ...filters, max_records: v ? Number(v) : undefined };
     setFilters(next);
     query(next);
   };
-  const rawColumns = [
-    ...(profile?.deterministic_profile?.columns || []),
-    ...(preview?.columns || []),
-    ...(source?.columns || []),
-  ];
-  const columns: string[] = Array.from(
-    new Set(
-      rawColumns
-        .map(columnName)
-        .filter((name) => Boolean(name) && !name.startsWith("_")),
-    ),
-  );
+  const columns = useMemo(() => {
+    const rawColumns = [
+      ...(profile?.deterministic_profile?.columns || []),
+      ...(preview?.columns || []),
+      ...(source?.columns || []),
+    ];
+    return Array.from(
+      new Set(
+        rawColumns
+          .map(columnName)
+          .filter((name) => Boolean(name) && !name.startsWith("_")),
+      ),
+    );
+  }, [profile?.deterministic_profile?.columns, preview?.columns, source?.columns]);
   useEffect(() => {
     if (!columns.length) return;
-    setFieldMap((current) => {
+    void Promise.resolve().then(() => setFieldMap((current) => {
       const next = { ...current };
       for (const column of columns) {
         if (!next[column])
@@ -340,8 +387,8 @@ export default function TemporalConstructionWizard() {
           };
       }
       return next;
-    });
-  }, [columns.join("|"), entityColumn, timeColumn, timeKind]);
+    }));
+  }, [columns, entityColumn, timeColumn, timeKind]);
   useEffect(() => {
     const signature = `${source?.id || ""}|${timeKind}|${entityColumn}|${timeColumn}|${fromColumn}|${toColumn}`;
     if (
@@ -349,8 +396,10 @@ export default function TemporalConstructionWizard() {
       timeConfigRef.current !== signature &&
       profile?.status === "completed"
     ) {
-      setProfile(null);
-      setError("时间定义已变更；请重新处理数据后再确认本体映射。");
+      void Promise.resolve().then(() => {
+        setProfile(null);
+        setError("时间定义已变更；请重新处理数据后再确认本体映射。");
+      });
     }
     timeConfigRef.current = signature;
   }, [
@@ -383,7 +432,7 @@ export default function TemporalConstructionWizard() {
     try {
       if (executionMode === "replay" && source.id === "factorynet_cnc") {
         const timeRange = filters.ranges?.[timeColumn] || {};
-        const r = await apiClientV2.post<any>("/temporal/replays", {
+        const r = await apiClientV2.post<ExecutionResponse>("/temporal/replays", {
           source_id: source.id,
           dataset_id: source.dataset_id,
           ontology_id: ontologyMode === "reuse" ? ontologyId : null,
@@ -404,7 +453,7 @@ export default function TemporalConstructionWizard() {
         navigate(`/ontologies/${r.ontology_id || ontologyId}?tab=dynamic&run_id=${r.replay_id || r.id}`);
         return;
       }
-      const r = await apiClientV2.post<any>("/temporal/runs", {
+      const r = await apiClientV2.post<ExecutionResponse>("/temporal/runs", {
         profile_id: profile.id,
         source_id: source.id,
         dataset_id: source.dataset_id,
@@ -431,14 +480,14 @@ export default function TemporalConstructionWizard() {
         ontology_domain: "制造",
       });
       navigate(`/data/temporal/runs/${r.run_id || r.id}`);
-    } catch (e: any) {
-      if (e?.response?.data?.detail?.error === "PROFILE_NOT_READY") {
+    } catch (error: unknown) {
+      if (errorDetail(error).error === "PROFILE_NOT_READY") {
         // Keep the user on the step that can repair a stale deterministic
         // profile.  The backend will requeue it for M3 when the user clicks
         // the retry action there.
         setStep(2);
       }
-      setError(errorText(e));
+      setError(errorText(error));
     } finally {
       setBusy(false);
     }
@@ -755,7 +804,7 @@ export default function TemporalConstructionWizard() {
                 </tr>
               </thead>
               <tbody>
-                {(preview?.rows || []).map((r: any, i: number) => (
+                {(preview?.rows || []).map((r, i) => (
                   <tr key={i} className="border-t">
                     {columns.slice(0, 12).map((c: string) => (
                       <td
@@ -808,7 +857,7 @@ export default function TemporalConstructionWizard() {
             </button>
           </div>
           <div className="grid md:grid-cols-3 gap-3">
-            {[
+            {([
               [
                 "instant",
                 "Instant · 时间点",
@@ -824,10 +873,10 @@ export default function TemporalConstructionWizard() {
                 "Interval · 有效区间",
                 "状态在 [开始,结束) 内有效，结束为空表示仍有效",
               ],
-            ].map(([k, t, d]) => (
+            ] as Array<["instant" | "ordinal" | "interval", string, string]>).map(([k, t, d]) => (
               <button
                 key={k}
-                onClick={() => setTimeKind(k as any)}
+                onClick={() => setTimeKind(k)}
                 className={`text-left border rounded-lg p-4 ${timeKind === k ? "border-black ring-1 ring-black" : ""}`}
               >
                 <p className="font-medium">{t}</p>
@@ -1185,7 +1234,7 @@ export default function TemporalConstructionWizard() {
                     <p className="text-sm font-medium">选择生产过程（可多选）</p>
                     <p className="text-xs text-gray-500 mt-1">多个 episode 会按相对 time_s 同步推进，不代表现实中的同时发生。</p>
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {(preview?.summary?.episode_ids || Array.from(new Set((preview?.rows || []).map((row: any) => String(row.episode_id || "")).filter(Boolean)))).map((episode: string) => (
+                      {(preview?.summary?.episode_ids || Array.from(new Set((preview?.rows || []).map(row => String(row.episode_id || "")).filter(Boolean)))).map(episode => (
                         <label key={episode} className="text-xs border rounded px-2 py-1 flex items-center gap-1">
                           <input
                             type="checkbox"
@@ -1195,7 +1244,7 @@ export default function TemporalConstructionWizard() {
                           {episode}
                         </label>
                       ))}
-                      {!((preview?.summary?.episode_ids || []).length || (preview?.rows || []).some((row: any) => row.episode_id)) && <span className="text-xs text-gray-500">未能从预览列出 episode，可留空使用默认过程。</span>}
+                      {!((preview?.summary?.episode_ids || []).length || (preview?.rows || []).some(row => row.episode_id)) && <span className="text-xs text-gray-500">未能从预览列出 episode，可留空使用默认过程。</span>}
                     </div>
                   </div>
                   <div className="grid md:grid-cols-2 gap-3 text-sm">
@@ -1248,13 +1297,13 @@ export default function TemporalConstructionWizard() {
           <p className="text-sm text-gray-500">暂无历史任务</p>
         ) : (
           <div className="space-y-2">
-            {replayHistory.map((r: any) => (
+            {replayHistory.map(r => (
               <button key={r.id || r.replay_id} onClick={() => navigate(`/data/temporal/replays/${r.id || r.replay_id}`)} className="w-full text-left border rounded-lg px-3 py-2 hover:bg-gray-50">
                 <div className="flex justify-between text-sm"><span>时序模拟 · {r.source_id || "factorynet_cnc"}</span><span className={r.status === "completed" ? "text-green-700" : r.status === "failed" ? "text-red-700" : "text-amber-700"}>{r.status}</span></div>
                 <p className="text-xs text-gray-500 mt-1">{r.selected_rows ?? "—"} 条记录 · {r.metrics?.committed_batches ?? 0} 批 · {r.series_ids?.join(", ") || "默认 episode"}</p>
               </button>
             ))}
-            {history.map((r: any) => (
+            {history.map(r => (
               <button
                 key={r.id || r.run_id}
                 onClick={() =>
@@ -1303,7 +1352,11 @@ export default function TemporalConstructionWizard() {
         {step < 4 && (
           <button
             disabled={!canNext}
-            onClick={() => setStep(step + 1)}
+            onClick={() => {
+              const nextStep = step + 1;
+              setStep(nextStep);
+              if (nextStep === 1 && source?.installed) void query(filters);
+            }}
             className="bg-black text-white rounded-lg px-5 py-2 text-sm disabled:opacity-40"
           >
             下一步

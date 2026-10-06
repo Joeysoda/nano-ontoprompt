@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.deps import get_current_user, require_editor
+from app.deps import get_current_user, get_db, require_editor
+from app.models.ontology import OntologyProject
 from app.models.user import User
 from app.models.v2.temporal_replay import TemporalFact, TemporalReplay, TemporalStreamEvent
 from app.services.v2.temporal_stream_service import (
@@ -28,14 +29,6 @@ from app.services.v2.temporal_stream_service import (
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 class TemporalStreamCreate(BaseModel):
@@ -70,16 +63,25 @@ class TemporalStreamEventBody(BaseModel):
     event_id: str = Field(min_length=1, max_length=300)
     episode_id: str = Field(min_length=1, max_length=200)
     entity_key: str = Field(min_length=1, max_length=200)
-    ordinal: float
+    ordinal: float | None = None
+    event_time: str | None = None
     source_sequence: int
     payload: dict[str, Any] = Field(default_factory=dict)
     source_ref: dict[str, Any] = Field(default_factory=dict)
 
 
-def _get_replay(db: Session, run_id: str) -> TemporalReplay:
+def _require_ontology(db: Session, ontology_id: str, user: User) -> OntologyProject:
+    ontology = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
+    if ontology is None or (user.role != "admin" and ontology.created_by != user.id):
+        raise HTTPException(404, "本体不存在")
+    return ontology
+
+
+def _get_replay(db: Session, run_id: str, user: User) -> TemporalReplay:
     replay = db.query(TemporalReplay).filter(TemporalReplay.id == run_id).first()
     if not replay:
         raise HTTPException(404, "动态运行不存在")
+    _require_ontology(db, replay.ontology_id, user)
     return replay
 
 
@@ -94,15 +96,15 @@ def _raise_stream(exc: StreamError) -> None:
 
 
 @router.get("/ontologies/{ontology_id}/temporal-streams")
-def list_streams(ontology_id: str, limit: int = Query(50, ge=1, le=200), db: Session = Depends(get_db)):
+def list_streams(ontology_id: str, limit: int = Query(50, ge=1, le=200), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_ontology(db, ontology_id, user)
     rows = db.query(TemporalReplay).filter(TemporalReplay.ontology_id == ontology_id).order_by(TemporalReplay.created_at.desc()).limit(limit).all()
     return {"runs": [serialize_stream(item, db=db) for item in rows], "count": len(rows)}
 
 
 @router.post("/ontologies/{ontology_id}/temporal-streams", status_code=status.HTTP_201_CREATED)
 def create_stream(ontology_id: str, body: TemporalStreamCreate, db: Session = Depends(get_db), user: User = Depends(require_editor)):
-    if body.source_id != "factorynet_cnc":
-        raise HTTPException(422, detail={"code": "UNSUPPORTED_SOURCE", "message": "动态演化第一版仅支持 FactoryNet CNC"})
+    _require_ontology(db, ontology_id, user)
     episodes = list(body.episode_ids or body.series_ids or [])
     if body.episode_id:
         episodes = [body.episode_id] if not episodes else [*episodes, body.episode_id]
@@ -132,6 +134,7 @@ def create_stream(ontology_id: str, body: TemporalStreamCreate, db: Session = De
             time_column=body.time_column,
             entity_column=body.entity_column,
             source_mode=body.source_mode,
+            source_id=body.source_id,
             config=config,
             created_by=user.id,
         )
@@ -141,13 +144,13 @@ def create_stream(ontology_id: str, body: TemporalStreamCreate, db: Session = De
 
 
 @router.get("/temporal-streams/{run_id}")
-def get_stream(run_id: str, db: Session = Depends(get_db)):
-    return serialize_stream(_get_replay(db, run_id), db=db)
+def get_stream(run_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return serialize_stream(_get_replay(db, run_id, user), db=db)
 
 
 @router.post("/temporal-streams/{run_id}/control")
-def control_stream(run_id: str, body: TemporalStreamControl, db: Session = Depends(get_db), _user: User = Depends(require_editor)):
-    replay = _get_replay(db, run_id)
+def control_stream(run_id: str, body: TemporalStreamControl, db: Session = Depends(get_db), user: User = Depends(require_editor)):
+    replay = _get_replay(db, run_id, user)
     try:
         replay, should_dispatch = update_stream_control(db, replay, body.action, body.speed)
     except StreamError as exc:
@@ -158,8 +161,8 @@ def control_stream(run_id: str, body: TemporalStreamControl, db: Session = Depen
 
 
 @router.get("/temporal-streams/{run_id}/events")
-def list_events(run_id: str, offset: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=1000), status_filter: str | None = Query(None, alias="status"), db: Session = Depends(get_db)):
-    replay = _get_replay(db, run_id)
+def list_events(run_id: str, offset: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=1000), status_filter: str | None = Query(None, alias="status"), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    replay = _get_replay(db, run_id, user)
     query = db.query(TemporalStreamEvent).filter(TemporalStreamEvent.replay_id == replay.id)
     if status_filter:
         query = query.filter(TemporalStreamEvent.status == status_filter)
@@ -170,8 +173,8 @@ def list_events(run_id: str, offset: int = Query(0, ge=0), limit: int = Query(20
 
 
 @router.post("/temporal-streams/{run_id}/events", status_code=status.HTTP_202_ACCEPTED)
-def push_event(run_id: str, body: TemporalStreamEventBody, db: Session = Depends(get_db), _user: User = Depends(require_editor)):
-    replay = _get_replay(db, run_id)
+def push_event(run_id: str, body: TemporalStreamEventBody, db: Session = Depends(get_db), user: User = Depends(require_editor)):
+    replay = _get_replay(db, run_id, user)
     try:
         event, idempotent = ingest_push_event(db, replay, body.model_dump())
     except StreamError as exc:
@@ -181,8 +184,8 @@ def push_event(run_id: str, body: TemporalStreamEventBody, db: Session = Depends
 
 
 @router.get("/temporal-streams/{run_id}/facts")
-def get_facts(run_id: str, offset: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=1000), at: float | None = None, state_key: str | None = None, relation_state: str = Query("all", pattern="^(all|current)$"), db: Session = Depends(get_db)):
-    replay = _get_replay(db, run_id)
+def get_facts(run_id: str, offset: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=1000), at: float | None = None, state_key: str | None = None, relation_state: str = Query("all", pattern="^(all|current)$"), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    replay = _get_replay(db, run_id, user)
     return stream_facts(db, replay, offset=offset, limit=limit, at=at, state_key=state_key, relation_state=relation_state)
 
 
@@ -197,8 +200,9 @@ def get_stream_graph(
     mode: str = Query("cumulative", pattern="^(cumulative|window)$"),
     relation_state: str = Query("all", pattern="^(all|current)$"),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    replay = _get_replay(db, run_id)
+    replay = _get_replay(db, run_id, user)
     return stream_graph(
         db,
         replay,
@@ -266,13 +270,14 @@ async def _event_stream(run_id: str, request: Request) -> AsyncIterator[str]:
 
 
 @router.get("/temporal-streams/{run_id}/event-stream")
-async def event_stream(run_id: str, request: Request):
+async def event_stream(run_id: str, request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _get_replay(db, run_id, user)
     return StreamingResponse(_event_stream(run_id, request), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.post("/temporal-streams/{run_id}/publish")
 def publish(run_id: str, db: Session = Depends(get_db), user: User = Depends(require_editor)):
-    replay = _get_replay(db, run_id)
+    replay = _get_replay(db, run_id, user)
     try:
         return publish_stream_run(db, replay, created_by=user.id)
     except StreamError as exc:

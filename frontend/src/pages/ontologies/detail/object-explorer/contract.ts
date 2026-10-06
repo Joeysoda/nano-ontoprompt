@@ -20,7 +20,12 @@ export type FilterExpression =
 
 export type ObjectSetExpression =
   | { kind: "base"; type_ref: { kind: "object"; api_name: string } }
-  | { kind: "filter"; input: ObjectSetExpression; where: FilterExpression };
+  | { kind: "filter"; input: ObjectSetExpression; where: FilterExpression }
+  | { kind: "static"; type_ref: { kind: "object"; api_name: string }; object_ids: string[] }
+  | { kind: "reference"; object_set_id: string; definition_version: number }
+  | { kind: "traverse"; input: ObjectSetExpression; link: { api_name: string; direction: "in" | "out" } }
+  | { kind: "union" | "intersect"; inputs: ObjectSetExpression[] }
+  | { kind: "subtract"; base: ObjectSetExpression; subtract: ObjectSetExpression[] };
 
 export type ExplorerUrlState = {
   objectType: string;
@@ -123,6 +128,14 @@ export function compileObjectSetExpression(objectType: string, query: RuleGroupT
     issues,
     activeRuleCount: where ? countFilters(where) : 0,
   };
+}
+
+export function filterExpression(base: ObjectSetExpression, compiled: ObjectSetExpression): ObjectSetExpression {
+  return compiled.kind === "filter" ? { ...compiled, input: base } : base;
+}
+
+export function setArithmetic(kind: "union" | "intersect" | "subtract", left: ObjectSetExpression, right: ObjectSetExpression): ObjectSetExpression {
+  return kind === "subtract" ? { kind, base: left, subtract: [right] } : { kind, inputs: [left, right] };
 }
 
 function countFilters(filter: FilterExpression): number {

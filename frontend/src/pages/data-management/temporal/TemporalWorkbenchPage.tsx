@@ -13,7 +13,18 @@ type Run = {
   id: string;
   ontology_id: string;
   status: string;
-  metrics?: Record<string, any>;
+  metrics?: {
+    summary?: { episodes?: unknown; dataset?: unknown };
+    rows_in?: unknown;
+    rows_selected?: unknown;
+    rows_normalized?: unknown;
+    entities_upserted?: unknown;
+    nodes_upserted?: unknown;
+    relations_upserted?: unknown;
+    edges_upserted?: unknown;
+    temporal_issues?: unknown;
+    time_kind?: unknown;
+  };
   progress?: {
     stage?: string;
     pct?: number;
@@ -25,6 +36,14 @@ type Run = {
 
 const formatValue = (value: unknown) =>
   value === null || value === undefined || value === "" ? "—" : String(value);
+
+const errorMessage = (error: unknown) => {
+  if (typeof error !== "object" || error === null) return "无法读取构建状态";
+  const record = error as Record<string, unknown>;
+  if (typeof record.message === "string") return record.message;
+  if (typeof record.detail === "string") return record.detail;
+  return "无法读取构建状态";
+};
 
 const taskTitle = (status: string) => {
   if (status === "completed") return "构建完成";
@@ -46,23 +65,22 @@ export default function TemporalWorkbenchPage() {
     try {
       setError("");
       setRun(await apiClientV2.get<Run>(`/construction-runs/${runId}`));
-    } catch (reason: any) {
-      setError(
-        reason?.response?.data?.detail || reason?.message || "无法读取构建状态",
-      );
+    } catch (reason: unknown) {
+      setError(errorMessage(reason));
     }
   }, [runId]);
 
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
 
+  const runStatus = run?.status;
   useEffect(() => {
-    if (!run || ["completed", "failed", "cancelled"].includes(run.status))
+    if (!runStatus || ["completed", "failed", "cancelled"].includes(runStatus))
       return;
     const timer = window.setInterval(load, 1200);
     return () => window.clearInterval(timer);
-  }, [load, run?.status]);
+  }, [load, runStatus]);
 
   if (!run && !error) {
     return (
@@ -79,7 +97,7 @@ export default function TemporalWorkbenchPage() {
     Math.min(100, Number(progress.pct ?? (status === "completed" ? 100 : 0))),
   );
   const summary = run?.metrics?.summary || {};
-  const measures = [
+  const measures: Array<[string, unknown]> = [
     ["源记录", run?.metrics?.rows_in],
     ["选中记录", run?.metrics?.rows_selected ?? run?.metrics?.rows_normalized],
     ["实体", run?.metrics?.entities_upserted ?? run?.metrics?.nodes_upserted],
@@ -103,8 +121,8 @@ export default function TemporalWorkbenchPage() {
             时序本体构建
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            {summary.dataset || "FactoryNet CNC"} ·{" "}
-            {run?.metrics?.time_kind || "ordinal"}
+            {formatValue(summary.dataset || "FactoryNet CNC")} ·{" "}
+            {formatValue(run?.metrics?.time_kind || "ordinal")}
           </p>
         </div>
         <div className="flex items-center gap-2">

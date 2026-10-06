@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -34,6 +35,7 @@ class FromLive(StrictBody):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
     ttl_seconds: int = Field(default=30 * 86400, ge=3600, le=365 * 86400)
+    mode: Literal['tracking', 'pinned'] = 'tracking'
 
 
 class ScenarioSettings(StrictBody):
@@ -101,9 +103,23 @@ def create_from_live(ontology_id: str, body: FromLive, db=Depends(get_db), user=
                                   "nonce": uuid4().hex})
         view = build_live_view(db, service.graph, metadata, ontology_id, user.id, capture_id, body.ttl_seconds)
         scenario = service.create(CreateScenarioRequest(name=body.name.strip(), description=body.description,
-                                                        base_view_id=view.id, ttl_seconds=body.ttl_seconds))
+                                                        base_view_id=view.id, ttl_seconds=body.ttl_seconds, mode=body.mode))
         return _summary(scenario)
     except ScenarioError as exc:
+        _http(exc)
+
+
+class RebaseCommand(StrictBody):
+    expected_etag: int = Field(ge=1)
+
+
+@router.post('/{ontology_id}/scenarios/{scenario_id}:rebase')
+def rebase_scenario(ontology_id: str, scenario_id: str, body: RebaseCommand, db=Depends(get_db), user=Depends(get_current_user)):
+    from app.services.v2.scenario_tracking import rebase
+    try:
+        return rebase(_service(ontology_id, db, user), scenario_id, body.expected_etag)
+    except ScenarioError as exc:
+        db.rollback()
         _http(exc)
 
 
@@ -207,6 +223,7 @@ def publish_action_type(ontology_id: str, action_type_id: str,
 
 
 def _compiled(service, scenario, body):
+    from app.services.v2.function_binding import function_resolver
     if scenario.status != "active":
         raise ScenarioError("scenario_archived", "Archived scenarios cannot be edited", 409)
     if scenario.etag != body.expected_etag:
@@ -218,7 +235,7 @@ def _compiled(service, scenario, body):
         OntologyActionType.ontology_id == service.ontology_id,
         OntologyActionType.action_category == "scenario",
         OntologyActionType.id.in_(ids)).all()} if ids else {}
-    edits = compile_actions(service.ontology_id, scenario.id, actions, types, base, actor=service.user)
+    edits = compile_actions(service.ontology_id, scenario.id, actions, types, base, actor=service.user, function_resolver=function_resolver(service.db, service.ontology_id))
     if not edits:
         edits = [Edit(sequence=0, op="invoke_action", action_key="scenario_reset",
                       parameters={}, source_action="scenario_reset")]
@@ -472,106 +489,17 @@ def merge_scenario(ontology_id: str, scenario_id: str, body: MergeCommand,
         result, edits = _merge_state(service, scenario)
         if not result["can_merge"]:
             raise ScenarioError("merge_conflict", "Merge preview contains conflicts or no supported edits", 409)
-        graph = service.graph._graph(ontology_id)
-        live_before = FalkorReadAdapter(graph).read(ontology_id)
-        undo = []
-
-        def set_graph_property(kind, object_id, prop, value):
-            graph.query("MATCH (n:Instance {_instance_id: $id, _type: $kind, _ontology_id: $ontology}) SET n += $patch",
-                        params={"id": object_id, "kind": kind, "ontology": ontology_id,
-                                "patch": {prop: value}})
-
-        def delete_graph_object(kind, object_id):
-            graph.query("MATCH (n:Instance {_instance_id: $id, _type: $kind, _ontology_id: $ontology}) DETACH DELETE n",
-                        params={"id": object_id, "kind": kind, "ontology": ontology_id})
-
-        def add_graph_link(link):
-            service.graph.upsert_relations(ontology_id, [{"source": link["source"]["object_id"],
-                "target": link["target"]["object_id"], "type": link["relation_type"]}])
-
-        def remove_graph_link(link):
-            relation = service.graph._safe_relation_type(link["relation_type"])
-            graph.query("MATCH (a:Instance {_instance_id: $source, _ontology_id: $ontology})"
-                        f"-[r:{relation}]->(b:Instance {{_instance_id: $target, _ontology_id: $ontology}}) DELETE r",
-                        params={"source": link["source"]["object_id"],
-                                "target": link["target"]["object_id"], "ontology": ontology_id})
-
-        def rollback_graph(item):
-            op = item["op"]
-            if op == "set_property":
-                set_graph_property(item["kind"], item["id"], item["property"], item["value"])
-            elif op == "delete_object":
-                delete_graph_object(item["kind"], item["id"])
-            elif op == "restore_object":
-                service.graph.upsert_instances(ontology_id, [{"id": item["id"],
-                    "entity_type": item["kind"], "properties": item["properties"]}])
-                for edge in item["edges"]:
-                    service.graph.upsert_relations(ontology_id, [{"source": edge[0][1],
-                        "target": edge[2][1], "type": edge[1]}])
-            elif op == "add_link":
-                add_graph_link(item["link"])
-            elif op == "remove_link":
-                remove_graph_link(item["link"])
-
+        from app.services.v2.live_edits import apply_live_edits
+        typed_edits = [Edit.model_validate(item) for item in edits]
+        _, _, _, restore_graph = apply_live_edits(db, ontology_id, typed_edits, service.graph)
         try:
-            for edit in edits:
-                op = edit["op"]
-                ref = edit.get("target") or {}
-                object_id, kind = ref.get("object_id"), ref.get("concrete_type")
-                row = db.query(EntityInstance).filter_by(ontology_id=ontology_id, id=object_id).first() if object_id else None
-                if op in {"set_property", "unset_property"}:
-                    prop = edit["property"]
-                    old_value = live_before.objects[(kind, object_id)].get(prop)
-                    undo.append({"op": "set_property", "kind": kind, "id": object_id,
-                                 "property": prop, "value": old_value})
-                    if row:
-                        data = dict(row.row_data or {})
-                        if op == "set_property":
-                            data[prop] = edit.get("value")
-                        else:
-                            data.pop(prop, None)
-                        row.row_data = data
-                    set_graph_property(kind, object_id, prop,
-                                       edit.get("value") if op == "set_property" else None)
-                elif op == "create_object":
-                    entity = db.query(Entity).filter(Entity.ontology_id == ontology_id,
-                             (Entity.name_en == kind) | (Entity.name_cn == kind)).first()
-                    if not entity:
-                        raise ScenarioError("merge_conflict", "Object type disappeared during merge", 409)
-                    if db.get(EntityInstance, object_id):
-                        raise ScenarioError("merge_conflict", "Object ID already exists", 409)
-                    db.add(EntityInstance(id=object_id, entity_id=entity.id, ontology_id=ontology_id,
-                                          row_identity=object_id, row_data=edit.get("properties") or {}))
-                    undo.append({"op": "delete_object", "kind": kind, "id": object_id})
-                    service.graph.upsert_instances(ontology_id, [{"id": object_id,
-                        "entity_type": kind, "properties": edit.get("properties") or {}}])
-                elif op == "delete_object":
-                    old = live_before.objects[(kind, object_id)]
-                    incident = [edge for edge in live_before.edges if (kind, object_id) in (edge[0], edge[2])]
-                    undo.append({"op": "restore_object", "kind": kind, "id": object_id,
-                                 "properties": old, "edges": incident})
-                    if row:
-                        db.delete(row)
-                    delete_graph_object(kind, object_id)
-                elif op in {"add_link", "remove_link"}:
-                    link = edit["link"]
-                    undo.append({"op": "remove_link" if op == "add_link" else "add_link",
-                                 "link": link})
-                    if op == "add_link":
-                        add_graph_link(link)
-                    else:
-                        remove_graph_link(link)
             db.add(ScenarioAudit(scenario_id=scenario.id, revision=scenario.head_revision,
                                  actor_id=user.id, operation="merge",
                                  summary={"applied_edits": len(edits), "base_view_id": scenario.base_view_id}))
             db.commit()
         except Exception:
             db.rollback()
-            for item in reversed(undo):
-                try:
-                    rollback_graph(item)
-                except Exception:
-                    pass
+            restore_graph()
             raise
         return {"scenario_id": scenario.id, "revision": scenario.head_revision,
                 "status": "merged", "applied_edits": len(edits)}

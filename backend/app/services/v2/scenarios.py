@@ -52,6 +52,8 @@ def _summary(row):
     return {"id": row.id, "ontology_id": row.ontology_id, "owner_id": row.owner_id, "name": row.name,
             "description": row.description, "status": row.status, "base_view_id": row.base_view_id,
             "head_revision": row.head_revision, "etag": row.etag, "ttl_seconds": row.ttl_seconds,
+            "mode": row.mode, "last_rebased_at": row.last_rebased_at.isoformat() if row.last_rebased_at else None,
+            "rebase_error": row.rebase_error,
             "protected_demo": row.protected_demo, "created_at": row.created_at.isoformat(),
             "updated_at": row.updated_at.isoformat()}
 
@@ -70,6 +72,8 @@ class ScenarioService:
         row = self.db.get(ScenarioResource, scenario_id)
         if not row or row.ontology_id != self.ontology_id:
             raise ScenarioError("not_found", "Scenario not found", 404)
+        if row.ttl_seconds and aware(row.created_at) + timedelta(seconds=row.ttl_seconds) <= now():
+            raise ScenarioError('scenario_expired', 'Scenario retention period has expired', 410)
         grant = self.db.get(ScenarioGrant, (row.id, self.user.id))
         if self.user.role != "admin" and row.owner_id != self.user.id and not grant:
             raise ScenarioError("forbidden", "Scenario access denied", 403)
@@ -81,7 +85,8 @@ class ScenarioService:
         view = require_ready(self.db, request.base_view_id, self.ontology_id, principal_id=self.user.id, is_admin=self.user.role == "admin")
         row = ScenarioResource(ontology_id=self.ontology_id, owner_id=self.user.id, name=request.name,
                                description=request.description, base_view_id=view.id, ttl_seconds=request.ttl_seconds,
-                               protected_demo=request.protected_demo)
+                               protected_demo=request.protected_demo, mode=request.mode,
+                               last_rebased_at=now() if request.mode == 'tracking' else None)
         self.db.add(row); self.db.flush()
         self.db.add(ScenarioAudit(scenario_id=row.id, actor_id=self.user.id, operation="create", summary={"base_view_id": view.id}))
         self.db.commit(); self.db.refresh(row)
@@ -124,13 +129,13 @@ class ScenarioService:
             if edit.op == "set_property":
                 key = _target_key(edit.target)
                 if key not in objects: raise ScenarioError("object_not_found", "Target object does not exist", path=f"edits[{edit.sequence}]")
-                if edit.expected_old_value is not None and objects[key].get(edit.property) != edit.expected_old_value:
+                if "expected_old_value" in edit.model_fields_set and objects[key].get(edit.property) != edit.expected_old_value:
                     raise ScenarioError("edit_conflict", "Target property changed since the Action was prepared", 409, f"edits[{edit.sequence}]")
                 objects[key][edit.property] = edit.value
             elif edit.op == "unset_property":
                 key = _target_key(edit.target)
                 if key not in objects: raise ScenarioError("object_not_found", "Target object does not exist", path=f"edits[{edit.sequence}]")
-                if edit.expected_old_value is not None and objects[key].get(edit.property) != edit.expected_old_value:
+                if "expected_old_value" in edit.model_fields_set and objects[key].get(edit.property) != edit.expected_old_value:
                     raise ScenarioError("edit_conflict", "Target property changed since the Action was prepared", 409, f"edits[{edit.sequence}]")
                 objects[key].pop(edit.property, None)
             elif edit.op == "delete_object":
@@ -167,8 +172,7 @@ class ScenarioService:
             self.db.commit(); self.db.refresh(revision)
             return revision
         except Exception:
-            view.status = "failed"
-            self.db.commit()
+            self.db.rollback()
             raise
 
     def list_revisions(self, scenario):
@@ -182,6 +186,8 @@ def resolve_scenario_context(db, context: ExecutionContext, ontology_id: str, us
     scenario = db.get(ScenarioResource, context.scenario_id)
     if not scenario or scenario.ontology_id != ontology_id:
         raise ScenarioError("not_found", "Scenario context not found", 404, "context.scenario_id")
+    if scenario.ttl_seconds and aware(scenario.created_at) + timedelta(seconds=scenario.ttl_seconds) <= now():
+        raise ScenarioError('scenario_expired', 'Scenario retention period has expired', 410)
     grant = db.get(ScenarioGrant, (scenario.id, user.id))
     if user.role != "admin" and scenario.owner_id != user.id and not grant:
         raise ScenarioError("forbidden", "Scenario context access denied", 403, "context.scenario_id")
@@ -192,6 +198,10 @@ def resolve_scenario_context(db, context: ExecutionContext, ontology_id: str, us
         if not row:
             raise ScenarioError("not_found", "Scenario revision not found", 404, "context.scenario_revision")
         view_id = row.result_view_id
+    else:
+        initial = db.query(ScenarioRevision).filter_by(scenario_id=scenario.id, revision=0, status='ready').first()
+        if initial:
+            view_id = initial.result_view_id
     view = require_ready(db, view_id, ontology_id, principal_id=user.id, is_admin=user.role == "admin")
     return context.model_copy(update={"data_view_id": view.id, "consistency": "snapshot", "revision_policy": "pinned",
                                       "revision_id": f"{scenario.id}:{revision or 0}", "metadata_digest": view.metadata_digest})

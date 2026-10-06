@@ -70,6 +70,14 @@ def get_falkordb() -> FalkorDBService:
     return FalkorDBService()
 
 
+@router.get("/{ontology_id}/object-query/catalog")
+def query_catalog(ontology_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _authorize(ontology_id, db, user)
+    from app.services.v2.object_query.core import metadata_digest
+    metadata = load_sql_metadata(db, ontology_id)
+    return metadata.catalog() | {"metadata_digest": metadata_digest(metadata)}
+
+
 @router.get("/{ontology_id}/object-sets/capabilities")
 def get_object_set_capabilities(
     ontology_id: str,
@@ -199,6 +207,36 @@ def compare_object_query(ontology_id: str, request: CompareObjectSetRequest, db:
         raise http_error(exc) from exc
 
 
+@router.post("/{ontology_id}/object-query/graph")
+def graph_object_query(ontology_id: str, request: LoadObjectSetRequest, db: Session = Depends(get_db), user=Depends(get_current_user), graph_service: FalkorDBService = Depends(get_falkordb)):
+    """An induced instance graph, using exactly the queried object cohort."""
+    _authorize(ontology_id, db, user)
+    try:
+        _validate_request(ontology_id, request, db, user)
+        context = resolve_scenario_context(db, request.context, ontology_id, user)
+        if context.consistency != 'snapshot' or not context.data_view_id:
+            raise ObjectQueryError('consistency_unavailable', 'context', 'Graph requires a pinned view')
+        view = require_ready(db, context.data_view_id, ontology_id, principal_id=user.id, is_admin=user.role == 'admin')
+        if not graph_service.available:
+            raise ObjectQueryError('graph_unavailable', 'execution', 'FalkorDB is unavailable')
+        metadata = load_sql_metadata(db, ontology_id)
+        adapter = FalkorReadAdapter(graph_service._graph(view.graph_key), graph_ontology_id=view.graph_key)
+        core = QueryCore(metadata, adapter, QueryPolicy(principal=user.id))
+        objects, result = core.materialize(request.model_copy(update={'context': context}), ResourceService(db, ontology_id, user, metadata))
+        if len(objects) > 1000:
+            raise ObjectQueryError('query_too_complex', 'expression', 'Narrow the graph to at most 1,000 objects')
+        keys = {(item.object_type, item.object_id) for item in objects}
+        snapshot = adapter.read(ontology_id)
+        edges = [{'source': {'object_type': source[0], 'object_id': source[1]}, 'target': {'object_type': target[0], 'object_id': target[1]}, 'relation_type': relation}
+                 for source, relation, target in snapshot.edges if source in keys and target in keys]
+        return {'objects': [item.model_dump(mode='json') for item in objects], 'edges': edges,
+                'execution_context': context.model_dump(mode='json'), 'execution_hash': result.execution_hash}
+    except ObjectQueryError as exc:
+        raise http_error(exc) from exc
+    except ScenarioError as exc:
+        raise HTTPException(exc.status, detail={'code': exc.code, 'message': exc.message}) from exc
+
+
 @router.post("/{ontology_id}/object-query/data-views", response_model=QueryDataViewResponse, status_code=201)
 def create_data_view(
     ontology_id: str,
@@ -214,7 +252,40 @@ def create_data_view(
         raise HTTPException(status_code=503, detail={"code": "graph_unavailable", "path": "data_view", "message": "FalkorDB is unavailable", "details": {"retryable": True}})
     try:
         metadata = load_sql_metadata(db, ontology_id)
-        return as_response(build_live_view(db, graph_service, metadata, ontology_id, user.id, request.source_manifest_digest, request.retention_seconds))
+        source_graph_key = None
+        materialized = None
+        manifest = request.source_manifest_digest
+        if request.source_snapshot_id:
+            from app.models.v2.temporal_replay import DataModelSnapshot
+            snapshot = db.get(DataModelSnapshot, request.source_snapshot_id)
+            if not snapshot or snapshot.ontology_id != ontology_id or (user.role != 'admin' and snapshot.created_by != user.id):
+                raise ObjectQueryError('not_found', 'source_snapshot_id', 'Published snapshot not found or inaccessible')
+            if snapshot.status != 'published' or not snapshot.snapshot_hash:
+                raise ObjectQueryError('snapshot_unavailable', 'source_snapshot_id', 'Snapshot is not published')
+            project = db.get(OntologyProject, ontology_id)
+            if snapshot.schema_revision_id != project.current_revision_id:
+                raise ObjectQueryError('metadata_mismatch', 'source_snapshot_id', 'Snapshot schema revision differs from the current query catalog')
+            source_graph_key, manifest = snapshot.graph_namespace, snapshot.snapshot_hash
+            if request.temporal_surface:
+                from app.models.v2.temporal_replay import TemporalStreamEvent
+                from app.services.v2.temporal_surface import prepare_events
+                source_data = FalkorReadAdapter(graph_service._graph(source_graph_key), max_objects=100000, max_edges=500000).read(ontology_id)
+                events = db.query(TemporalStreamEvent).filter_by(replay_id=snapshot.replay_id).order_by(TemporalStreamEvent.source_sequence, TemporalStreamEvent.id).all()
+                materialized = prepare_events(ontology_id, metadata, source_data, events, request.temporal_surface)
+        elif request.temporal_surface:
+            raise ObjectQueryError('snapshot_unavailable', 'source_snapshot_id', 'Event materialization requires a published temporal snapshot')
+        view = build_live_view(db, graph_service, metadata, ontology_id, user.id, manifest, request.retention_seconds,
+                               source_graph_key=source_graph_key, source_snapshot_id=request.source_snapshot_id)
+        if materialized:
+            from app.services.v2.temporal_surface import install_surface
+            try:
+                install_surface(db, graph_service, view, *materialized)
+            except Exception as exc:
+                db.rollback()
+                view = db.get(type(view), view.id)
+                view.status = 'failed'; db.commit()
+                raise ObjectQueryError('view_build_failed', 'temporal_surface', 'Temporal surface could not be published') from exc
+        return as_response(view)
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
 
@@ -228,6 +299,40 @@ def get_data_view(ontology_id: str, view_id: str, db: Session = Depends(get_db),
         if view is None or view.ontology_id != ontology_id or (view.created_by != user.id and user.role != "admin"):
             raise ObjectQueryError("not_found", "view_id", "Data view not found")
         return as_response(view)
+    except ObjectQueryError as exc:
+        raise http_error(exc) from exc
+
+
+@router.get('/{ontology_id}/object-query/temporal-snapshots/{snapshot_id}')
+def get_temporal_snapshot(ontology_id: str, snapshot_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _authorize(ontology_id, db, user)
+    from app.models.v2.temporal_replay import DataModelSnapshot
+    snapshot = db.get(DataModelSnapshot, snapshot_id)
+    if not snapshot or snapshot.ontology_id != ontology_id or (user.role != 'admin' and snapshot.created_by != user.id):
+        raise HTTPException(404, detail={'code': 'not_found', 'message': 'Published snapshot not found'})
+    return {'id': snapshot.id, 'status': snapshot.status, 'snapshot_hash': snapshot.snapshot_hash,
+            'schema_revision_id': snapshot.schema_revision_id, 'event_count': snapshot.event_count,
+            'published_at': snapshot.published_at.isoformat() if snapshot.published_at else None}
+
+
+@router.get('/{ontology_id}/object-query/data-views/{view_id}/time-series/{series_id}')
+def read_time_series(ontology_id: str, view_id: str, series_id: str, offset: int = 0, limit: int = 200,
+                     db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _authorize(ontology_id, db, user)
+    if offset < 0 or limit < 1 or limit > 1000:
+        raise HTTPException(422, detail={'code': 'invalid_pagination'})
+    try:
+        view = require_ready(db, view_id, ontology_id, principal_id=user.id, is_admin=user.role == 'admin')
+        from app.models.v2.time_series import TimeSeriesSync
+        series = db.query(TimeSeriesSync).filter_by(ontology_id=ontology_id, data_view_id=view.id, series_id=series_id).first()
+        if not series:
+            raise ObjectQueryError('not_found', 'series_id', 'Time series is not available in this view')
+        return {'series_id': series.series_id, 'data_view_id': view.id, 'source_snapshot_id': view.source_snapshot_id,
+                'root': {'object_type': series.root_type, 'object_id': series.root_id},
+                'sensor': {'object_type': series.sensor_type, 'object_id': series.sensor_id},
+                'property': series.property_api_name, 'unit': series.unit, 'interpolation': series.interpolation,
+                'points': series.points[offset:offset + limit], 'page': {'offset': offset, 'returned': len(series.points[offset:offset + limit]),
+                'has_more': offset + limit < series.point_count, 'next_offset': offset + limit if offset + limit < series.point_count else None}}
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
 

@@ -68,6 +68,16 @@ class OntologyMetadata:
             self._types[key] = item
         self.links = tuple(links)
 
+    def catalog(self) -> dict:
+        """Expose the same catalog used by query validation to consumers."""
+        from dataclasses import asdict
+        return {
+            "types": [dict(api_name=item.api_name, kind=item.kind,
+                           properties=[asdict(prop) for prop in item.properties.values()])
+                      for item in self._types.values()],
+            "links": [asdict(link) for link in self.links],
+        }
+
     def resolve_type(self, kind: str, api_name: str, path: str) -> TypeMetadata:
         item = self._types.get((kind, api_name))
         if item is None:

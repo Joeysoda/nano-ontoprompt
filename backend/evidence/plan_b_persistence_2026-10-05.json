@@ -1,0 +1,22 @@
+{
+  "command": "AUTH_MODE=jwt python -m scripts.verify_plan_b_persistence",
+  "exit_code": 0,
+  "database": "PostgreSQL (Docker)",
+  "graph": "FalkorDB (Docker)",
+  "restart_scope": "fresh application process and docker compose restart backend",
+  "fresh_process": true,
+  "docker_service_restart": true,
+  "browser_after_docker_restart": true,
+  "browser_test": "frontend/src/test/e2e/object-explorer-real-restart.spec.ts",
+  "browser_screenshot": "backend/evidence/plan_b_object_panel_after_restart_2026-10-05.png",
+  "jwt": true,
+  "exploration_restored": true,
+  "live_status": "reviewing",
+  "scenario_status": "approved",
+  "completed_logs": 2,
+  "configured_view_version": 1,
+  "fixture_cleanup": "completed",
+  "service_restored_to_auth_mode": "local_single_user",
+  "post_cleanup_fixture_projects": 0,
+  "not_covered": []
+}

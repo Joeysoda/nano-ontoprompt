@@ -52,6 +52,8 @@ def resolve_action_context(db, ontology_id: str, context: ExecutionContext | Non
             "context.scenario_revision",
         )
     if not candidate.scenario_id:
+        if candidate.consistency != "live" or candidate.data_view_id or candidate.revision_policy != "latest" or candidate.revision_id:
+            raise ActionContextError("immutable_context", "Historical data views cannot be used as a live Action target", 409)
         return ResolvedActionContext(candidate, "live")
     try:
         resolved = resolve_scenario_context(db, candidate, ontology_id, user)

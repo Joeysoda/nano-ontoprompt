@@ -196,14 +196,22 @@ def _supplier_resilience(inputs):
 
 EXECUTORS["supplier_resilience_v2"] = _supplier_resilience
 
-def execute(asset: dict, inputs: dict) -> dict:
+def execute(asset: dict, inputs: dict, *, metadata=None, snapshot=None, ontology_id=None, through_action=False) -> dict:
+    from .function_contracts import execution_class, validate_domain, validate_edits, fail
     from .object_query.logic_binding import reject_page_binding
     reject_page_binding(asset, inputs)
     asset = normalize_contract(asset)
+    kind = execution_class(asset)
+    if kind == 'edit' and not through_action:
+        fail('execution', 'Edit-producing Functions must execute through an Action')
     impl=asset.get("implementation") or asset.get("asset_key")
     if impl not in EXECUTORS: raise ValueError(f"未注册本地实现: {impl}")
     normalized, unit_trace = normalize_units(asset["input_schema"], inputs)
     validate_payload(asset["input_schema"], normalized, "input")
+    validate_domain(asset['input_schema'], normalized, metadata=metadata, snapshot=snapshot, ontology_id=ontology_id)
     output=EXECUTORS[impl](normalized)
     validate_payload(asset["output_schema"], output, "output")
-    return {"asset_key":asset.get("asset_key"),"interface_key":asset.get("interface_key"),"version":asset.get("version","1.0.0"),"implementation":impl,"inputs_bound":list(normalized),"output":output,"trace":[{"stage":"bind","fields":list(normalized)}, *unit_trace, {"stage":"execute","implementation":impl},{"stage":"validate","status":"passed"}]}
+    validate_domain(asset['output_schema'], output, metadata=metadata, snapshot=snapshot, ontology_id=ontology_id)
+    if kind == 'edit':
+        validate_edits(asset, output, ontology_id)
+    return {"asset_key":asset.get("asset_key"),"interface_key":asset.get("interface_key"),"version":asset.get("version","1.0.0"),"implementation":impl,"inputs_bound":list(normalized),"output":output,"trace":[{"stage":"bind","field_count":len(normalized)}, *unit_trace, {"stage":"execute","implementation":impl},{"stage":"validate","status":"passed"}]}

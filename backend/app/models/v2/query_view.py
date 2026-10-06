@@ -15,6 +15,7 @@ class QueryDataView(Base):
     id = Column(String(64), primary_key=True, default=lambda: f"view_{uuid4().hex}")
     ontology_id = Column(String, ForeignKey("ontology_projects.id"), nullable=False, index=True)
     source_manifest_digest = Column(String(128), nullable=False)
+    source_snapshot_id = Column(String, ForeignKey('v2_data_model_snapshots.id'), nullable=True)
     base_view_id = Column(String(64), ForeignKey("v2_query_data_views.id"), nullable=True)
     changeset_digest = Column(String(128), nullable=True)
     changeset_version = Column(String(64), nullable=True)

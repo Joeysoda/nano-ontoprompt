@@ -16,6 +16,43 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
 const TEST_DATA  = path.resolve(__dirname, '../../../../test_data')
 
+interface ApiData {
+  id?: string
+  status?: string
+  task_id?: string
+  total?: number
+  progress?: { pct?: number }
+}
+
+interface BuildStats {
+  curated_dataset_ids?: string[]
+  meta?: { outputs?: Array<{ curated_dataset_id: string; source_file?: string }> }
+}
+
+interface ApiBody {
+  id?: string
+  status?: string
+  task_id?: string
+  progress?: { pct?: number }
+  data?: ApiData
+  stats?: BuildStats
+  total_entities?: number
+  total_relations?: number
+  total_logic?: number
+  total_actions?: number
+}
+
+type DomainResult = Record<string, string | number | undefined>
+
+function messageFrom(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function requiredString(value: string | undefined, label: string): string {
+  if (!value) throw new Error(`${label} missing from API response`)
+  return value
+}
+
 // ── 模型 / Prompt 配置（从 DB 读到的真实 ID） ──────────────────────
 const MODEL_ID   = '8f347f97-e844-4d62-b81b-8c655cd3b410'
 const MODEL_NAME = 'deepseek-v4-flash'
@@ -68,13 +105,13 @@ async function api(
   url: string,
   token: string,
   data?: unknown,
-): Promise<any> {
+): Promise<ApiBody> {
   const res = await request.fetch(`${API}${url}`, {
     method,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     data: data ? JSON.stringify(data) : undefined,
   })
-  const body = await res.json()
+  const body = await res.json() as ApiBody
   if (!res.ok()) throw new Error(`${method} ${url} → ${res.status()}: ${JSON.stringify(body).slice(0, 300)}`)
   return body
 }
@@ -94,7 +131,7 @@ async function pollExtractionStatus(
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 3000))
     const body = await api(request, 'GET', `/api/v1/ontologies/${ontologyId}/execute/status?task_id=${taskId}`, token)
-    const status: string = body.data?.status ?? body.status
+    const status = body.data?.status ?? body.status ?? ''
     const pct: number   = body.data?.progress?.pct ?? body.progress?.pct ?? 0
     console.log(`  polling: status=${status} pct=${pct}%`)
     if (status === 'completed' || status === 'failed') return status
@@ -168,7 +205,7 @@ async function runPipelineMapping(
       ],
     },
   })
-  const pipelineId: string = plBody.id ?? plBody.data?.id
+  const pipelineId = requiredString(plBody.id ?? plBody.data?.id, 'pipeline id')
   expect(pipelineId).toBeTruthy()
   console.log(`  Pipeline 创建: ${pipelineId.slice(0, 8)}`)
 
@@ -209,7 +246,7 @@ async function runPipelineMapping(
     description: `E2E Pipeline Mapping — ${domainCn}`,
     build_mode: 'pipeline_mapping',
   })
-  const ontologyId: string = ontoBody.data?.id ?? ontoBody.id
+  const ontologyId = requiredString(ontoBody.data?.id ?? ontoBody.id, 'ontology id')
   expect(ontologyId).toBeTruthy()
   console.log(`  本体创建: ${ontologyId.slice(0, 8)}`)
 
@@ -293,7 +330,7 @@ async function runSimpleLLM(
     description: `E2E 简易LLM — ${domainCn}`,
     build_mode: 'simple_llm',
   })
-  const ontologyId: string = ontoBody.data?.id ?? ontoBody.id
+  const ontologyId = requiredString(ontoBody.data?.id ?? ontoBody.id, 'ontology id')
   expect(ontologyId).toBeTruthy()
   console.log(`  本体创建: ${ontologyId.slice(0, 8)}`)
 
@@ -331,7 +368,7 @@ async function runSimpleLLM(
     file_ids: uploadedFileIds,
     constraints: [],
   })
-  const taskId: string = execBody.data?.task_id ?? execBody.task_id
+  const taskId = requiredString(execBody.data?.task_id ?? execBody.task_id, 'task id')
   expect(taskId).toBeTruthy()
   console.log(`  提取任务: ${taskId.slice(0, 8)}，等待完成...`)
 
@@ -379,7 +416,7 @@ test.describe('六领域 Pipeline Mapping + 简易LLM 全量测试', () => {
   const ts = Date.now()
   const outDir = path.resolve(__dirname, '../../../../test-results/all-domains', String(ts))
   let token = ''
-  const results: Record<string, any> = {}
+  const results: Record<string, DomainResult> = {}
 
   test.beforeAll(async ({ browser }) => {
     fs.mkdirSync(outDir, { recursive: true })
@@ -422,10 +459,10 @@ test.describe('六领域 Pipeline Mapping + 简易LLM 全量测试', () => {
           actions: result.buildBody.total_actions,
         }
         expect(result.buildBody.total_entities, '应有至少 1 个实体').toBeGreaterThan(0)
-      } catch (err: any) {
-        results[key] = { error: err.message }
+      } catch (error: unknown) {
+        results[key] = { error: messageFrom(error) }
         await page.screenshot({ path: path.join(outDir, `${domain}_pipeline_ERROR.jpg`), type: 'jpeg', quality: 75 }).catch(() => {})
-        throw err
+        throw error
       }
     })
   }
@@ -447,10 +484,10 @@ test.describe('六领域 Pipeline Mapping + 简易LLM 全量测试', () => {
           entities: result.totalEntities,
         }
         expect(result.finalStatus, '提取应成功完成').toBe('completed')
-      } catch (err: any) {
-        results[key] = { error: err.message }
+      } catch (error: unknown) {
+        results[key] = { error: messageFrom(error) }
         await page.screenshot({ path: path.join(outDir, `${domain}_llm_ERROR.jpg`), type: 'jpeg', quality: 75 }).catch(() => {})
-        throw err
+        throw error
       }
     })
   }

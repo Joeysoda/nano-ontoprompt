@@ -36,7 +36,12 @@ class FalkorDBService:
         if FalkorDB is None:
             return
         try:
-            self._db = FalkorDB(host=self.host, port=self.port)
+            self._db = FalkorDB(
+                host=self.host,
+                port=self.port,
+                socket_connect_timeout=0.5,
+                socket_timeout=1.0,
+            )
             # A Redis PING verifies the service without creating a synthetic
             # ``nano_healthcheck`` graph that would pollute the demo graph
             # inventory every time /health or a graph endpoint is called.

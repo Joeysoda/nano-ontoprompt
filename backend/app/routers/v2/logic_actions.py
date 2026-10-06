@@ -7,8 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timezone
-from app.database import SessionLocal
-from app.deps import get_current_user
+from app.deps import get_current_user, get_db
 from app.models.user import User
 from app.models.v2.logic import OntologyLogicRule, OntologyStateMachine
 from app.models.v2.action import OntologyActionType, OntologyActionRun
@@ -19,16 +18,22 @@ from app.services.v2.scenarios import ScenarioError, ScenarioService
 from app.models.v2.query_view import QueryDataView
 from app.services.v2.graph.falkordb_service import FalkorDBService
 from app.services.v2.object_query.core import FalkorReadAdapter
-from app.schemas.v2.scenario import RevisionRequest
+from app.schemas.v2.scenario import Edit, RevisionRequest, Target
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
-def get_db():
-    db = SessionLocal()
+def require_action_ontology(ontology_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """HTTP gate; direct legacy test calls never bypass a real API request."""
+    from app.models.ontology import OntologyProject
+    if not db.get(OntologyProject, ontology_id):
+        raise HTTPException(404, "Ontology not found")
     try:
-        yield db
-    finally:
-        db.close()
+        ScenarioService(db, ontology_id, current_user).authorize_ontology()
+    except ScenarioError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code, "path": exc.path, "message": exc.message, "details": {}}) from exc
+
+
+router.dependencies.append(Depends(require_action_ontology))
 
 
 # ── Logic Rules ─────────────────────────────────────────────────
@@ -421,18 +426,85 @@ def publish_actions_v2(ontology_id: str, db: Session = Depends(get_db)):
 
 # ── Action Runs ─────────────────────────────────────────────────
 
-@router.get("/{ontology_id}/action-runs")
-def list_action_runs(ontology_id: str, limit: int = 20, db: Session = Depends(get_db)):
-    runs = db.query(OntologyActionRun).filter(
+@router.get("/{ontology_id}/action-runs", dependencies=[Depends(require_action_ontology)])
+def list_action_runs(ontology_id: str, limit: int = 20, target_object_id: str | None = None, db: Session = Depends(get_db)):
+    query = db.query(OntologyActionRun).filter(
         OntologyActionRun.ontology_id == ontology_id
-    ).order_by(OntologyActionRun.started_at.desc()).limit(limit).all()
+    )
+    if target_object_id:
+        query = query.filter(OntologyActionRun.target_object_id == target_object_id)
+    runs = query.order_by(OntologyActionRun.started_at.desc()).limit(max(1, min(limit, 100))).all()
     return [{"id": r.id, "action_type_id": r.action_type_id, "status": r.status,
              "target_object_id": r.target_object_id, "error": r.error,
+             "side_effect_results": r.side_effect_results,
              "execution_context": r.execution_context or {},
              "started_at": r.started_at.isoformat() if r.started_at else None} for r in runs]
 
 
+@router.post("/{ontology_id}/action-runs/{run_id}:revert", dependencies=[Depends(require_action_ontology)])
+def revert_action_run(ontology_id: str, run_id: str, db: Session = Depends(get_db),
+                      current_user: User = Depends(get_current_user)):
+    original = db.query(OntologyActionRun).filter_by(id=run_id, ontology_id=ontology_id).with_for_update().first()
+    if not original:
+        raise HTTPException(404, "Action run not found")
+    if current_user.role != "admin" and original.executed_by != current_user.id:
+        raise HTTPException(403, "Only the executor or an administrator can revert this Action")
+    if original.status != "completed" or (original.execution_context or {}).get("scenario_id"):
+        raise HTTPException(409, "Only a completed live Action can be reverted")
+    effects = original.side_effect_results or []
+    if not effects or any(item.get("op") not in {"set_property", "unset_property"} for item in effects):
+        raise HTTPException(422, "Only property edits can be reverted automatically")
+    graph = FalkorDBService()
+    if not graph.available:
+        raise HTTPException(503, "FalkorDB is unavailable")
+    snapshot = FalkorReadAdapter(graph._graph(ontology_id)).read(ontology_id)
+    edits = []
+    for object_id, after in (original.after_snapshot or {}).items():
+        before = (original.before_snapshot or {}).get(object_id)
+        if not isinstance(before, dict) or not isinstance(after, dict):
+            raise HTTPException(409, "Action snapshots are incomplete")
+        matches = [key for key in snapshot.objects if key[1] == object_id]
+        if len(matches) != 1:
+            raise HTTPException(409, "Action target is missing or ambiguous")
+        kind = matches[0][0]
+        for prop in sorted(set(before) | set(after)):
+            if before.get(prop) == after.get(prop) and (prop in before) == (prop in after):
+                continue
+            edits.append(Edit(sequence=len(edits), op="set_property" if prop in before else "unset_property",
+                              target=Target(ontology_id=ontology_id, concrete_type=kind, object_id=object_id),
+                              property=prop, value=before.get(prop), expected_old_value=after.get(prop)))
+    if not edits:
+        raise HTTPException(409, "Action has no changed properties to revert")
+    from app.services.v2.live_edits import apply_live_edits
+    try:
+        before_snapshot, after_snapshot, results, restore = apply_live_edits(db, ontology_id, edits, graph)
+        reverted = OntologyActionRun(action_type_id=original.action_type_id, ontology_id=ontology_id,
+                                     target_object_id=original.target_object_id, parameters={"revert_of": original.id},
+                                     execution_context=original.execution_context, status="completed",
+                                     before_snapshot=before_snapshot, after_snapshot=after_snapshot,
+                                     side_effect_results=results, executed_by=current_user.id,
+                                     completed_at=datetime.now(timezone.utc))
+        original.status = "reverted"
+        db.add(reverted)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            restore()
+            raise
+        return {"run_id": reverted.id, "reverted_run_id": original.id, "status": "completed", "edits": len(edits)}
+    except ScenarioError as exc:
+        db.rollback()
+        raise HTTPException(exc.status, detail={"code": exc.code, "path": exc.path, "message": exc.message}) from exc
+
+
 def _live_action_snapshot(db, ontology_id):
+    from app.models.ontology import OntologyProject
+    if db.get(OntologyProject, ontology_id):
+        graph = FalkorDBService()
+        if not graph.available:
+            raise ScenarioError("graph_unavailable", "FalkorDB is unavailable", 503, "execution")
+        return FalkorReadAdapter(graph._graph(ontology_id)).read(ontology_id)
     from app.models.entity import Entity
     from app.models.relation import Relation
     entities = db.query(Entity).filter(Entity.ontology_id == ontology_id).all()
@@ -460,6 +532,7 @@ def _scenario_action_snapshot(db, context, current_user):
 
 
 def _compile_action_request(ontology_id, action, body, resolved_context, db, current_user):
+    from app.services.v2.function_binding import function_resolver
     if resolved_context.target == "scenario":
         snapshot = _scenario_action_snapshot(db, resolved_context.context, current_user)
         scenario_key = resolved_context.context.scenario_id or "scenario"
@@ -471,7 +544,7 @@ def _compile_action_request(ontology_id, action, body, resolved_context, db, cur
         invocation["target_object_id"] = body.target_object_id
     id_factory = (lambda action_index, rule_index: str(uuid.uuid4())) if resolved_context.target == "live" else None
     return compile_actions(ontology_id, scenario_key, [invocation], {action.id: action}, snapshot,
-                           actor=current_user, id_factory=id_factory)
+                           actor=current_user, id_factory=id_factory, function_resolver=function_resolver(db, ontology_id))
 
 
 def _apply_live_edits(db, ontology_id, action, edits):
@@ -484,13 +557,13 @@ def _apply_live_edits(db, ontology_id, action, edits):
         if edit.op == "invoke_action":
             continue
         if edit.op in {"set_property", "unset_property", "delete_object"}:
-            entity = db.query(Entity).filter(Entity.id == edit.target.object_id, Entity.ontology_id == ontology_id).first()
+            entity = db.query(Entity).filter(Entity.id == edit.target.object_id, Entity.ontology_id == ontology_id).with_for_update().first()
             if not entity:
                 raise ValueError(f"Target entity not found: {edit.target.object_id}")
             props = dict(entity.properties or {})
-            before_snapshot[entity.id] = dict(props)
-            if edit.expected_old_value is not None and props.get(edit.property) != edit.expected_old_value:
-                raise ValueError(f"Target property changed: {edit.property}")
+            before_snapshot.setdefault(entity.id, dict(props))
+            if edit.op in {"set_property", "unset_property"} and "expected_old_value" in edit.model_fields_set and props.get(edit.property) != edit.expected_old_value:
+                raise ScenarioError("edit_conflict", "Target property changed since the Action was prepared", 409, "edits")
             if edit.op == "set_property":
                 props[edit.property] = edit.value
             elif edit.op == "unset_property":
@@ -529,7 +602,7 @@ def _apply_live_edits(db, ontology_id, action, edits):
     return before_snapshot, after_snapshot, results
 
 
-@router.post("/{ontology_id}/actions/{action_id}/preview")
+@router.post("/{ontology_id}/actions/{action_id}/preview", dependencies=[Depends(require_action_ontology)])
 def preview_action_type(
     ontology_id: str,
     action_id: str,
@@ -539,6 +612,9 @@ def preview_action_type(
 ):
     try:
         resolved_context = resolve_action_context(db, ontology_id, body.context, current_user)
+        from app.models.ontology import OntologyProject
+        if db.get(OntologyProject, ontology_id):
+            ScenarioService(db, ontology_id, current_user).authorize_ontology()
         action = db.query(OntologyActionType).filter(OntologyActionType.id == action_id, OntologyActionType.ontology_id == ontology_id).first()
         if not action:
             raise ScenarioError("not_found", "Action type not found", 404, "action_id")
@@ -553,7 +629,7 @@ def preview_action_type(
         raise HTTPException(exc.status, detail={"code": exc.code, "path": exc.path, "message": exc.message, "details": {}}) from exc
 
 
-@router.post("/{ontology_id}/actions/{action_id}/run")
+@router.post("/{ontology_id}/actions/{action_id}/run", dependencies=[Depends(require_action_ontology)])
 def run_action_type(
     ontology_id: str,
     action_id: str,
@@ -563,8 +639,13 @@ def run_action_type(
 ):
     try:
         resolved_context = resolve_action_context(db, ontology_id, body.context, current_user)
+        from app.models.ontology import OntologyProject
+        if db.get(OntologyProject, ontology_id):
+            ScenarioService(db, ontology_id, current_user).authorize_ontology()
     except ActionContextError as exc:
         raise HTTPException(exc.status, detail=action_context_error(exc)) from exc
+    except ScenarioError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code, "path": exc.path, "message": exc.message, "details": {}}) from exc
 
     action = db.query(OntologyActionType).filter(
         OntologyActionType.id == action_id,
@@ -611,14 +692,27 @@ def run_action_type(
             db.commit()
             return {"run_id": run.id, "status": run.status, "target": "scenario", "revision": revision.revision,
                     "execution_context": resolved_context.context.model_dump(mode="json"), "edits": [edit.model_dump(mode="json") for edit in edits]}
-        before_snapshot, after_snapshot, side_effect_results = _apply_live_edits(db, ontology_id, action, edits)
+        from app.models.ontology import OntologyProject
+        restore_graph = None
+        if db.get(OntologyProject, ontology_id):
+            from app.services.v2.live_edits import apply_live_edits
+            before_snapshot, after_snapshot, side_effect_results, restore_graph = apply_live_edits(db, ontology_id, edits, FalkorDBService())
+        else:
+            # Compatibility for pre-project fixtures only; registered ontologies
+            # must use EntityInstance and the canonical graph projection.
+            before_snapshot, after_snapshot, side_effect_results = _apply_live_edits(db, ontology_id, action, edits)
 
         run.status = "completed"
         run.before_snapshot = before_snapshot
         run.after_snapshot = after_snapshot
         run.side_effect_results = side_effect_results
         run.completed_at = datetime.now(timezone.utc)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            if restore_graph:
+                restore_graph()
+            raise
         return {
             "run_id": run.id,
             "status": run.status,
@@ -633,17 +727,17 @@ def run_action_type(
         run.completed_at = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(e.status, {"run_id": run.id, "code": e.code, "path": e.path, "error": e.message}) from e
-    except Exception as e:
+    except Exception:
         db.rollback()
         db.add(run)
         run.status = "failed"
-        run.error = str(e)
+        run.error = "Unexpected Action runtime failure"
         run.before_snapshot = before_snapshot or None
         run.after_snapshot = after_snapshot or None
         run.side_effect_results = side_effect_results or None
         run.completed_at = datetime.now(timezone.utc)
         db.commit()
-        raise HTTPException(400, {"run_id": run.id, "error": str(e)})
+        raise HTTPException(500, {"run_id": run.id, "error": run.error})
 
 
 def _evaluate_logic_rule(rule: OntologyLogicRule, row: dict, parameters: dict) -> dict:

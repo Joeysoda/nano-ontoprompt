@@ -3,32 +3,34 @@ import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 import Layout from "@/components/Layout";
-import LoginPage from "@/pages/login/LoginPage";
-import RegisterPage from "@/pages/register/RegisterPage";
-import OverviewPage from "@/pages/overview/OverviewPage";
-import OntologyListPage from "@/pages/ontologies/list/OntologyListPage";
-import OntologyDetailPage from "@/pages/ontologies/detail/OntologyDetailPage";
-import ModelsPage from "@/pages/models/ModelsPage";
-import SettingsPage from "@/pages/settings/SettingsPage";
-import PipelinesLayout from "@/pages/pipelines/PipelinesLayout";
-import PipelineListPage from "@/pages/pipelines/PipelineListPage";
-import PipelineBuilderPage from "@/pages/pipelines/builder/PipelineBuilderPage";
-import ConnectionsTab from "@/pages/pipelines/connections/ConnectionsTab";
-import DatasetsTab from "@/pages/pipelines/datasets/DatasetsTab";
-import TransformsTab from "@/pages/pipelines/transforms/TransformsTab";
-import CuratedTab from "@/pages/pipelines/curated/CuratedTab";
-import DataManagementPage from "@/pages/data-management/DataManagementPage";
-import StructuredDataPage from "@/pages/data-management/structured/StructuredDataPage";
-import RegularDataPage from "@/pages/data-management/regular/RegularDataPage";
-import MultimodalDataPage from "@/pages/data-management/multimodal/MultimodalDataPage";
-import TemporalConstructionWizard from "@/pages/data-management/temporal/TemporalConstructionWizard";
-import TemporalWorkbenchPage from "@/pages/data-management/temporal/TemporalWorkbenchPage";
-import TemporalReplayPage from "@/pages/data-management/temporal/TemporalReplayPage";
-import DynamicDataPage from "@/pages/data-management/dynamic/DynamicDataPage";
-import BenchmarksPage from "@/pages/benchmarks/BenchmarksPage";
-import WhatIfWorkbenchPage, { WhatIfDemoLandingPage } from "@/pages/what-if/SupplierStudyPage";
-import GenericScenarioWorkbenchPage, { ScenarioCatalogPage } from "@/pages/what-if/GenericScenarioWorkbenchPage";
+const LoginPage = React.lazy(() => import("@/pages/login/LoginPage"));
+const RegisterPage = React.lazy(() => import("@/pages/register/RegisterPage"));
+const OverviewPage = React.lazy(() => import("@/pages/overview/OverviewPage"));
+const OntologyListPage = React.lazy(() => import("@/pages/ontologies/list/OntologyListPage"));
+const ModelsPage = React.lazy(() => import("@/pages/models/ModelsPage"));
+const SettingsPage = React.lazy(() => import("@/pages/settings/SettingsPage"));
+const PipelinesLayout = React.lazy(() => import("@/pages/pipelines/PipelinesLayout"));
+const PipelineListPage = React.lazy(() => import("@/pages/pipelines/PipelineListPage"));
+const PipelineBuilderPage = React.lazy(() => import("@/pages/pipelines/builder/PipelineBuilderPage"));
+const ConnectionsTab = React.lazy(() => import("@/pages/pipelines/connections/ConnectionsTab"));
+const DatasetsTab = React.lazy(() => import("@/pages/pipelines/datasets/DatasetsTab"));
+const TransformsTab = React.lazy(() => import("@/pages/pipelines/transforms/TransformsTab"));
+const CuratedTab = React.lazy(() => import("@/pages/pipelines/curated/CuratedTab"));
+const DataManagementPage = React.lazy(() => import("@/pages/data-management/DataManagementPage"));
+const StructuredDataPage = React.lazy(() => import("@/pages/data-management/structured/StructuredDataPage"));
+const RegularDataPage = React.lazy(() => import("@/pages/data-management/regular/RegularDataPage"));
+const MultimodalDataPage = React.lazy(() => import("@/pages/data-management/multimodal/MultimodalDataPage"));
+const TemporalConstructionWizard = React.lazy(() => import("@/pages/data-management/temporal/TemporalConstructionWizard"));
+const TemporalWorkbenchPage = React.lazy(() => import("@/pages/data-management/temporal/TemporalWorkbenchPage"));
+const TemporalReplayPage = React.lazy(() => import("@/pages/data-management/temporal/TemporalReplayPage"));
+const DynamicDataPage = React.lazy(() => import("@/pages/data-management/dynamic/DynamicDataPage"));
+const BenchmarksPage = React.lazy(() => import("@/pages/benchmarks/BenchmarksPage"));
+const WhatIfWorkbenchPage = React.lazy(() => import("@/pages/what-if/SupplierStudyPage"));
+const WhatIfDemoLandingPage = React.lazy(() => import("@/pages/what-if/SupplierStudyPage").then(module => ({ default: module.WhatIfDemoLandingPage })));
+const GenericScenarioWorkbenchPage = React.lazy(() => import("@/pages/what-if/GenericScenarioWorkbenchPage"));
+const ScenarioCatalogPage = React.lazy(() => import("@/pages/what-if/GenericScenarioWorkbenchPage").then(module => ({ default: module.ScenarioCatalogPage })));
 const ComponentSpikesPage = React.lazy(() => import("@/pages/component-spikes/ComponentSpikesPage"));
+const OntologyDetailPage = React.lazy(() => import("@/pages/ontologies/detail/OntologyDetailPage"));
 
 class AppErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -85,7 +87,7 @@ export default function App() {
     <QueryClientProvider client={qc}>
       <BrowserRouter>
         <AppErrorBoundary>
-          <Routes>
+          <React.Suspense fallback={<div role="status" className="p-6 text-sm text-slate-500">正在加载页面</div>}><Routes>
             <Route path="/login" element={LOCAL_SINGLE_USER ? <Navigate to="/overview" replace /> : <LoginPage />} />
             <Route path="/register" element={LOCAL_SINGLE_USER ? <Navigate to="/overview" replace /> : <RegisterPage />} />
             <Route path="/" element={<Navigate to="/overview" replace />} />
@@ -225,7 +227,7 @@ export default function App() {
               path="/ontologies/:id"
               element={
                 <ProtectedRoute>
-                  <OntologyDetailPage />
+                  <React.Suspense fallback={<div role="status" className="p-6 text-sm text-slate-500">正在加载本体工作台</div>}><OntologyDetailPage /></React.Suspense>
                 </ProtectedRoute>
               }
             />
@@ -297,7 +299,7 @@ export default function App() {
               path="/component-spikes"
               element={<ProtectedRoute><React.Suspense fallback={<div className="p-6 text-sm text-slate-500">Loading component lab…</div>}><ComponentSpikesPage /></React.Suspense></ProtectedRoute>}
             />
-          </Routes>
+          </Routes></React.Suspense>
         </AppErrorBoundary>
       </BrowserRouter>
     </QueryClientProvider>

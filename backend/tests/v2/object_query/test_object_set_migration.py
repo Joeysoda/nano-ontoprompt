@@ -22,6 +22,7 @@ def test_sqlite_full_upgrade_preserves_data(tmp_path,monkeypatch):
     with engine.connect() as conn:
         assert conn.execute(sa.text('SELECT value FROM user_sentinel')).scalar_one()=='preserve'
         assert conn.execute(sa.text('SELECT version_num FROM alembic_version')).scalar_one()==ScriptDirectory.from_config(config).get_current_head()
+        assert sa.inspect(conn).get_columns('alembic_version')[0]['type'].length == 255
         assert len([v for v in sa.inspect(conn).get_table_names() if v.startswith('v2_object_set_')])==7
         assert 'v2_query_data_views' in sa.inspect(conn).get_table_names()
         assert 'v2_query_jobs' in sa.inspect(conn).get_table_names()
@@ -46,6 +47,7 @@ def test_postgres_incremental_migration_preserves_data():
             command.upgrade(config, 'head')
             assert conn.execute(sa.text('SELECT value FROM user_sentinel')).scalar_one() == 'preserve'
             assert conn.execute(sa.text('SELECT version_num FROM alembic_version')).scalar_one() == ScriptDirectory.from_config(config).get_current_head()
+            assert sa.inspect(conn).get_columns('alembic_version')[0]['type'].length == 255
             assert 'v2_query_data_views' in sa.inspect(conn).get_table_names(schema=schema)
             assert 'v2_query_jobs' in sa.inspect(conn).get_table_names(schema=schema)
             assert len([v for v in sa.inspect(conn).get_table_names(schema=schema) if v.startswith('v2_object_set_')])==7

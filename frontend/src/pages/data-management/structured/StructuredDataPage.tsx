@@ -69,7 +69,9 @@ export default function StructuredDataPage() {
     }).catch(() => {}).finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    void Promise.resolve().then(load)
+  }, [])
 
   // Join pipelines with their curated datasets
   const allRows = useMemo<Row[]>(() => {

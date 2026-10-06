@@ -440,9 +440,34 @@ class CompareResult(StrictModel):
     candidate_execution_hash: str
 
 
+class TemporalSurfaceSpec(StrictModel):
+    event_type: str = Field(min_length=1, max_length=200)
+    start_field: str = Field(min_length=1, max_length=200)
+    end_field: str = Field(min_length=1, max_length=200)
+    subject_type: str = Field(min_length=1, max_length=200)
+    subject_field: str = Field(min_length=1, max_length=200)
+    event_link: str = Field(min_length=1, max_length=200)
+    sensor_type: str | None = None
+    sensor_field: str | None = None
+    sensor_link: str | None = None
+    tsp_property: str | None = None
+    value_field: str | None = None
+    unit: str | None = None
+    interpolation: Literal['none', 'step', 'linear'] | None = None
+
+    @model_validator(mode='after')
+    def sensor_contract(self):
+        parts = (self.sensor_type, self.sensor_field, self.sensor_link, self.tsp_property, self.value_field, self.unit, self.interpolation)
+        if any(parts) and not all(parts):
+            raise ValueError('Time series mapping requires sensor type/id/link, TSP property, value field, unit and interpolation')
+        return self
+
+
 class QueryDataViewCreate(StrictModel):
     source_ontology_id: str = Field(min_length=1, max_length=200)
     source_manifest_digest: str = Field(min_length=1, max_length=128)
+    source_snapshot_id: str | None = Field(default=None, min_length=1, max_length=200)
+    temporal_surface: TemporalSurfaceSpec | None = None
     retention_seconds: int = Field(default=86400, ge=60, le=31536000)
 
 
@@ -452,6 +477,7 @@ class QueryDataViewResponse(StrictModel):
     status: Literal["building", "validating", "ready", "failed", "expired"]
     metadata_digest: str
     source_manifest_digest: str
+    source_snapshot_id: str | None = None
     base_view_id: str | None = None
     changeset_digest: str | None = None
     changeset_version: str | None = None

@@ -1,7 +1,7 @@
 import os
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
+from sqlalchemy import Column, MetaData, String, Table, engine_from_config, inspect, text
 from sqlalchemy import pool
 
 from alembic import context
@@ -49,6 +49,31 @@ from app.models.v2 import object_set  # noqa: E402, F401
 from app.models.v2 import query_view  # noqa: E402, F401
 from app.models.v2 import query_job  # noqa: E402, F401
 from app.models.v2 import scenario  # noqa: E402, F401
+from app.models.v2 import time_series  # noqa: E402, F401
+from app.models.v2 import object_view  # noqa: E402, F401
+
+
+def _ensure_version_column_capacity(connection) -> bool:
+    """Bootstrap Alembic's own table before revisions exceed its 32-char default."""
+    inspector = inspect(connection)
+    if "alembic_version" not in inspector.get_table_names():
+        Table(
+            "alembic_version",
+            MetaData(),
+            Column("version_num", String(255), primary_key=True, nullable=False),
+        ).create(connection)
+        return True
+    version_column = next(
+        (column for column in inspector.get_columns("alembic_version") if column["name"] == "version_num"),
+        None,
+    )
+    length = getattr(version_column.get("type"), "length", None) if version_column else None
+    if connection.dialect.name == "postgresql" and length is not None and length < 255:
+        connection.execute(text(
+            "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)"
+        ))
+        return True
+    return False
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -89,6 +114,7 @@ def run_migrations_online() -> None:
     """
     supplied_connection = config.attributes.get('connection')
     if supplied_connection is not None:
+        _ensure_version_column_capacity(supplied_connection)
         context.configure(connection=supplied_connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
@@ -101,6 +127,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        _ensure_version_column_capacity(connection)
+        # SQLAlchemy 2 inspection opens an implicit transaction.  Alembic
+        # must start with a clean connection or its version-row updates can
+        # be rolled back when this connection closes (SQLite DDL may remain).
+        connection.commit()
         context.configure(
             connection=connection, target_metadata=target_metadata
         )

@@ -12,13 +12,13 @@ import DecisionsTab from "./tabs/DecisionsTab";
 import AgentDecisionTab from "./tabs/AgentDecisionTab";
 import ManufacturingDataTab from "./tabs/ManufacturingDataTab";
 import LogicAssetsTab from "./tabs/LogicAssetsTab";
-import ObjectQueryTab from "./tabs/ObjectQueryTab";
-import DataModelTab from "./tabs/DataModelTab";
-import DynamicEvolutionTab from "./tabs/DynamicEvolutionTab";
 import OntologyEditorPanel from "./OntologyEditorPanel";
 import ChangeHistoryDrawer from "./ChangeHistoryDrawer";
 
 const GraphTab = lazy(() => import("./tabs/GraphTabV2"));
+const DataModelTab = lazy(() => import("./tabs/DataModelTab"));
+const DynamicEvolutionTab = lazy(() => import("./tabs/DynamicEvolutionTab"));
+const ObjectQueryTab = lazy(() => import("./tabs/ObjectQueryTab"));
 type Tab = "graph" | "data_model" | "dynamic" | "entities" | "objects" | "logic" | "audit" | "reasoning" | "decisions" | "agent" | "manufacturing" | "logic-assets";
 
 class OntologyCanvasBoundary extends React.Component<
@@ -150,12 +150,10 @@ export default function OntologyDetailPage() {
           </Suspense>
         </OntologyCanvasBoundary>
       )}
-      {activeTab === "data_model" && (
-        <DataModelTab key={refreshKey} ontologyId={id!} dataClass={ontology.data_class} />
-      )}
-      {activeTab === "dynamic" && temporal && <DynamicEvolutionTab ontologyId={id!} />}
+      {activeTab === "data_model" && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载数据模型</div>}><DataModelTab key={refreshKey} ontologyId={id!} dataClass={ontology.data_class} /></Suspense>}
+      {activeTab === "dynamic" && temporal && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载动态演化</div>}><DynamicEvolutionTab ontologyId={id!} /></Suspense>}
       {activeTab === "entities" && <EntitiesTab key={refreshKey} ontologyId={id!} />}
-      {activeTab === "objects" && <ObjectQueryTab key={id} ontologyId={id!} />}
+      {activeTab === "objects" && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载 Objects</div>}><ObjectQueryTab key={id} ontologyId={id!} /></Suspense>}
       {activeTab === "logic" && <LogicTab key={refreshKey} ontologyId={id!} />}
       {activeTab === "audit" && <AuditTab ontologyId={id!} />}
       {activeTab === "reasoning" && <ReasoningTab key={id} ontologyId={id!} />}

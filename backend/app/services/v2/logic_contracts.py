@@ -72,7 +72,8 @@ def normalize_contract(asset: dict) -> dict:
 
 def _errors(validator, payload: Any) -> list[dict[str, Any]]:
     return [
-        {"path": list(error.absolute_path), "schema_path": list(error.absolute_schema_path), "message": error.message}
+        {"path": list(error.absolute_path), "schema_path": list(error.absolute_schema_path),
+         "message": error.message if error.validator == "required" else f"Value failed {error.validator} validation"}
         for error in sorted(validator.iter_errors(payload), key=lambda item: list(item.absolute_path))
     ]
 
@@ -107,7 +108,7 @@ def bind_object_fields(asset: dict, properties: dict) -> tuple[dict, list[dict]]
         found, value = _get_path(properties, source)
         if found:
             inputs[target] = value
-    trace.append({"stage": "bind_object", "fields": list(inputs), "sources": spec})
+    trace.append({"stage": "bind_object", "bound_count": len(inputs)})
     return inputs, trace
 
 
@@ -158,5 +159,5 @@ def normalize_units(schema: dict, payload: Any) -> tuple[Any, list[dict]]:
             except Exception as exc:
                 raise ValueError(f"{name} 无法从 {source_unit} 转换为 {target_unit}: {exc}") from exc
             result[name] = converted.magnitude
-        trace.append({"stage": "normalize_unit", "field": name, "from": source_unit, "to": target_unit})
+        trace.append({"stage": "normalize_unit", "from": source_unit, "to": target_unit})
     return result, trace

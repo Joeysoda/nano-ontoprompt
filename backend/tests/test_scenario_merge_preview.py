@@ -55,3 +55,31 @@ def test_merge_preview_checks_live_values_and_sequential_action_edits(monkeypatc
     result, _ = workbench._merge_state(service, scenario)
     assert result["can_merge"] is False
     assert result["conflicts"][0]["reason"] == "Main Ontology value changed since this Scenario was created"
+
+
+def test_merge_commit_uses_live_action_edit_adapter(monkeypatch):
+    from app.schemas.v2.scenario import Edit
+    from app.services.v2 import live_edits
+    calls = []
+    class Db:
+        def add(self, value):
+            calls.append(("audit", value.operation))
+        def commit(self):
+            calls.append(("commit",))
+    db = Db()
+    user = SimpleNamespace(id="owner")
+    scenario = SimpleNamespace(id="scenario", head_revision=1, protected_demo=False, base_view_id="base")
+    service = SimpleNamespace(graph=object(), get=lambda *args, **kwargs: scenario)
+    monkeypatch.setattr(workbench, "_service", lambda *args: service)
+    raw = {"sequence": 0, "op": "set_property", "target": {"ontology_id": "ont", "concrete_type": "Ticket", "object_id": "T1"},
+           "property": "priority", "value": "P1", "expected_old_value": "P2"}
+    monkeypatch.setattr(workbench, "_merge_state", lambda *args: ({"can_merge": True}, [raw]))
+    def apply(db_arg, ontology, edits, graph):
+        assert db_arg is db and ontology == "ont" and graph is service.graph
+        assert len(edits) == 1 and isinstance(edits[0], Edit)
+        calls.append(("apply", edits[0].value))
+        return {}, {}, [], lambda: calls.append(("restore",))
+    monkeypatch.setattr(live_edits, "apply_live_edits", apply)
+    result = workbench.merge_scenario("ont", "scenario", workbench.MergeCommand(expected_revision=1), db, user)
+    assert result["status"] == "merged"
+    assert calls == [("apply", "P1"), ("audit", "merge"), ("commit",)]
