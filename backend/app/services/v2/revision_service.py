@@ -180,6 +180,8 @@ def serialize_revision(revision: OntologyRevision) -> dict[str, Any]:
         "parent_revision_id": revision.parent_revision_id, "source_run_id": revision.source_run_id,
         "graph_namespace": revision.graph_namespace, "snapshot_uri": revision.snapshot_uri,
         "snapshot_hash": revision.snapshot_hash, "summary": revision.summary or {},
+        "metadata_digest": getattr(revision, "metadata_digest", None),
+        "metadata_schema_version": getattr(revision, "metadata_schema_version", None),
         "status": revision.status, "is_current": bool(revision.is_current),
         "created_at": revision.created_at.isoformat() if revision.created_at else None,
     }

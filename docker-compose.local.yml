@@ -5,6 +5,9 @@ services:
   redis:
     ports: !override
       - "127.0.0.1:16379:6379"
+  falkordb:
+    ports: !override
+      - "127.0.0.1:6381:6379"
   neo4j:
     ports: !override
       - "127.0.0.1:17474:7474"
@@ -28,7 +31,9 @@ services:
       OLLAMA_API_BASE: http://host.docker.internal:11434/v1
       CMAPSS_FD001_DEMO_DIR: /teacher-cmapss
     volumes:
-      - /Users/nihou/Desktop/pku_security/proj4（ontology）/worktrees/teacher-delivery-completion/data/cmapss_fd001_demo:/teacher-cmapss:ro
+      - ${CMAPSS_FD001_HOST_DIR:-./data/cmapss_fd001_demo}:/teacher-cmapss:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   frontend:
     ports: !override
       - "127.0.0.1:15173:5173"

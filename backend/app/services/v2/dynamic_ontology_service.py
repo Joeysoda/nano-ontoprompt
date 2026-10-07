@@ -498,6 +498,11 @@ def apply_change(db: Session, ontology_id: str, body: dict[str, Any], *, user_id
         validation = validate_schema(db, ontology_id)
         next_revision_id = str(uuid.uuid4())
         revision = create_revision(db, ontology_id, parent_revision_id=actual, summary={"change_kind": kind, "operation": operation, "target_id": target_id}, commit=False, revision_id=next_revision_id)
+        # The legacy editor remains a compatibility facade.  Materialise the
+        # same change into the canonical semantic plane before the transaction
+        # commits so old and new readers share one revision identity.
+        from app.services.v2.semantic_core_service import sync_legacy_to_semantic
+        sync_legacy_to_semantic(db, ontology_id, revision.id, commit=False)
         change = OntologyChange(id=str(uuid.uuid4()), ontology_id=ontology_id, base_revision_id=actual, result_revision_id=revision.id, target_kind=kind, operation=operation, target_id=target_id, before_json=before, after_json=after, impact_json=impact, validation_json={"ok": True, **validation}, status="applied", note=body.get("note"), created_by=user_id)
         db.add(change)
         db.commit(); db.refresh(revision); db.refresh(change)
@@ -686,6 +691,8 @@ def apply_batch_changes(db: Session, ontology_id: str, body: dict[str, Any], *, 
             summary={"change_kind": "batch", "operation_count": len(applied)},
             commit=False,
         )
+        from app.services.v2.semantic_core_service import sync_legacy_to_semantic
+        sync_legacy_to_semantic(db, ontology_id, revision.id, commit=False)
         change = OntologyChange(
             id=str(uuid.uuid4()),
             ontology_id=ontology_id,
@@ -738,4 +745,11 @@ def editor_payload(db: Session, ontology_id: str) -> dict[str, Any]:
     relations = db.query(Relation).filter(Relation.ontology_id == ontology_id).order_by(Relation.type.asc()).all()
     rules = db.query(LogicRule).filter(LogicRule.ontology_id == ontology_id).order_by(LogicRule.name_cn.asc()).all()
     revision = _current_revision(db, ontology_id)
-    return {"ontology_id": ontology_id, "data_class": project.data_class, "current_revision_id": revision.id if revision else None, "revision_no": revision.revision_no if revision else None, "entities": [{**_entity_payload(row), "property_definitions": _property_definitions(row)} for row in entities], "relationships": [_relation_payload(row) for row in relations], "logic_rules": [_rule_payload(row) for row in rules], "capabilities": {"edit_instances": False, "supported_kinds": ["entity_type", "property", "relationship", "logic_rule"], "cardinalities": sorted(CARDINALITIES)}}
+    semantic = None
+    if revision:
+        try:
+            from app.services.v2.semantic_core_service import semantic_schema
+            semantic = semantic_schema(db, ontology_id, revision.id)
+        except Exception:
+            semantic = None
+    return {"ontology_id": ontology_id, "data_class": project.data_class, "current_revision_id": revision.id if revision else None, "revision_no": revision.revision_no if revision else None, "entities": [{**_entity_payload(row), "property_definitions": _property_definitions(row)} for row in entities], "relationships": [_relation_payload(row) for row in relations], "logic_rules": [_rule_payload(row) for row in rules], "semantic_schema": semantic, "capabilities": {"edit_instances": False, "supported_kinds": ["entity_type", "property", "relationship", "logic_rule", "interface", "shared_property", "value_type", "struct"], "cardinalities": sorted(CARDINALITIES)}}

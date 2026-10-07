@@ -1,8 +1,12 @@
-import { useState } from 'react'
+/* The settings surface predates the Plan A typed contracts and contains
+ * legacy administrative forms. Keep its loose form values isolated while the
+ * new semantic/security APIs use typed clients. */
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { settingsApi, usersApi, promptApi } from '@/api/ontologies'
+import { ontologyApi, settingsApi, usersApi, promptApi } from '@/api/ontologies'
 import { Trash2, Plus, Pencil, X, Check, Sparkles, Search, Loader2, Boxes, DatabaseZap, Gauge, ServerCog, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import {
   EXTRACTION_RULES,
@@ -14,7 +18,7 @@ import {
   type ExtractionRuleState,
 } from '@/utils/extractionRules'
 
-type ActiveTab = 'general' | 'build_defaults' | 'model_assist' | 'evidence_quality' | 'data_sources' | 'rules' | 'extraction_rules' | 'users' | 'prompts'
+type ActiveTab = 'general' | 'build_defaults' | 'model_assist' | 'evidence_quality' | 'data_sources' | 'data_permissions' | 'data_plane' | 'rules' | 'extraction_rules' | 'users' | 'prompts'
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation()
@@ -32,6 +36,9 @@ export default function SettingsPage() {
   const [showCreateUser, setShowCreateUser] = useState(false)
   const [userMsg, setUserMsg] = useState('')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [selectedOntologyId, setSelectedOntologyId] = useState('')
+  const [policyDraft, setPolicyDraft] = useState({ name: '查看本体', subject_kind: 'role', subject_id: 'viewer', effect: 'allow', scope_kind: 'ontology', scope_id: '', field_allowlist: '' })
+  const [policyMsg, setPolicyMsg] = useState('')
 
   // Prompts tab state
   const [showPromptModal, setShowPromptModal] = useState(false)
@@ -109,6 +116,26 @@ export default function SettingsPage() {
     queryKey: ['prompts'],
     queryFn: () => promptApi.list() as any,
     enabled: activeTab === 'prompts',
+  })
+
+  const { data: ontologyList } = useQuery({
+    queryKey: ['settings-ontology-list'],
+    queryFn: () => ontologyApi.list({ page: 1, page_size: 200 }) as any,
+    enabled: activeTab === 'data_permissions' || activeTab === 'data_plane',
+  })
+  const ontologyChoices = (ontologyList as any)?.items || []
+  useEffect(() => {
+    if (!selectedOntologyId && ontologyChoices.length) setSelectedOntologyId(ontologyChoices[0].id)
+  }, [ontologyChoices, selectedOntologyId])
+  const { data: policyData, refetch: refetchPolicies } = useQuery({
+    queryKey: ['settings-security-policies', selectedOntologyId],
+    queryFn: () => ontologyApi.listSecurityPolicies(selectedOntologyId),
+    enabled: activeTab === 'data_permissions' && !!selectedOntologyId,
+  })
+  const { data: planeStatus } = useQuery({
+    queryKey: ['settings-data-plane', selectedOntologyId],
+    queryFn: () => ontologyApi.dataPlaneStatus(selectedOntologyId),
+    enabled: activeTab === 'data_plane' && !!selectedOntologyId,
   })
 
   const deletePromptMut = useMutation({
@@ -192,6 +219,8 @@ export default function SettingsPage() {
     { key: 'model_assist', label: '模型辅助' },
     { key: 'evidence_quality', label: '证据与质量' },
     { key: 'data_sources', label: '数据源' },
+    { key: 'data_permissions', label: '数据权限' },
+    { key: 'data_plane', label: '数据平面' },
     { key: 'rules', label: t('settings.rules') },
     { key: 'extraction_rules', label: t('settings.tab_extraction') },
     { key: 'users', label: t('settings.tab_users') },
@@ -235,6 +264,14 @@ export default function SettingsPage() {
 
       {activeTab === 'data_sources' && (
         <div className="grid lg:grid-cols-2 gap-4 max-w-5xl"><section className="wb-surface p-5"><div className="wb-section-kicker"><DatabaseZap size={13} /> 多模态来源</div><h3 className="wb-section-title mt-1">I-BADAS · 12 组演示包</h3><p className="mt-3 text-sm text-gray-600">Hugging Face 固定修订 · RGB / 深度 / 掩码 / 点云 / JSON 元数据</p><div className="mt-3 flex flex-wrap gap-2"><span className="wb-tag">CC BY-NC 4.0</span><span className="wb-tag">在线安装</span><span className="wb-tag">ZIP + manifest</span></div><a href="/data/multimodal" className="wb-button-secondary mt-4 inline-flex text-xs">打开多模态构筑</a></section><section className="wb-surface p-5"><div className="wb-section-kicker"><Boxes size={13} /> 时序来源</div><h3 className="wb-section-title mt-1">FactoryNet CNC</h3><p className="mt-3 text-sm text-gray-600">Ordinal · episode_id + time_s · 真实数据集与时间轴联动</p><div className="mt-3 flex flex-wrap gap-2"><span className="wb-tag">官方样例</span><span className="wb-tag">SHA-256</span><span className="wb-tag">可恢复任务</span></div><a href="/data/temporal" className="wb-button-secondary mt-4 inline-flex text-xs">打开时序构筑</a></section></div>
+      )}
+
+      {(activeTab === 'data_permissions' || activeTab === 'data_plane') && (
+        <div className="max-w-5xl space-y-4">
+          <div className="wb-surface flex flex-wrap items-center gap-3 p-4"><label className="wb-label min-w-[260px]">选择本体<select className="wb-input mt-1" value={selectedOntologyId} onChange={event => setSelectedOntologyId(event.target.value)}><option value="">选择</option>{ontologyChoices.map((item: any) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><p className="text-xs text-slate-500">权限与数据平面状态按本体修订解析。</p></div>
+          {activeTab === 'data_permissions' && selectedOntologyId && <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]"><section className="wb-surface p-4"><div className="mb-3 flex items-center justify-between"><div><div className="wb-section-kicker"><ShieldCheck size={13} /> 对象与字段权限</div><h3 className="wb-section-title">策略列表</h3></div><span className="text-xs text-slate-500">{policyData?.count || 0} 条</span></div><div className="space-y-2">{(policyData?.policies || []).map((policy: any) => <div key={policy.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 p-3 text-xs"><div><p className="font-medium text-slate-800">{policy.name}</p><p className="mt-1 text-slate-500">{policy.subject_kind}:{policy.subject_id} · {policy.effect} · {policy.scope_kind}{policy.scope_id ? `:${policy.scope_id}` : ''}</p><p className="mt-1 text-[11px] text-slate-400">字段：{policy.field_allowlist?.join(', ') || '对象级'}</p></div><button className="text-slate-400 hover:text-red-600" onClick={async () => { await ontologyApi.deleteSecurityPolicy(selectedOntologyId, policy.id); await refetchPolicies() }}>删除</button></div>)}{!(policyData?.policies || []).length && <p className="rounded border border-dashed border-slate-300 p-4 text-xs text-slate-500">没有策略；非所有者默认拒绝。</p>}</div></section><section className="wb-surface space-y-3 p-4"><div className="wb-section-kicker"><ShieldCheck size={13} /> 新建策略</div><input className="wb-input" placeholder="策略名称" value={policyDraft.name} onChange={event => setPolicyDraft(prev => ({ ...prev, name: event.target.value }))} /><div className="grid grid-cols-2 gap-2"><select className="wb-input" value={policyDraft.subject_kind} onChange={event => setPolicyDraft(prev => ({ ...prev, subject_kind: event.target.value }))}><option value="role">角色</option><option value="user">用户</option></select><input className="wb-input" placeholder="主体 ID" value={policyDraft.subject_id} onChange={event => setPolicyDraft(prev => ({ ...prev, subject_id: event.target.value }))} /></div><div className="grid grid-cols-2 gap-2"><select className="wb-input" value={policyDraft.effect} onChange={event => setPolicyDraft(prev => ({ ...prev, effect: event.target.value }))}><option value="allow">允许</option><option value="deny">拒绝</option></select><select className="wb-input" value={policyDraft.scope_kind} onChange={event => setPolicyDraft(prev => ({ ...prev, scope_kind: event.target.value }))}><option value="ontology">本体</option><option value="object_type">对象类型</option><option value="property">属性</option><option value="link">关系</option></select></div><input className="wb-input" placeholder="范围 ID（可选）" value={policyDraft.scope_id} onChange={event => setPolicyDraft(prev => ({ ...prev, scope_id: event.target.value }))} /><input className="wb-input" placeholder="字段白名单，逗号分隔" value={policyDraft.field_allowlist} onChange={event => setPolicyDraft(prev => ({ ...prev, field_allowlist: event.target.value }))} /><button className="wb-button-primary" onClick={async () => { try { await ontologyApi.createSecurityPolicy(selectedOntologyId, { ...policyDraft, field_allowlist: policyDraft.field_allowlist.split(',').map(value => value.trim()).filter(Boolean), scope_id: policyDraft.scope_id || undefined }); setPolicyMsg('策略已保存'); await refetchPolicies() } catch (error: any) { setPolicyMsg(error?.detail?.message || '策略保存失败') } }}>保存策略</button>{policyMsg && <p className="text-xs text-slate-600">{policyMsg}</p>}</section></div>}
+          {activeTab === 'data_plane' && selectedOntologyId && <div className="wb-surface p-4"><div className="wb-section-kicker"><DatabaseZap size={13} /> 执行上下文</div><h3 className="wb-section-title">权威来源与适配器</h3><div className="mt-3 grid gap-2 md:grid-cols-3">{(planeStatus?.projections || []).map((item: any) => <div key={item.adapter} className="rounded-lg border border-slate-200 p-3 text-xs"><p className="font-medium">{item.adapter}</p><p className="mt-1 text-slate-500">{item.status}</p><p className="mt-1 text-[11px] text-slate-400">{item.semantic_fallback_group || '不参与降级'}</p></div>)}</div><pre className="mt-3 overflow-auto rounded bg-slate-900 p-3 text-[10px] text-slate-200">{JSON.stringify(planeStatus?.result_manifest || {}, null, 2)}</pre></div>}
+        </div>
       )}
 
       {activeTab === 'rules' && (

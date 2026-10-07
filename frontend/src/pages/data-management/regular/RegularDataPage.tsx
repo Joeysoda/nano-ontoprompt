@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Database, FileSpreadsheet, Loader2, Play, RefreshCw, ScanSearch, ShieldCheck, Table2, TriangleAlert, UploadCloud, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { apiClient, apiClientV2 } from '@/api/client'
+import { apiClient, apiClientV2, formatApiError } from '@/api/client'
 
 type Dataset = { id: string; name: string; kind: string; data_class?: string; privacy_level?: 'standard' | 'private'; latest_version_id?: string; rowcount?: number | null }
 type Ontology = { id: string; name: string; domain?: string; data_class?: string; status?: string }
@@ -12,7 +12,7 @@ type Suggestion = { kind?: string; source?: string; target?: string; target_rela
 const STEPS = ['数据集', '内容选择', '处理配置', '本体映射', '确认构建']
 const statusLabel: Record<string, string> = { queued: '排队中', running: '处理中', completed: '已完成', failed: '失败', waiting_for_model: '等待模型', cancelled: '已取消' }
 
-function errorText(error: any) { return error?.response?.data?.detail?.message || error?.response?.data?.detail || error?.detail || error?.message || '请求失败' }
+function errorText(error: unknown) { return formatApiError(error) }
 
 export default function RegularDataPage() {
   const navigate = useNavigate(); const [searchParams, setSearchParams] = useSearchParams(); const restoredRunId = searchParams.get('run'); const uploadRef = useRef<HTMLInputElement>(null)
@@ -32,7 +32,7 @@ export default function RegularDataPage() {
       // only append to a published ontology of the same data class; otherwise
       // the first step starts in the clearer "新建本体" mode.
       const ontologyItems = (os?.items || []).filter(item => item.data_class === 'regular' && item.status === 'created')
-      setDatasets(list); setOntologies(ontologyItems); setDatasetId(current => current || list[0]?.id || ''); setOntologyId(current => ontologyItems.some(item => item.id === current) ? current : '')
+      setDatasets(list); setOntologies(ontologyItems); setDatasetId(current => current || list[0]?.id || ''); setOntologyId(current => ontologyItems.some(item => item.id === current) ? current : ontologyItems[0]?.id || '')
       setTargetMode(current => current === 'append' && !ontologyItems.length ? 'create' : current)
     } catch (err: any) { setError(errorText(err)) } finally { setLoading(false) }
   }

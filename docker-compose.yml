@@ -17,15 +17,24 @@ services:
     # 外部端口 6380 避免与宿主机本地 redis 冲突; 容器内仍用 6379
     ports: ["6380:6379"]
 
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports: ["6381:6379"]
+    volumes: [falkordb_data:/data]
+    restart: unless-stopped
+
   backend:
     build: ./backend
     ports: ["8000:8000"]
     env_file: .env
     environment:
-      FALKORDB_HOST: ${FALKORDB_HOST:-host.docker.internal}
-      FALKORDB_PORT: ${FALKORDB_PORT:-6379}
+      # Resolve FalkorDB over the Compose network.  The host fallback used
+      # to make the API silently report an unavailable graph when this stack
+      # was started without a separately managed host service.
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
-    depends_on: [db, redis]
+    depends_on: [db, redis, falkordb]
     volumes: [./backend:/app, ./uploads:/uploads]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
@@ -33,10 +42,10 @@ services:
     build: ./backend
     env_file: .env
     environment:
-      FALKORDB_HOST: ${FALKORDB_HOST:-host.docker.internal}
-      FALKORDB_PORT: ${FALKORDB_PORT:-6379}
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
-    depends_on: [db, redis]
+    depends_on: [db, redis, falkordb]
     volumes: [./backend:/app, ./uploads:/uploads]
     command: celery -A app.tasks.celery_app worker --loglevel=info
 
@@ -109,3 +118,6 @@ volumes:
   neo4j_data:
   minio_data:
   chroma_data:
+  falkordb_data:
+    external: true
+    name: nano-ontoprompt_workbench_falkordb_data

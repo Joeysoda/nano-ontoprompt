@@ -11,6 +11,7 @@ import WhatIfTab from "./tabs/WhatIfTab";
 import DynamicEvolutionTab from "./tabs/DynamicEvolutionTab";
 import OntologyEditorPanel from "./OntologyEditorPanel";
 import ChangeHistoryDrawer from "./ChangeHistoryDrawer";
+import SemanticControlPanel from "./SemanticControlPanel";
 
 const GraphTab = lazy(() => import("./tabs/GraphTabV2"));
 type Tab = "graph" | "data_model" | "dynamic" | "entities" | "logic" | "audit" | "what_if";
@@ -113,6 +114,7 @@ export default function OntologyDetailPage() {
         <div className="ml-auto flex items-center gap-2"><button onClick={() => setEditing((value) => !value)} className={`rounded-md border px-3 py-2 text-xs ${editing ? "border-slate-800 bg-slate-800 text-white" : "border-slate-300 text-slate-700 hover:border-slate-600"}`}>{editing ? "关闭编辑" : "编辑本体"}</button><button onClick={() => setShowHistory(true)} className="rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:border-slate-600">修改记录</button></div>
       </div>
       {editing && <OntologyEditorPanel ontologyId={id!} onChanged={() => setRefreshKey((value) => value + 1)} />}
+      {editing && <SemanticControlPanel ontologyId={id!} />}
       <nav className="mb-5 flex gap-1 border-b border-slate-200">
         {tabs.map((tab) => (
           <button

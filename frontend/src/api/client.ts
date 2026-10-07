@@ -10,6 +10,26 @@ type ApiClient = {
   delete: <T = any>(url: string, config?: AxiosRequestConfig) => Promise<T>
 }
 
+/** Convert the structured error envelopes returned by v2 into safe UI text. */
+export function formatApiError(error: unknown, fallback = '请求失败'): string {
+  const value = error as {
+    response?: { data?: { detail?: unknown } };
+    detail?: unknown;
+    message?: unknown;
+  } | null | undefined
+  const detail = value?.response?.data?.detail ?? value?.detail
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (detail && typeof detail === 'object') {
+    const item = detail as { message?: unknown; error?: unknown; next_action?: unknown }
+    const message = typeof item.message === 'string' ? item.message : ''
+    const code = typeof item.error === 'string' ? item.error : ''
+    const next = typeof item.next_action === 'string' ? item.next_action : ''
+    return [code, message, next].filter(Boolean).join('：') || fallback
+  }
+  if (typeof value?.message === 'string' && value.message.trim()) return value.message
+  return fallback
+}
+
 function createApiClient(baseURL: string): ApiClient {
   const client = axios.create({ baseURL })
   client.interceptors.request.use(config => {

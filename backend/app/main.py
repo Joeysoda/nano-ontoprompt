@@ -45,6 +45,10 @@ from app.routers.v2 import what_if as what_if_v2
 from app.routers.v2 import temporal_replays as temporal_replays_v2
 from app.routers.v2 import temporal_streams as temporal_streams_v2
 from app.routers.v2 import dynamic_data as dynamic_data_v2
+from app.routers.v2 import semantic_core as semantic_core_v2
+from app.routers.v2 import security as security_v2
+from app.routers.v2 import data_plane as data_plane_v2
+from app.routers.v2 import schema_migrations as schema_migrations_v2
 
 def _run_schema_migration():
     """统一 schema 迁移入口。
@@ -53,11 +57,14 @@ def _run_schema_migration():
     （如由 create_all 建起的旧库），则回退到 create_all 兜底并 stamp 到最新版本。
     """
     import os
+    from pathlib import Path
     from alembic import command
     from alembic.config import Config as AlembicConfig
 
-    alembic_ini = os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini")
+    backend_dir = Path(__file__).resolve().parents[1]
+    alembic_ini = str(backend_dir / "alembic.ini")
     cfg = AlembicConfig(alembic_ini)
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
     if os.environ.get("DATABASE_URL"):
         cfg.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
@@ -105,6 +112,18 @@ def _seed_db():
             TemporalReplayBatch,
             TemporalStreamEvent,
         )
+        from app.models.v2.semantic_core import (  # noqa: F401
+            OntologySemanticResource,
+            OntologySemanticResourceVersion,
+            OntologySourceMapping,
+        )
+        from app.models.v2.security import OntologySecurityPolicy  # noqa: F401
+        from app.models.v2.schema_migration import (  # noqa: F401
+            SchemaDependency,
+            SchemaMigrationInstruction,
+            SchemaMigrationPlan,
+            SchemaMigrationRun,
+        )
         _run_schema_migration()
 
         seed_admin(db)
@@ -135,10 +154,17 @@ def _seed_db():
             from app.models.ontology_revision import OntologyRevision
             from app.models.entity import Entity
             from app.services.v2.revision_service import create_revision
+            from app.services.v2.semantic_core_service import ensure_semantic_metadata
             published_status_changed = False
             for project in db.query(OntologyProject).all():
                 if not db.query(OntologyRevision.id).filter(OntologyRevision.ontology_id == project.id).first():
                     create_revision(db, project.id)
+                current_revision = db.query(OntologyRevision).filter(
+                    OntologyRevision.ontology_id == project.id,
+                    OntologyRevision.is_current.is_(True),
+                ).order_by(OntologyRevision.revision_no.desc()).first()
+                if current_revision:
+                    ensure_semantic_metadata(db, project.id, current_revision.id, commit=False)
                 # Historical successful builds used the default ``draft``
                 # label forever.  Preserve empty/failed drafts, but show an
                 # actually materialised ontology as created without changing
@@ -146,8 +172,11 @@ def _seed_db():
                 if project.status == "draft" and db.query(Entity.id).filter(Entity.ontology_id == project.id).first():
                     project.status = "created"
                     published_status_changed = True
-            if published_status_changed:
-                db.commit()
+            # The semantic backfill is itself a durable compatibility
+            # migration.  Commit it even when no legacy project status needed
+            # changing, otherwise the session close would roll back the
+            # canonical rows for an otherwise unchanged ontology.
+            db.commit()
         except Exception:
             logger.warning("Ontology revision backfill skipped", exc_info=True)
 
@@ -359,6 +388,10 @@ app.include_router(model_routes_v2.router, prefix="/api/v2/model-routes", tags=[
 app.include_router(model_routes_v2.invocations_router, prefix="/api/v2", tags=["v2-model-invocations"])
 app.include_router(dynamic_ontology_v2.router, prefix="/api/v2/ontologies", tags=["v2-ontology-editor"])
 app.include_router(what_if_v2.router, prefix="/api/v2/ontologies", tags=["v2-what-if"])
+app.include_router(semantic_core_v2.router, prefix="/api/v2/ontologies", tags=["v2-semantic-core"])
+app.include_router(security_v2.router, prefix="/api/v2/ontologies", tags=["v2-security"])
+app.include_router(data_plane_v2.router, prefix="/api/v2", tags=["v2-data-plane"])
+app.include_router(schema_migrations_v2.router, prefix="/api/v2", tags=["v2-schema-migrations"])
 
 def get_db():
     db = SessionLocal()

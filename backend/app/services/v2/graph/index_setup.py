@@ -13,8 +13,9 @@ INDEXES = [
     "CREATE INDEX entity_id IF NOT EXISTS FOR (n:Entity) ON (n.id)",
     # 按名称搜索（关键词查找）
     "CREATE INDEX entity_name_cn IF NOT EXISTS FOR (n:Entity) ON (n.name_cn)",
-    # 通用节点属性索引
-    "CREATE INDEX node_ontology_id IF NOT EXISTS FOR (n) ON (n.ontology_id)",
+    # Neo4j 5 requires a label for a property index.  An anonymous
+    # ``(n)`` index is invalid Cypher, so keep the generic fallback out of
+    # startup; the Entity index above covers the persisted legacy nodes.
 ]
 
 # 约束定义（唯一性）

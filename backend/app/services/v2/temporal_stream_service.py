@@ -1019,8 +1019,21 @@ def run_temporal_stream(replay_id: str) -> dict[str, Any]:
                 replay.completed_at = _now()
                 db.commit()
                 return serialize_stream(replay, db=db)
-            if replay.pause_requested:
-                replay.status = "paused"
+            if replay.pause_requested or replay.cancel_requested:
+                # _next_simulated_live_event creates the queued event and
+                # advances a pending cursor in this transaction.  If a
+                # control request arrived during that small window, discard
+                # the materialization so resume cannot create a duplicate.
+                db.rollback()
+                replay = db.query(TemporalReplay).filter(TemporalReplay.id == replay_id).first()
+                if not replay:
+                    return {"run_id": replay_id, "status": "missing"}
+                if replay.cancel_requested:
+                    replay.status = "cancelled"
+                    replay.error = "用户取消动态运行"
+                    replay.completed_at = _now()
+                else:
+                    replay.status = "paused"
                 replay.updated_at = _now()
                 db.commit()
                 return serialize_stream(replay, db=db)
@@ -1042,8 +1055,33 @@ def run_temporal_stream(replay_id: str) -> dict[str, Any]:
                 replay.updated_at = _now()
                 db.commit()
                 return serialize_stream(replay, db=db)
-            if replay.pause_requested:
-                replay.status = "paused"
+            # A pause/cancel request may have been committed by the control
+            # endpoint while the next live event was being prepared.  Refresh
+            # only the control flags before committing that event.  Rolling
+            # back here discards the uncommitted queued event and its pending
+            # cursor, so a later resume cannot replay or silently skip it.
+            # Read the two control flags without autoflushing the queued
+            # event.  The control endpoint uses a separate transaction, so a
+            # fresh column query sees its committed request while this event
+            # is still safely rollback-able.
+            with db.no_autoflush:
+                control_flags = db.query(
+                    TemporalReplay.pause_requested,
+                    TemporalReplay.cancel_requested,
+                ).filter(TemporalReplay.id == replay_id).first()
+            pause_requested = bool(control_flags[0]) if control_flags else False
+            cancel_requested = bool(control_flags[1]) if control_flags else False
+            if pause_requested or cancel_requested:
+                db.rollback()
+                replay = db.query(TemporalReplay).filter(TemporalReplay.id == replay_id).first()
+                if not replay:
+                    return {"run_id": replay_id, "status": "missing"}
+                if replay.cancel_requested:
+                    replay.status = "cancelled"
+                    replay.error = "用户取消动态运行"
+                    replay.completed_at = _now()
+                else:
+                    replay.status = "paused"
                 replay.updated_at = _now()
                 db.commit()
                 return serialize_stream(replay, db=db)
@@ -1300,10 +1338,54 @@ def stream_graph(
     if getattr(graph, "available", False):
         try:
             data = graph.get_graph_data(replay.ontology_id, limit=limit, offset=offset, entity_type=entity_type, episode_id=episode_id, seq_to=None, relation_state=relation_state, replay_id=replay.id, at=at, graph_namespace=replay.graph_namespace, mode=mode)
-            return {**data, "run_id": replay.id, "ontology_id": replay.ontology_id, "graph_namespace": replay.graph_namespace, "at": at, "mode": mode}
+            if data.get("nodes") or not int(replay.committed_events or 0):
+                return {**data, "run_id": replay.id, "ontology_id": replay.ontology_id, "graph_namespace": replay.graph_namespace, "at": at, "mode": mode}
+            # FalkorDB is a projection, not the source of truth.  A restart
+            # or a lost graph volume can leave it empty while PostgreSQL still
+            # contains committed events and facts.  Use the deterministic SQL
+            # projection instead of showing a misleading empty canvas.
+            return {
+                **_sql_stream_graph(
+                    db,
+                    replay,
+                    limit=limit,
+                    offset=offset,
+                    at=at,
+                    mode=mode,
+                    relation_state=relation_state,
+                    entity_type=entity_type,
+                    episode_id=episode_id,
+                ),
+                "run_id": replay.id,
+                "ontology_id": replay.ontology_id,
+                "graph_namespace": replay.graph_namespace,
+                "at": at,
+                "mode": mode,
+                "graph_recovered": True,
+            }
         except TypeError:
             data = graph.get_graph_data(replay.ontology_id, limit=limit, offset=offset, entity_type=entity_type, episode_id=episode_id, relation_state=relation_state, replay_id=replay.id, at=at)
-            return {**data, "run_id": replay.id, "ontology_id": replay.ontology_id, "graph_namespace": replay.graph_namespace, "at": at, "mode": mode}
+            if data.get("nodes") or not int(replay.committed_events or 0):
+                return {**data, "run_id": replay.id, "ontology_id": replay.ontology_id, "graph_namespace": replay.graph_namespace, "at": at, "mode": mode}
+            return {
+                **_sql_stream_graph(
+                    db,
+                    replay,
+                    limit=limit,
+                    offset=offset,
+                    at=at,
+                    mode=mode,
+                    relation_state=relation_state,
+                    entity_type=entity_type,
+                    episode_id=episode_id,
+                ),
+                "run_id": replay.id,
+                "ontology_id": replay.ontology_id,
+                "graph_namespace": replay.graph_namespace,
+                "at": at,
+                "mode": mode,
+                "graph_recovered": True,
+            }
         except Exception:
             pass
     return {

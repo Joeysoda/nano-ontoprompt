@@ -5,11 +5,11 @@ import hashlib
 import json
 import re
 import time
-from fastapi import APIRouter, Depends, HTTPException, Query
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
-from app.deps import get_current_user, require_editor
+from app.deps import get_current_user, get_db, require_editor
 from app.models.model_config import ModelConfig
 from app.models.user import User
 from app.models.v2.dynamic_ontology import OntologyChange
@@ -27,17 +27,19 @@ from app.services.v2.dynamic_ontology_service import (
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 def _raise(exc: OntologyEditError) -> None:
     status = 404 if exc.code == "NOT_FOUND" else 409 if exc.code in {"REVISION_CONFLICT", "CHANGE_BLOCKED"} else 422
-    raise HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc), **exc.details})
+    details = dict(exc.details or {})
+    raise HTTPException(
+        status_code=status,
+        detail={
+            "code": exc.code,
+            "message": str(exc),
+            "next_action": details.pop("next_action", "检查当前修订和影响报告后重试"),
+            "context_id": details.pop("context_id", str(uuid.uuid4())),
+            **details,
+        },
+    )
 
 
 @router.get("/{ontology_id}/editor")
@@ -60,11 +62,16 @@ def get_change_impact(ontology_id: str, body: dict, db: Session = Depends(get_db
 def create_change(
     ontology_id: str,
     body: dict,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(require_editor),
 ):
     try:
-        return apply_change(db, ontology_id, body, user_id=user.id)
+        result = apply_change(db, ontology_id, body, user_id=user.id)
+        if response is not None:
+            response.headers["Deprecation"] = "true"
+            response.headers["Warning"] = '299 - "Legacy editor endpoint; use /api/v2/ontologies/{id}/semantic-changes"'
+        return result
     except OntologyEditError as exc:
         _raise(exc)
     except Exception as exc:
@@ -93,12 +100,17 @@ def validate_batch_change_set(
 def create_batch_change(
     ontology_id: str,
     body: dict,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(require_editor),
 ):
     """Apply selected model suggestions atomically as one new revision."""
     try:
-        return apply_batch_changes(db, ontology_id, body, user_id=user.id)
+        result = apply_batch_changes(db, ontology_id, body, user_id=user.id)
+        if response is not None:
+            response.headers["Deprecation"] = "true"
+            response.headers["Warning"] = '299 - "Legacy editor endpoint; use /api/v2/ontologies/{id}/semantic-changes"'
+        return result
     except OntologyEditError as exc:
         _raise(exc)
     except Exception as exc:

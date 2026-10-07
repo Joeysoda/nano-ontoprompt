@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
-import { apiClient, apiClientV2 } from "@/api/client";
+import { apiClient, apiClientV2, formatApiError } from "@/api/client";
 
 type Source = {
   id: string;
@@ -55,12 +55,7 @@ const errorText = (e: any) => {
   if (detail?.error === "PROFILE_NOT_READY") {
     return `${detail.message || "MiniMax M3 分析尚未成功，不能开始构建"} 请返回“时间定义”，重新执行 M3 分析，完成后再构建。`;
   }
-  return (
-    detail?.message ||
-    detail ||
-    e?.message ||
-    "请求失败"
-  );
+  return formatApiError(e);
 };
 const columnName = (value: unknown) => {
   if (typeof value === "string") return value;

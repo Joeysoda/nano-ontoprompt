@@ -49,6 +49,33 @@ class FalkorDBService:
     def available(self) -> bool:
         return self._available
 
+    def graph_exists(self, ontology_id: str, namespace: str | None = None) -> bool:
+        """Check for an existing projection without creating a graph."""
+        if not self.available or not self._db:
+            return False
+        try:
+            names = self._db.connection.execute_command("GRAPH.LIST") or []
+            normalized = {
+                item.decode("utf-8") if isinstance(item, bytes) else str(item)
+                for item in names
+            }
+            return graph_name_for_ontology(ontology_id, namespace) in normalized
+        except Exception:
+            return False
+
+    def projection_counts(self, ontology_id: str, namespace: str | None = None) -> dict[str, int] | None:
+        """Read graph cardinalities for freshness/reconciliation checks."""
+        if not self.graph_exists(ontology_id, namespace):
+            return None
+        try:
+            data = self.get_graph_data(ontology_id, limit=1, graph_namespace=namespace, relation_state="all")
+            return {
+                "nodes": int(data.get("total_instances") or 0),
+                "edges": int(data.get("total_edges") or 0),
+            }
+        except Exception:
+            return None
+
     def delete_graph(self, ontology_id: str, namespace: str | None = None) -> bool:
         """Delete the isolated graph for an ontology.
 

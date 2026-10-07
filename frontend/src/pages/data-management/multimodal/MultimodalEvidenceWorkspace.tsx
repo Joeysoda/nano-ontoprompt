@@ -6,7 +6,7 @@ import {
   Loader2,
   RotateCcw,
 } from "lucide-react";
-import { apiClientV2 } from "@/api/client";
+import { apiClientV2, formatApiError } from "@/api/client";
 
 export type EvidenceAsset = {
   id: string;
@@ -82,15 +82,7 @@ const roleLabel: Record<string, string> = {
   docx: "DOCX 证据",
 };
 
-function errorText(error: any) {
-  return (
-    error?.response?.data?.detail?.message ||
-    error?.response?.data?.detail ||
-    error?.detail ||
-    error?.message ||
-    "请求失败"
-  );
-}
+function errorText(error: unknown) { return formatApiError(error); }
 
 /**
  * The input remains the stored I-BADAS point array.  This viewer only draws a

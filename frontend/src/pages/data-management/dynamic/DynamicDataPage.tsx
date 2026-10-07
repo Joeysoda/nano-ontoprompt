@@ -16,7 +16,7 @@ import {
   Square,
   TriangleAlert,
 } from "lucide-react";
-import { apiClientV2 } from "@/api/client";
+import { apiClientV2, formatApiError } from "@/api/client";
 
 type Run = {
   id: string;
@@ -87,8 +87,7 @@ const formatValue = (value: unknown) =>
   value === null || value === undefined || value === "" ? "—" : String(value);
 
 const errorText = (reason: any) => {
-  const detail = reason?.response?.data?.detail || reason?.detail;
-  return detail?.message || detail || reason?.message || "动态数据请求失败";
+  return formatApiError(reason, "动态数据请求失败");
 };
 
 const statusText: Record<string, string> = {
@@ -133,6 +132,7 @@ function LiveGraph({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
+  const layoutSignatureRef = useRef<string>("");
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -199,10 +199,28 @@ function LiveGraph({
         cy.add({ data, classes });
       }
     });
-    if (cy.elements().length) {
+    const layoutSignature = [
+      latestId,
+      graph.at ?? "",
+      graph.relation_state ?? "",
+      graph.nodes.map((node) => node.id).sort().join(","),
+      graph.edges.map((edge) => {
+        const historical = edge.properties?.valid_to_ordinal !== null && edge.properties?.valid_to_ordinal !== undefined;
+        const transition = Boolean(edge.properties?.state_key);
+        return `${edge.id}:${historical ? "h" : "c"}:${transition ? "t" : "r"}`;
+      }).sort().join(","),
+    ].join("|");
+    const shouldLayout = layoutSignatureRef.current !== layoutSignature;
+    layoutSignatureRef.current = layoutSignature;
+    if (shouldLayout && cy.elements().length) {
       cy.layout({ name: "cose", animate: false, fit: true, padding: 32 }).run();
       cy.resize();
       cy.fit(undefined, 32);
+    } else if (cy.elements().length) {
+      // Polling/SSE can deliver an identical graph payload while a run is
+      // paused. Resize without running a new force layout, otherwise the
+      // nodes visibly drift even though no event arrived.
+      cy.resize();
     }
   }, [graph, latestEvent]);
 
@@ -241,6 +259,7 @@ export default function DynamicDataPage() {
   const [speed, setSpeed] = useState(1);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const loadRequestRef = useRef(0);
 
   const loadReadiness = useCallback(async () => {
     try {
@@ -252,26 +271,31 @@ export default function DynamicDataPage() {
 
   const loadGraph = useCallback(async (current: Run) => {
     const at = showHistory && historyAt !== null ? historyAt : undefined;
-    const data = await loadAllGraph(current.id, {
+    return loadAllGraph(current.id, {
       at,
       mode: "cumulative",
       relation_state: showHistory && historyMode === "all" ? "all" : "current",
       limit: 500,
     });
-    setGraph(data);
   }, [historyAt, historyMode, showHistory]);
 
   const loadRun = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     if (!runId) {
       await loadReadiness();
       return;
     }
     try {
       const current = await apiClientV2.get<Run>(`/temporal-streams/${runId}`);
+      const currentGraph = await loadGraph(current);
+      // Polling and SSE can overlap while the graph is being paged.  Ignore a
+      // slower response that was started before a newer one, otherwise a
+      // paused run can briefly render an older layout and appear to change.
+      if (requestId !== loadRequestRef.current) return;
       setRun(current);
       setSpeed(Number(current.speed || 1));
       if (historyAt === null && current.current_ordinal !== null && current.current_ordinal !== undefined) setHistoryAt(Number(current.current_ordinal));
-      await loadGraph(current);
+      setGraph(currentGraph);
       setError("");
     } catch (reason) {
       setError(errorText(reason));
@@ -283,7 +307,7 @@ export default function DynamicDataPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadRun(); }, [loadRun]);
   useEffect(() => {
-    if (!runId || !run || ["completed", "failed", "cancelled", "published"].includes(run.status)) return;
+    if (!runId || !run || !["queued", "running", "pausing"].includes(run.status)) return;
     const timer = window.setInterval(() => void loadRun(), 900);
     return () => window.clearInterval(timer);
   }, [loadRun, run, runId]);

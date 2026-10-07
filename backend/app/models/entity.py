@@ -14,6 +14,9 @@ class Entity(Base):
     name_abbr: Mapped[str] = mapped_column(String(50), nullable=True)
     snomed_id: Mapped[str] = mapped_column(String(50), nullable=True)
     canonical_id: Mapped[str] = mapped_column(String(200), nullable=True)
+    # Stable identity of the canonical Object Type.  Legacy callers may still
+    # address this row by ``id`` during the compatibility window.
+    semantic_resource_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     type: Mapped[str] = mapped_column(String(100), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     properties: Mapped[dict] = mapped_column(JSON, default=dict)

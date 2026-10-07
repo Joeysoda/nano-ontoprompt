@@ -26,6 +26,10 @@ class OntologyRevision(Base):
     snapshot_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     snapshot_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Canonical semantic metadata is versioned independently from the legacy
+    # snapshot JSON, but shares this revision identity and digest.
+    metadata_digest: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    metadata_schema_version: Mapped[str] = mapped_column(String(40), nullable=False, default="semantic-core-v1")
     summary: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="current")
     is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

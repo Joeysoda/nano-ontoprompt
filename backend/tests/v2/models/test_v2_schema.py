@@ -88,6 +88,17 @@ def test_all_v2_tables_registered():
         "v2_what_if_runs",
         "v2_temporal_replays",
         "v2_temporal_replay_batches",
+        "v2_temporal_stream_events",
+        "v2_temporal_facts",
+        "v2_data_model_snapshots",
+        "v2_semantic_resources",
+        "v2_semantic_resource_versions",
+        "v2_ontology_source_mappings",
+        "v2_ontology_security_policies",
+        "v2_schema_migration_plans",
+        "v2_schema_migration_instructions",
+        "v2_schema_migration_runs",
+        "v2_schema_dependencies",
     }
 
 

@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { apiClient, apiClientV2 } from "@/api/client";
+import { apiClient, apiClientV2, formatApiError } from "@/api/client";
 import { constructionApi } from "@/api/construction";
 import {
   MultimodalEvidenceWorkspace,
@@ -146,15 +146,7 @@ const roleLabel: Record<string, string> = {
   docx: "DOCX 证据",
 };
 
-function errorText(error: any) {
-  return (
-    error?.response?.data?.detail?.message ||
-    error?.response?.data?.detail ||
-    error?.detail ||
-    error?.message ||
-    "请求失败"
-  );
-}
+function errorText(error: unknown) { return formatApiError(error); }
 
 function ProgressPill({ task }: { task: InstallTask | null }) {
   if (!task) return null;

@@ -50,6 +50,12 @@ CLAUDE.md
 nano-ontoprompt-requirements.md
 prompt-harness-rules-for-coding-agent.md
 docs/
+!docs/
+docs/*
+!docs/adr/
+docs/adr/*
+!docs/adr/0019-semantic-core-security-data-plane.md
+!docs/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md
 pipeline-builder-redesign-plan.md
 PRD_AND_ARCHITECTURE_v1.1_logic_actions.md
 PRD_AND_ARCHITECTURE.md

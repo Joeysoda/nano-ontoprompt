@@ -6,6 +6,13 @@ from app.models.v2.temporal_replay import (
     TemporalReplayBatch,
     TemporalStreamEvent,
 )
+from app.models.v2.semantic_core import (
+    OntologySemanticResource,
+    OntologySemanticResourceVersion,
+    OntologySourceMapping,
+)
+from app.models.v2.security import OntologySecurityPolicy
+from app.models.v2.schema_migration import SchemaDependency, SchemaMigrationInstruction, SchemaMigrationPlan, SchemaMigrationRun
 
 __all__ = [
     "OntologyChange",
@@ -16,4 +23,12 @@ __all__ = [
     "TemporalStreamEvent",
     "TemporalFact",
     "DataModelSnapshot",
+    "OntologySemanticResource",
+    "OntologySemanticResourceVersion",
+    "OntologySourceMapping",
+    "OntologySecurityPolicy",
+    "SchemaMigrationPlan",
+    "SchemaMigrationInstruction",
+    "SchemaMigrationRun",
+    "SchemaDependency",
 ]

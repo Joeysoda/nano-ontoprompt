@@ -7,8 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.deps import get_current_user
+from app.deps import get_current_user, get_db
 from app.database import SessionLocal
+from app.models.user import User
+from app.models.ontology import OntologyProject
+from app.services.v2.authorization_service import AuthorizationContext, cached_permission_digest, load_applicable_policies, redact_link_record, resolve_projection, redact_record
+from app.services.v2.data_plane_service import AdapterCapabilities, build_context, make_manifest
+from app.services.v2.semantic_core_service import semantic_schema
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -21,14 +26,6 @@ def get_neo4j():
 def get_falkordb():
     from app.services.v2.graph.falkordb_service import FalkorDBService
     return FalkorDBService()
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def _property_definitions(entity: Any) -> list[dict[str, Any]]:
@@ -50,7 +47,146 @@ def _property_definitions(entity: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200) -> dict[str, Any]:
+def _result_manifest(db: Session, ontology_id: str, *, user: User | None, adapter: str, adapter_version: str, status: str = "ready", result_count: int | None = None, warnings: list[str] | None = None) -> dict[str, Any]:
+    """Build the common result envelope used by every visible graph query."""
+    if not hasattr(db, "query"):
+        # Direct service-level callers (and older tests) invoke route
+        # functions without FastAPI dependency injection.  Keep the adapter
+        # response useful without trying to resolve a metadata revision from
+        # the ``Depends`` sentinel.
+        return {
+            "context_id": f"direct:{ontology_id}",
+            "ontology_id": ontology_id,
+            "metadata_revision_id": None,
+            "metadata_digest": None,
+            "permission_digest": None,
+            "executor_version": "ontology-workbench-v2",
+            "consistency": {"mode": "live", "snapshot_id": None, "allow_degraded": False},
+            "adapter": adapter,
+            "adapter_version": adapter_version,
+            "status": status,
+            "redacted_fields": [],
+            "warnings": warnings or [],
+            "result_count": result_count,
+            "generated_at": None,
+        }
+    schema = semantic_schema(db, ontology_id)
+    permission_digest = cached_permission_digest(db, ontology_id, str(user.id)) if isinstance(user, User) else None
+    if isinstance(user, User):
+        permission_digest = permission_digest or resolve_projection(
+            db,
+            AuthorizationContext(
+                ontology_id=ontology_id,
+                principal_id=str(user.id),
+                principal_role=user.role,
+                metadata_revision_id=schema.get("revision_id"),
+            ),
+        ).permission_digest
+    context = build_context(
+        ontology_id,
+        metadata_revision_id=schema.get("revision_id"),
+        metadata_digest=schema.get("metadata_digest"),
+        permission_digest=permission_digest,
+    )
+    capabilities = AdapterCapabilities(
+        adapter=adapter,
+        adapter_version=adapter_version,
+        supports_live=True,
+        supports_pinned=True,
+        supports_snapshot=True,
+        supports_object_filter=True,
+        supports_field_filter=True,
+        supports_temporal_facts=adapter in {"postgres-temporal", "falkordb"},
+        supports_aggregate=True,
+        semantic_fallback_group=adapter,
+    )
+    return make_manifest(
+        context,
+        capabilities,
+        status=status,
+        permission_digest=permission_digest,
+        warnings=warnings,
+        result_count=result_count,
+    ).as_dict()
+
+
+def _authorize_graph_data(db: Session, ontology_id: str, data: dict[str, Any], user: User | None) -> dict[str, Any]:
+    """Apply one object/property projection to a graph adapter response."""
+    if not isinstance(user, User):
+        return data
+    project = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
+    from app.models.entity import Entity
+
+    semantic_id_by_legacy = {
+        str(entity_id): str(resource_id)
+        for entity_id, resource_id in db.query(Entity.id, Entity.semantic_resource_id).filter(
+            Entity.ontology_id == ontology_id,
+        ).all()
+        if resource_id
+    }
+    nodes = list(data.get("nodes") or [])
+    node_records = []
+    object_types = []
+    for node in nodes:
+        props = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+        object_type = str(node.get("entity_id") or node.get("entity_type") or props.get("entity_id") or props.get("entity_type") or (node.get("labels") or ["Entity"])[0])
+        object_types.append(object_type)
+        node_records.append({
+            "id": node.get("id"),
+            "entity_id": object_type,
+            "entity_type": object_type,
+            "semantic_resource_id": node.get("semantic_resource_id") or props.get("semantic_resource_id") or semantic_id_by_legacy.get(object_type),
+            "properties": props,
+        })
+    projection = resolve_projection(
+        db,
+        AuthorizationContext(
+            ontology_id=ontology_id,
+            principal_id=str(user.id),
+            principal_role=user.role,
+            metadata_revision_id=project.current_revision_id if project else None,
+        ),
+        records=node_records,
+    )
+    visible_nodes: list[dict[str, Any]] = []
+    visible_ids: set[str] = set()
+    for node, object_type, record in zip(nodes, object_types, node_records):
+        props = record["properties"]
+        redacted = redact_record(projection, record)
+        if redacted is None:
+            continue
+        next_node = dict(node)
+        next_node["properties"] = redacted.get("properties", props)
+        visible_nodes.append(next_node)
+        visible_ids.add(str(node.get("id")))
+    edges = []
+    for edge in (data.get("edges") or []):
+        if str(edge.get("source")) not in visible_ids or str(edge.get("target")) not in visible_ids:
+            continue
+        # Link policies are evaluated against the already-visible endpoint
+        # set. Relationships remain default-deny unless explicitly allowed;
+        # endpoint visibility alone must not disclose an edge.
+        link_properties = edge.get("properties") if isinstance(edge.get("properties"), dict) else {}
+        link_id = str(link_properties.get("semantic_resource_id") or link_properties.get("api_name") or edge.get("type") or edge.get("label") or "")
+        link_record = {"id": edge.get("id"), "link_type_id": link_id, "type": edge.get("type"), "properties": link_properties}
+        redacted_link = redact_link_record(projection, link_record, link_type_id=link_id)
+        if redacted_link is None:
+            continue
+        next_edge = dict(edge)
+        next_edge["properties"] = redacted_link.get("properties", link_properties)
+        edges.append(next_edge)
+    data = {**data, "nodes": visible_nodes, "edges": edges}
+    unrestricted_subject = bool(project and (str(project.created_by) == str(user.id) or str(user.role or "") == "admin"))
+    if not unrestricted_subject:
+        # Adapter totals may include hidden rows.  Do not leak them through
+        # pagination metadata; a caller can ask for another page explicitly.
+        data["total_instances"] = len(visible_nodes)
+        data["total_edges"] = len(edges)
+    data["summary"] = {**(data.get("summary") or {}), "instance_count": len([node for node in visible_nodes if node.get("node_kind") == "instance"]), "relationship_count": len(edges)}
+    return data
+
+
+def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200, user: User | None = None) -> dict[str, Any]:
     """Return the published ontology vocabulary and inspector data.
 
     The workbench intentionally reads this plane directly instead of choosing
@@ -64,6 +200,18 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200)
     from app.models.relation import Relation
     from app.models.v2.construction import EvidenceRef
 
+    project = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
+    shared_context = None
+    shared_policies = None
+    type_projection = None
+    if isinstance(user, User):
+        shared_context = AuthorizationContext(
+            ontology_id=ontology_id,
+            principal_id=str(user.id),
+            principal_role=user.role,
+            metadata_revision_id=project.current_revision_id if project else None,
+        )
+        shared_policies = load_applicable_policies(db, shared_context)
     entities = (
         db.query(Entity)
         .filter(Entity.ontology_id == ontology_id)
@@ -71,7 +219,31 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200)
         .limit(limit)
         .all()
     )
+    if isinstance(user, User):
+        type_records = [{
+                "id": entity.id,
+                "entity_id": entity.id,
+                "entity_type": entity.id,
+                "semantic_resource_id": entity.semantic_resource_id,
+                "properties": {"name": entity.name_cn or entity.name_en or entity.id},
+            } for entity in entities]
+        type_projection = resolve_projection(
+            db,
+            shared_context,
+            records=type_records,
+            preloaded_policies=shared_policies,
+        )
+        visible_entities = []
+        for entity, record in zip(entities, type_records):
+            if redact_record(type_projection, record) is not None:
+                visible_entities.append(entity)
+        entities = visible_entities
     entity_ids = [item.id for item in entities]
+    semantic_id_by_entity = {
+        str(entity.id): entity.semantic_resource_id
+        for entity in entities
+        if entity.semantic_resource_id
+    }
     instance_rows = []
     if entity_ids:
         instance_rows = db.query(EntityInstance).filter(
@@ -80,9 +252,35 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200)
         ).all()
     instances_by_entity: dict[str, list[Any]] = defaultdict(list)
     instance_ids: list[str] = []
+    redacted_instance_data: dict[str, dict[str, Any]] = {}
     for item in instance_rows:
         instances_by_entity[item.entity_id].append(item)
         instance_ids.append(item.id)
+    if isinstance(user, User):
+        instance_records = [{
+            "id": row.id,
+            "entity_id": row.entity_id,
+            "entity_type": row.entity_id,
+            "semantic_resource_id": row.object_type_resource_id or semantic_id_by_entity.get(str(row.entity_id)),
+            "properties": row.row_data or {},
+        } for row in instance_rows]
+        instance_projection = resolve_projection(
+            db,
+            shared_context,
+            records=instance_records,
+            preloaded_policies=shared_policies,
+        )
+        visible_rows = []
+        for row, record in zip(instance_rows, instance_records):
+            redacted = redact_record(instance_projection, record)
+            if redacted is not None:
+                visible_rows.append(row)
+                redacted_instance_data[str(row.id)] = redacted.get("properties", row.row_data or {})
+        instances_by_entity = defaultdict(list)
+        for row in visible_rows:
+            instances_by_entity[row.entity_id].append(row)
+        instance_rows = [row for rows in instances_by_entity.values() for row in rows]
+        instance_ids = [row.id for row in instance_rows]
     evidence_by_assertion: Counter[str] = Counter()
     if instance_ids:
         for assertion_id, count in (
@@ -100,7 +298,7 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200)
     for entity in entities:
         raw = entity.properties or {}
         properties = _property_definitions(entity)
-        examples = [item.row_data or {} for item in instances_by_entity.get(entity.id, [])[:3]]
+        examples = [redacted_instance_data.get(str(item.id), item.row_data or {}) for item in instances_by_entity.get(entity.id, [])[:3]]
         evidence_count = sum(evidence_by_assertion.get(item.id, 0) for item in instances_by_entity.get(entity.id, []))
         nodes.append({
             "id": entity.id,
@@ -138,9 +336,76 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200)
         for relation in relations
         if relation.source_entity in node_ids and relation.target_entity in node_ids
     ]
+    if isinstance(user, User) and type_projection is not None and not type_projection.unrestricted:
+        visible_edges = []
+        for edge in edges:
+            link_properties = edge.get("properties") if isinstance(edge.get("properties"), dict) else {}
+            link_id = str(link_properties.get("semantic_resource_id") or link_properties.get("api_name") or edge.get("type") or "")
+            redacted_link = redact_link_record(
+                type_projection,
+                {"id": edge.get("id"), "link_type_id": link_id, "type": edge.get("type"), "properties": link_properties},
+                link_type_id=link_id,
+            )
+            if redacted_link is None:
+                continue
+            visible_edge = dict(edge)
+            visible_edge["properties"] = redacted_link.get("properties", link_properties)
+            if visible_edge["properties"].get("name") is None:
+                visible_edge["label"] = visible_edge.get("type")
+            else:
+                visible_edge["label"] = visible_edge["properties"].get("name")
+            visible_edges.append(visible_edge)
+        edges = visible_edges
     property_count = sum(len(_property_definitions(entity)) for entity in entities)
-    total_evidence = db.query(EvidenceRef).filter(EvidenceRef.ontology_id == ontology_id).count()
-    return {
+    unrestricted_subject = not isinstance(user, User) or (
+        str(getattr(db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first(), "created_by", "")) == str(user.id)
+        or str(user.role or "") == "admin"
+    )
+    if isinstance(user, User) and not unrestricted_subject and type_projection is not None:
+        visible_property_count = 0
+        visible_definitions_by_entity: dict[str, list[dict[str, Any]]] = {}
+        entities_by_id = {str(entity.id): entity for entity in entities}
+        for entity in entities:
+            properties = _property_definitions(entity)
+            allowed = type_projection.allowed_fields_by_object.get(str(entity.id), type_projection.allowed_fields)
+            denied = type_projection.denied_fields | type_projection.denied_fields_by_object.get(str(entity.id), set())
+            visible_properties = []
+            for prop in properties:
+                key = str(prop.get("api_name") or type_projection.resource_aliases.get(str(prop.get("resource_id") or "")) or prop.get("id") or prop.get("name") or "")
+                key = type_projection.resource_aliases.get(key, key)
+                if key and (allowed is None or key in allowed) and key not in denied:
+                    visible_properties.append(prop)
+            visible_definitions_by_entity[str(entity.id)] = visible_properties
+            visible_property_count += len(visible_properties)
+        property_count = visible_property_count
+        # There is not yet a dedicated logic-rule policy scope. Fail closed
+        # for non-owners rather than leaking formulas, conditions or evidence.
+        rules = []
+        for node in nodes:
+            allowed = type_projection.allowed_fields_by_object.get(str(node["id"]), type_projection.allowed_fields)
+            denied = type_projection.denied_fields | type_projection.denied_fields_by_object.get(str(node["id"]), set())
+            entity = entities_by_id.get(str(node["id"]))
+            raw = (entity.properties if entity else {}) or {}
+            source_fields = raw.get("source_fields", []) if isinstance(raw, dict) else []
+            node["properties"]["source_fields"] = [
+                field for field in source_fields
+                if allowed is None or type_projection.resource_aliases.get(str(field), str(field)) in allowed
+            ]
+            node["properties"]["source_fields"] = [
+                field for field in node["properties"]["source_fields"]
+                if type_projection.resource_aliases.get(str(field), str(field)) not in denied
+            ]
+            node["properties"]["evidence"] = {}
+            node["properties"]["property_definitions"] = visible_definitions_by_entity.get(str(node["id"]), [])
+    if isinstance(user, User) and not unrestricted_subject:
+        visible_assertions = [str(item) for item in entity_ids + instance_ids]
+        total_evidence = db.query(EvidenceRef).filter(
+            EvidenceRef.ontology_id == ontology_id,
+            EvidenceRef.assertion_id.in_(visible_assertions),
+        ).count() if visible_assertions else 0
+    else:
+        total_evidence = db.query(EvidenceRef).filter(EvidenceRef.ontology_id == ontology_id).count()
+    result = {
         "ontology_id": ontology_id,
         "nodes": nodes,
         "edges": edges,
@@ -172,6 +437,15 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200)
         "available": True,
         "graph_backend": "published-ontology",
     }
+    result["result_manifest"] = _result_manifest(
+        db,
+        ontology_id,
+        user=user,
+        adapter="postgres-semantic",
+        adapter_version="v2",
+        result_count=len(instance_rows),
+    )
+    return result
 
 
 class CypherRequest(BaseModel):
@@ -209,6 +483,7 @@ def get_graph(
     seq_to: int | None = Query(None, ge=0),
     relation_state: str = Query("all", pattern="^(all|current)$"),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Return the published ontology, legacy schema graph, or internal instances.
 
@@ -225,10 +500,10 @@ def get_graph(
         if not hasattr(db, "query"):
             owned_db = SessionLocal()
             try:
-                return _canonical_ontology_data(owned_db, ontology_id, limit=limit)
+                return _canonical_ontology_data(owned_db, ontology_id, limit=limit, user=user)
             finally:
                 owned_db.close()
-        return _canonical_ontology_data(db, ontology_id, limit=limit)
+        return _canonical_ontology_data(db, ontology_id, limit=limit, user=user)
     if view == "instances":
         from app.models.ontology import OntologyProject
         # Direct Python callers/tests do not have FastAPI dependency
@@ -241,10 +516,12 @@ def get_graph(
             raise HTTPException(404, "Ontology not found")
         svc = get_falkordb()
         if not svc.available:
-            return {
+            data = {
                 "nodes": [], "edges": [], "graph_backend": "falkordb",
                 "available": False, "error": "FalkorDB unavailable",
             }
+            data["result_manifest"] = _result_manifest(db, ontology_id, user=user, adapter="falkordb", adapter_version="v2", status="unavailable", warnings=["FalkorDB unavailable"])
+            return data
         try:
             graph_kwargs: dict[str, Any] = {
                 "limit": limit,
@@ -269,16 +546,32 @@ def get_graph(
                 graph_kwargs["offset"] = offset
             if episode_id:
                 graph_kwargs["episode_id"] = episode_id
-            return svc.get_graph_data(ontology_id, **graph_kwargs)
+            data = svc.get_graph_data(ontology_id, **graph_kwargs)
+            data = _authorize_graph_data(db, ontology_id, data, user)
+            data["result_manifest"] = _result_manifest(db, ontology_id, user=user, adapter="falkordb", adapter_version="v2", result_count=len(data.get("nodes") or []))
+            return data
         except Exception as exc:
-            return {
+            data = {
                 "nodes": [], "edges": [], "graph_backend": "falkordb",
                 "available": False, "error": str(exc),
             }
+            data["result_manifest"] = _result_manifest(db, ontology_id, user=user, adapter="falkordb", adapter_version="v2", status="unavailable", warnings=[str(exc)])
+            return data
     svc = get_neo4j()
     if not svc.available:
         data = _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
         data["graph_backend"] = "sqlite-schema"
+        data = _authorize_graph_data(db, ontology_id, data, user)
+        data["result_manifest"] = _result_manifest(
+            db,
+            ontology_id,
+            user=user,
+            adapter="postgres-semantic",
+            adapter_version="v2",
+            status="degraded",
+            result_count=len(data.get("nodes") or []),
+            warnings=["legacy graph adapter unavailable; used relational compatibility projection"],
+        )
         return data
     try:
         data = svc.get_graph_data(ontology_id, limit=limit, label_filter=label_filter)
@@ -287,15 +580,39 @@ def get_graph(
         svc.close()
         data = _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
         data["graph_backend"] = "sqlite-schema"
+        data = _authorize_graph_data(db, ontology_id, data, user)
+        data["result_manifest"] = _result_manifest(
+            db,
+            ontology_id,
+            user=user,
+            adapter="postgres-semantic",
+            adapter_version="v2",
+            status="degraded",
+            result_count=len(data.get("nodes") or []),
+            warnings=["legacy graph adapter failed; used relational compatibility projection"],
+        )
         return data
     svc.close()
     # Neo4j 可用但该 ontology 无数据（如简易 LLM 路线未同步写入）→ 回退 SQLite
     if not data.get("nodes"):
         data = _sqlite_graph_data(ontology_id, limit=limit, label_filter=label_filter)
         data["graph_backend"] = "sqlite-schema"
+        data = _authorize_graph_data(db, ontology_id, data, user)
+        data["result_manifest"] = _result_manifest(
+            db,
+            ontology_id,
+            user=user,
+            adapter="postgres-semantic",
+            adapter_version="v2",
+            status="degraded",
+            result_count=len(data.get("nodes") or []),
+            warnings=["legacy graph adapter returned no nodes; used relational compatibility projection"],
+        )
         return data
     data["neo4j_available"] = True
     data["graph_backend"] = "neo4j-legacy"
+    data = _authorize_graph_data(db, ontology_id, data, user)
+    data["result_manifest"] = _result_manifest(db, ontology_id, user=user, adapter="legacy-neo4j", adapter_version="legacy", result_count=len(data.get("nodes") or []))
     return data
 
 
@@ -481,6 +798,7 @@ def get_data_model(
     at: str | None = None,
     mode: str = Query("cumulative", pattern="^(cumulative|window)$"),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Return the real data model (instances + instance relationships).
 
@@ -519,7 +837,7 @@ def get_data_model(
             snapshot_replay_id = snapshot.replay_id
     except Exception:
         snapshot = None
-    canonical = _canonical_ontology_data(db, ontology_id, limit=1000)
+    canonical = _canonical_ontology_data(db, ontology_id, limit=1000, user=user)
     data_class = str(getattr(ontology, "data_class", None) or "regular")
     service = get_falkordb()
     timeline: dict[str, Any] | None = None
@@ -676,6 +994,7 @@ def get_data_model(
                     "graph_backend": "falkordb",
                     "error": str(exc),
                 }
+    graph_data = _authorize_graph_data(db, ontology_id, graph_data, user)
     # Attach evidence counts without leaking internal storage keys into the
     # visible property list.  Source fields remain available on selection.
     from app.models.v2.construction import EvidenceRef
@@ -764,7 +1083,8 @@ def get_data_model(
     total_node_count = max(int(graph_data.get("total_instances", 0) or 0), visible_node_count)
     total_edge_count = max(int(graph_data.get("total_edges", 0) or 0), visible_edge_count)
     type_counts: dict[str, int] | None
-    if service.available:
+    unrestricted_subject = not isinstance(user, User) or str(getattr(ontology, "created_by", "")) == str(user.id) or str(user.role or "") == "admin"
+    if service.available and unrestricted_subject:
         try:
             try:
                 type_counts = service.get_instance_type_counts(
@@ -826,6 +1146,16 @@ def get_data_model(
         }
     else:
         response["time"] = None
+    response["result_manifest"] = _result_manifest(
+        db,
+        ontology_id,
+        user=user,
+        adapter="falkordb" if service.available else "postgres-temporal",
+        adapter_version="v2",
+        status="ready" if graph_data.get("available", True) else "unavailable",
+        result_count=int(graph_data.get("returned") or len(graph_data.get("nodes") or [])),
+        warnings=[str(graph_data.get("error"))] if graph_data.get("error") else None,
+    )
     return response
 
 
@@ -888,6 +1218,7 @@ def search_ontology(
     q: str = Query("", max_length=200),
     entity_id: str | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Search the published ontology without exposing graph query syntax.
 
@@ -895,10 +1226,10 @@ def search_ontology(
     entity's attributes; otherwise names, attributes, relations, rules and
     provenance are searchable across the ontology.
     """
-    data = _canonical_ontology_data(db, ontology_id, limit=1000)
+    data = _canonical_ontology_data(db, ontology_id, limit=1000, user=user)
     needle = q.strip().casefold()
     if not needle:
-        return {"query": q, "scope": "entity_properties" if entity_id else "ontology", "results": [], "groups": {}}
+        return {"query": q, "scope": "entity_properties" if entity_id else "ontology", "results": [], "groups": {}, "result_manifest": data.get("result_manifest")}
 
     def matches(*values: Any) -> bool:
         return any(needle in str(value or "").casefold() for value in values)
@@ -927,13 +1258,13 @@ def search_ontology(
                 groups["逻辑规则"].append({"kind": "logic_rule", "id": rule["id"], "label": rule.get("name"), "description": rule.get("description") or rule.get("formula") or ""})
     groups = {key: value[:40] for key, value in groups.items() if value}
     results = [item for value in groups.values() for item in value]
-    return {"query": q, "scope": "entity_properties" if entity_id else "ontology", "results": results, "groups": groups}
+    return {"query": q, "scope": "entity_properties" if entity_id else "ontology", "results": results, "groups": groups, "result_manifest": data.get("result_manifest")}
 
 
 @router.get("/{ontology_id}/entities")
-def list_ontology_entities(ontology_id: str, db: Session = Depends(get_db)):
+def list_ontology_entities(ontology_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Read-only entity-type catalogue with real instance counts."""
-    data = _canonical_ontology_data(db, ontology_id, limit=1000)
+    data = _canonical_ontology_data(db, ontology_id, limit=1000, user=user)
     relation_counts: Counter[str] = Counter()
     for edge in data["edges"]:
         relation_counts[edge["source"]] += 1
@@ -957,6 +1288,7 @@ def list_ontology_entities(ontology_id: str, db: Session = Depends(get_db)):
             for node in data["nodes"]
         ],
         "summary": data["summary"],
+        "result_manifest": data.get("result_manifest"),
     }
 
 
@@ -967,6 +1299,7 @@ def list_entity_instances(
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     from app.models.entity import Entity
     from app.models.entity_instance import EntityInstance
@@ -975,9 +1308,40 @@ def list_entity_instances(
     entity = db.query(Entity).filter(Entity.id == entity_id, Entity.ontology_id == ontology_id).first()
     if not entity:
         raise HTTPException(404, "本体实体不存在")
+    project = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
     query = db.query(EntityInstance).filter(EntityInstance.ontology_id == ontology_id, EntityInstance.entity_id == entity_id).order_by(EntityInstance.created_at.desc())
-    total = query.count()
-    rows = query.offset(offset).limit(limit).all()
+    redacted_by_id: dict[str, dict[str, Any]] = {}
+    if isinstance(user, User):
+        all_rows = query.all()
+        records = [{
+            "id": row.id,
+            "entity_id": row.entity_id,
+            "object_type_resource_id": row.object_type_resource_id or entity.semantic_resource_id,
+            "semantic_resource_id": row.object_type_resource_id or entity.semantic_resource_id,
+            "properties": row.row_data or {},
+        } for row in all_rows]
+        projection = resolve_projection(
+            db,
+            AuthorizationContext(
+                ontology_id=ontology_id,
+                principal_id=str(user.id),
+                principal_role=user.role,
+                metadata_revision_id=project.current_revision_id if project else None,
+                object_type_id=entity_id,
+            ),
+            records=records,
+        )
+        visible = []
+        for row in all_rows:
+            redacted = redact_record(projection, {"id": row.id, "entity_id": row.entity_id, "properties": row.row_data or {}})
+            if redacted is not None:
+                visible.append(row)
+                redacted_by_id[str(row.id)] = redacted
+        total = len(visible)
+        rows = visible[offset:offset + limit]
+    else:
+        total = query.count()
+        rows = query.offset(offset).limit(limit).all()
     instance_ids = [row.id for row in rows]
     evidence: dict[str, int] = {}
     if instance_ids:
@@ -996,13 +1360,14 @@ def list_entity_instances(
             {
                 "id": row.id,
                 "row_identity": row.row_identity,
-                "row_data": row.row_data or {},
+                "row_data": redacted_by_id.get(str(row.id), {}).get("properties", row.row_data or {}) if isinstance(user, User) else (row.row_data or {}),
                 "revision_id": getattr(row, "revision_id", None),
                 "evidence_count": int(evidence.get(row.id, 0)),
                 "created_at": row.created_at.isoformat() if row.created_at else None,
             }
             for row in rows
         ],
+        "result_manifest": _result_manifest(db, ontology_id, user=user, adapter="postgres-semantic", adapter_version="v2", result_count=len(rows)),
     }
 
 

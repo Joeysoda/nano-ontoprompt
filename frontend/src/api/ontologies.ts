@@ -1,5 +1,6 @@
 import { apiClient, apiClientV2 } from './client'
 import type { OntologyListItem, OntologyDetail, Entity, LogicRule, Action, UploadedFile, Prompt, ModelConfig } from '@/types/ontology'
+import type { DataPlaneStatus, MigrationInstruction, SchemaMigrationPlan, SecurityPolicy, SemanticSchema } from '@/types/semanticCore'
 
 export const ontologyApi = {
   list: (params?: { name?: string; page?: number; page_size?: number }) =>
@@ -70,6 +71,35 @@ export const ontologyApi = {
     apiClient.post<{ task_id: string }>(`/ontologies/${oid}/audit`, body),
   getAuditStatus: (oid: string, task_id: string) =>
     apiClient.get(`/ontologies/${oid}/audit/status?task_id=${task_id}`),
+
+  // Plan A semantic core, authorization projection and data-plane contracts
+  semanticSchema: (oid: string, revisionId?: string) =>
+    apiClientV2.get<SemanticSchema>(`/ontologies/${oid}/semantic-schema${revisionId ? `?revision_id=${encodeURIComponent(revisionId)}` : ''}`),
+  semanticChangeImpact: (oid: string, body: Record<string, unknown>) =>
+    apiClientV2.post(`/ontologies/${oid}/semantic-changes/impact`, body),
+  applySemanticChange: (oid: string, body: Record<string, unknown>) =>
+    apiClientV2.post(`/ontologies/${oid}/semantic-changes`, body),
+  listSecurityPolicies: (oid: string) =>
+    apiClientV2.get<{ ontology_id: string; policies: SecurityPolicy[]; count: number }>(`/ontologies/${oid}/security/policies`),
+  createSecurityPolicy: (oid: string, body: Record<string, unknown>) =>
+    apiClientV2.post<{ policy: SecurityPolicy }>(`/ontologies/${oid}/security/policies`, body),
+  updateSecurityPolicy: (oid: string, policyId: string, body: Record<string, unknown>) =>
+    apiClientV2.patch<{ policy: SecurityPolicy }>(`/ontologies/${oid}/security/policies/${policyId}`, body),
+  deleteSecurityPolicy: (oid: string, policyId: string) =>
+    apiClientV2.delete(`/ontologies/${oid}/security/policies/${policyId}`),
+  evaluateSecurity: (oid: string, body: Record<string, unknown>) =>
+    apiClientV2.post(`/ontologies/${oid}/security/evaluate`, body),
+  dataPlaneStatus: (oid: string, params?: { mode?: string; snapshot_id?: string }) =>
+    apiClientV2.get<DataPlaneStatus>(`/ontologies/${oid}/data-plane/status`, { params }),
+  dataPlaneCapabilities: (oid: string) =>
+    apiClientV2.get(`/ontologies/${oid}/data-plane/capabilities`),
+  migrationDryRun: (oid: string, body: { base_revision_id?: string; instructions: MigrationInstruction[] }) =>
+    apiClientV2.post<SchemaMigrationPlan>(`/ontologies/${oid}/schema-migrations/dry-run`, body),
+  applyMigration: (oid: string, body: { plan_id?: string; base_revision_id?: string; instructions?: MigrationInstruction[] }) =>
+    apiClientV2.post<SchemaMigrationPlan>(`/ontologies/${oid}/schema-migrations`, body),
+  getMigration: (runId: string) => apiClientV2.get<SchemaMigrationPlan>(`/schema-migrations/${runId}`),
+  reconcileMigration: (runId: string) => apiClientV2.post<SchemaMigrationPlan>(`/schema-migrations/${runId}/reconcile`),
+  revertMigration: (runId: string) => apiClientV2.post<SchemaMigrationPlan>(`/schema-migrations/${runId}/revert`),
 }
 
 export const promptApi = {

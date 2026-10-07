@@ -15,8 +15,15 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override sqlalchemy.url from the environment if DATABASE_URL is set.
+# Override sqlalchemy.url from the environment/.env-backed application
+# settings before Alembic reads the config section.  Leaving the literal
+# ``%(DATABASE_URL)s`` placeholder unresolved makes ConfigParser fail before
+# migrations can even report a database connection error.
 database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    from app.config import settings as app_settings
+
+    database_url = app_settings.database_url
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 
@@ -38,7 +45,22 @@ from app.models import (  # noqa: E402, F401
     rules_config,
     ontology_revision,
 )
-from app.models.v2 import connection, dataset, pipeline, curated, mapping, temporal_profile, construction, multimodal, multimodal_install, construction_draft, temporal_replay  # noqa: E402, F401
+from app.models.v2 import (  # noqa: E402, F401
+    connection,
+    dataset,
+    pipeline,
+    curated,
+    mapping,
+    temporal_profile,
+    construction,
+    multimodal,
+    multimodal_install,
+    construction_draft,
+    temporal_replay,
+    semantic_core,
+    security,
+    schema_migration,
+)
 
 target_metadata = Base.metadata
 
