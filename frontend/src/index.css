@@ -4,21 +4,22 @@
 
 :root {
   color-scheme: light;
-  /* PKU red is used as the restrained action/accent color. The graphite
-     shell keeps long graph and table sessions comfortable to read. */
-  --pku-red: #8c1d40;
-  --pku-red-deep: #721631;
-  --pku-red-soft: #f8eef2;
-  --pku-red-border: #e7cbd5;
-  --workbench-canvas: #f7f4f5;
+  /* Brand tokens follow the supplied AI security platform deck: deep maroon
+     for the shell, PKU red for actions, and warm neutral surfaces. */
+  --pku-red: #8b1a2b;
+  --pku-red-deep: #64131f;
+  --pku-red-action: #c41230;
+  --pku-red-soft: #f5f0f0;
+  --pku-red-border: #e0cfcf;
+  --workbench-canvas: #f9f5f5;
   --workbench-surface: #ffffff;
-  --workbench-ink: #261c20;
-  --workbench-muted: #6f646a;
-  --workbench-subtle: #93858c;
-  --workbench-border: #e4dce0;
-  --workbench-border-strong: #d2c5cb;
-  --workbench-graphite: #2a1a21;
-  --workbench-blue: var(--pku-red);
+  --workbench-ink: #1a1a1a;
+  --workbench-muted: #6b6b6b;
+  --workbench-subtle: #816c72;
+  --workbench-border: #e0cfcf;
+  --workbench-border-strong: #d5d5d5;
+  --workbench-graphite: #261317;
+  --workbench-blue: #0339a6;
   --workbench-teal: #0f766e;
   --workbench-amber: #a16207;
   --workbench-red: #b42318;
@@ -41,7 +42,7 @@ body {
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
-::selection { background: #f0d8e0; color: var(--workbench-ink); }
+::selection { background: #ead1d5; color: var(--workbench-ink); }
 button, input, select, textarea { accent-color: var(--pku-red); }
 
 .pku-brand-mark {
@@ -51,28 +52,30 @@ button, input, select, textarea { accent-color: var(--pku-red); }
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255,255,255,.32);
-  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.26);
+  border-radius: 4px 11px 4px 4px;
   background: var(--pku-red);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .08em;
-  line-height: 1;
-  box-shadow: 0 5px 16px rgba(140,29,64,.28);
+  clip-path: polygon(0 0, 88% 0, 100% 20%, 90% 100%, 0 100%);
+  box-shadow: 0 5px 16px rgba(139,26,43,.28);
+}
+
+.pku-brand-mark img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
 }
 
 @layer components {
   .wb-surface { @apply rounded-xl border bg-white; border-color: var(--workbench-border); }
   .wb-eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.16em]; color: var(--workbench-subtle); }
-  .wb-button-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium text-white transition-colors; background: var(--pku-red); box-shadow: 0 4px 12px rgba(140,29,64,.16); }
-  .wb-button-primary:hover { background: var(--pku-red-deep); }
+  .wb-button-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium text-white transition-colors; background: var(--pku-red-action); box-shadow: 0 4px 12px rgba(139,26,43,.16); }
+  .wb-button-primary:hover { background: var(--pku-red); }
   .wb-button-primary:disabled { opacity: .45; }
   .wb-button-secondary { @apply inline-flex items-center justify-center gap-2 rounded-lg border bg-white px-3.5 py-2 text-sm font-medium transition-colors; border-color: var(--workbench-border-strong); color: var(--workbench-ink); }
   .wb-button-secondary:hover { background: var(--pku-red-soft); border-color: var(--pku-red-border); color: var(--pku-red-deep); }
   .wb-button-secondary:disabled { opacity: .45; }
   .wb-input { @apply w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-shadow; border-color: var(--workbench-border-strong); }
-  .wb-input:focus { box-shadow: 0 0 0 3px rgba(140, 29, 64, .14); border-color: var(--pku-red); }
+  .wb-input:focus { box-shadow: 0 0 0 3px rgba(196, 18, 48, .14); border-color: var(--pku-red-action); }
   .wb-page-title { @apply text-[25px] font-semibold tracking-[-0.02em]; }
   .wb-page-subtitle { @apply mt-1 text-sm; color: var(--workbench-muted); }
   .wb-page { @apply space-y-5; }
@@ -93,7 +96,7 @@ button, input, select, textarea { accent-color: var(--pku-red); }
   .wb-step-index { @apply inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px]; border-color: currentColor; }
   .wb-choice-card { @apply rounded-xl border bg-white p-4 transition-colors; border-color: var(--workbench-border); }
   .wb-choice-card:hover, .wb-sample-card:hover { @apply border-gray-400; }
-  .wb-choice-selected { border-color: var(--pku-red); background: var(--pku-red-soft); box-shadow: inset 0 0 0 1px rgba(140,29,64,.22); }
+  .wb-choice-selected { border-color: var(--pku-red-action); background: var(--pku-red-soft); box-shadow: inset 0 0 0 1px rgba(196,18,48,.22); }
   .wb-icon-box { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-600; background: var(--pku-red-soft); color: var(--pku-red); }
   .wb-tag { @apply inline-flex rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-500; }
   .wb-empty { @apply flex min-h-[130px] items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 text-sm text-gray-500; }

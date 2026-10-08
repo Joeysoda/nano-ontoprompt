@@ -58,7 +58,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <aside className={`fixed inset-y-0 left-0 z-30 flex flex-col bg-[var(--workbench-graphite)] text-white transition-[width] duration-200 ${collapsed ? 'w-[72px]' : 'w-[252px]'}`}>
         <div className={`flex h-[76px] items-center border-b border-white/10 ${collapsed ? 'justify-center px-3' : 'justify-between px-5'}`}>
           <Link to="/overview" className="flex min-w-0 items-center gap-3" aria-label="返回总览">
-            <span className="pku-brand-mark" aria-hidden="true">PKU</span>
+            <span className="pku-brand-mark" aria-hidden="true"><img src="/pku-seal.png" alt="" /></span>
             {!collapsed && <span className="truncate text-[15px] font-semibold tracking-[.02em]">本体构筑工作台</span>}
           </Link>
         </div>
@@ -71,7 +71,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               const groupActive = isActive(item.to) || (item.subItems?.some(sub => isActive(sub.to)) ?? false)
               if (!item.subItems) {
                 return (
-                  <Link key={item.to} to={item.to} title={collapsed ? item.label : undefined} className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${groupActive ? 'bg-[var(--pku-red)] text-white shadow-[0_6px_18px_rgba(140,29,64,.28)]' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>
+                  <Link key={item.to} to={item.to} title={collapsed ? item.label : undefined} className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${groupActive ? 'bg-[var(--pku-red)] text-white shadow-[0_6px_18px_rgba(139,26,43,.28)]' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}>
                     <Icon size={17} className="shrink-0" strokeWidth={1.8} />
                     {!collapsed && <span>{item.label}</span>}
                   </Link>
