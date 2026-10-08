@@ -4,15 +4,21 @@
 
 :root {
   color-scheme: light;
-  --workbench-canvas: #f3f5f7;
+  /* PKU red is used as the restrained action/accent color. The graphite
+     shell keeps long graph and table sessions comfortable to read. */
+  --pku-red: #8c1d40;
+  --pku-red-deep: #721631;
+  --pku-red-soft: #f8eef2;
+  --pku-red-border: #e7cbd5;
+  --workbench-canvas: #f7f4f5;
   --workbench-surface: #ffffff;
-  --workbench-ink: #172027;
-  --workbench-muted: #66717d;
-  --workbench-subtle: #8a95a1;
-  --workbench-border: #d9e0e7;
-  --workbench-border-strong: #c4cdd6;
-  --workbench-graphite: #18232b;
-  --workbench-blue: #2563eb;
+  --workbench-ink: #261c20;
+  --workbench-muted: #6f646a;
+  --workbench-subtle: #93858c;
+  --workbench-border: #e4dce0;
+  --workbench-border-strong: #d2c5cb;
+  --workbench-graphite: #2a1a21;
+  --workbench-blue: var(--pku-red);
   --workbench-teal: #0f766e;
   --workbench-amber: #a16207;
   --workbench-red: #b42318;
@@ -35,19 +41,38 @@ body {
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
-::selection { background: #dbeafe; color: #172027; }
+::selection { background: #f0d8e0; color: var(--workbench-ink); }
+button, input, select, textarea { accent-color: var(--pku-red); }
+
+.pku-brand-mark {
+  display: inline-flex;
+  width: 40px;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,.32);
+  border-radius: 9px;
+  background: var(--pku-red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  line-height: 1;
+  box-shadow: 0 5px 16px rgba(140,29,64,.28);
+}
 
 @layer components {
   .wb-surface { @apply rounded-xl border bg-white; border-color: var(--workbench-border); }
   .wb-eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.16em]; color: var(--workbench-subtle); }
-  .wb-button-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium text-white transition-colors; background: var(--workbench-graphite); }
-  .wb-button-primary:hover { background: #27343d; }
+  .wb-button-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium text-white transition-colors; background: var(--pku-red); box-shadow: 0 4px 12px rgba(140,29,64,.16); }
+  .wb-button-primary:hover { background: var(--pku-red-deep); }
   .wb-button-primary:disabled { opacity: .45; }
   .wb-button-secondary { @apply inline-flex items-center justify-center gap-2 rounded-lg border bg-white px-3.5 py-2 text-sm font-medium transition-colors; border-color: var(--workbench-border-strong); color: var(--workbench-ink); }
-  .wb-button-secondary:hover { background: #f8fafc; border-color: #9aa7b3; }
+  .wb-button-secondary:hover { background: var(--pku-red-soft); border-color: var(--pku-red-border); color: var(--pku-red-deep); }
   .wb-button-secondary:disabled { opacity: .45; }
   .wb-input { @apply w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-shadow; border-color: var(--workbench-border-strong); }
-  .wb-input:focus { box-shadow: 0 0 0 3px rgba(37, 99, 235, .13); border-color: var(--workbench-blue); }
+  .wb-input:focus { box-shadow: 0 0 0 3px rgba(140, 29, 64, .14); border-color: var(--pku-red); }
   .wb-page-title { @apply text-[25px] font-semibold tracking-[-0.02em]; }
   .wb-page-subtitle { @apply mt-1 text-sm; color: var(--workbench-muted); }
   .wb-page { @apply space-y-5; }
@@ -63,17 +88,17 @@ button:disabled { cursor: not-allowed; }
   .wb-alert-danger { @apply border-red-200 bg-red-50 text-red-700; }
   .wb-stepper { @apply flex items-center gap-1 overflow-x-auto p-2; }
   .wb-step { @apply flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-gray-400 transition-colors; }
-  .wb-step-active { @apply bg-gray-900 text-white; }
-  .wb-step-done { @apply text-gray-700; }
+  .wb-step-active { @apply text-white; background: var(--pku-red); }
+  .wb-step-done { color: var(--pku-red-deep); }
   .wb-step-index { @apply inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px]; border-color: currentColor; }
   .wb-choice-card { @apply rounded-xl border bg-white p-4 transition-colors; border-color: var(--workbench-border); }
   .wb-choice-card:hover, .wb-sample-card:hover { @apply border-gray-400; }
-  .wb-choice-selected { @apply border-blue-400 bg-blue-50/40; box-shadow: inset 0 0 0 1px rgba(37,99,235,.2); }
-  .wb-icon-box { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600; }
+  .wb-choice-selected { border-color: var(--pku-red); background: var(--pku-red-soft); box-shadow: inset 0 0 0 1px rgba(140,29,64,.22); }
+  .wb-icon-box { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-600; background: var(--pku-red-soft); color: var(--pku-red); }
   .wb-tag { @apply inline-flex rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-500; }
   .wb-empty { @apply flex min-h-[130px] items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 text-sm text-gray-500; }
   .wb-filter-chip { @apply rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-500; }
-  .wb-filter-chip-active { @apply border-blue-300 bg-blue-50 text-blue-700; }
+  .wb-filter-chip-active { border-color: var(--pku-red-border); background: var(--pku-red-soft); color: var(--pku-red-deep); }
   .wb-sample-card { @apply rounded-lg border bg-white p-3 transition-colors; border-color: var(--workbench-border); }
   .wb-radio-card { @apply flex items-start gap-3 rounded-lg border bg-white p-3 text-left text-gray-700; border-color: var(--workbench-border); }
   .wb-radio-card p { @apply mt-1 text-xs font-normal text-gray-500; }
