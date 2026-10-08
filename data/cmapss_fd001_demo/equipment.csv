@@ -1,0 +1,6 @@
+equipment_id,equipment_type,source_unit,description
+EQ001,TurbofanEngine,1,NASA C-MAPSS FD001 turbofan unit
+EQ002,TurbofanEngine,2,NASA C-MAPSS FD001 turbofan unit
+EQ003,TurbofanEngine,3,NASA C-MAPSS FD001 turbofan unit
+EQ004,TurbofanEngine,4,NASA C-MAPSS FD001 turbofan unit
+EQ005,TurbofanEngine,5,NASA C-MAPSS FD001 turbofan unit

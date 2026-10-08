@@ -1,21 +1,43 @@
 # 本体构筑工作台：Docker 与后端部署说明
 
-本文档对应分支 `factorynet-temporal-workbench`，用于本地完整演示。当前工作树的前端、后端、Celery、LiteLLM、数据库和本地模型均按本说明启动。
+本文档对应分支 `codex/merge-impact-chains`，用于本地完整演示。当前工作树的前端、后端、Celery、LiteLLM、数据库和本地模型均按本说明启动。
 
 当前版本入口：
 
-- GitHub 分支：[factorynet-temporal-workbench](https://github.com/Joeysoda/nano-ontoprompt/tree/factorynet-temporal-workbench)
+- GitHub 分支：[codex/merge-impact-chains](https://github.com/Joeysoda/nano-ontoprompt/tree/codex/merge-impact-chains)
 - 本地工作台：`http://127.0.0.1:15173/overview`
 - 本地后端健康检查：`http://127.0.0.1:18080/health`
 
+说明：GitHub 链接指向本分支的可部署代码。服务器通过 `git clone` 获取代码；不要把本机 `.env`、数据库卷或上传目录复制到 Git。
+
 注意：`127.0.0.1` 只对启动服务的这台电脑有效，不是公网链接。同学需要先按本文档在自己的电脑上部署，不能直接打开你电脑上的 localhost。
+
+当前分支的 PostgreSQL、对象存储和图数据库是 Docker 数据卷，不会随 Git 分支一起下载。只克隆代码不会自动得到你这台电脑里的历史数据；要复现完整演示，需要使用仓库内的固定样例导入脚本，或向维护该分支的人索取 PostgreSQL/对象存储/图数据库备份。不要把数据卷目录直接提交到 Git。
+
+## 0. 通过 SSH 登录部署服务器
+
+本文不保存任何服务器地址、端口、用户名或密码。请向服务器管理员确认 `<服务器地址>`、`<SSH端口>` 和 `<用户名>`，然后在本机终端执行：
+
+```bash
+ssh -o IdentitiesOnly=yes -p <SSH端口> <用户名>@<服务器地址>
+```
+
+看到 `password:` 提示后再输入密码；密码不会显示，也不要把密码写进命令、脚本、截图或 Git。登录后先确认目录和 Docker：
+
+```bash
+whoami
+docker version
+git --version
+```
+
+如果账号没有 Docker 权限，需要让管理员把账号加入 `docker` 用户组，重新登录后再继续。本文不包含服务器密码，也不假设当前电脑已经完成远程部署。
 
 ## 1. 运行边界
 
 - 目标：电脑浏览器本地演示，不做公网部署。
 - 认证：`docker-compose.local.yml` 显式启用 `AUTH_MODE=local_single_user`，打开网站后不需要用户名和密码，也不会出现登录页。
 - 绑定：演示端口只绑定 `127.0.0.1`，不会把数据库、对象存储或 LiteLLM 暴露到局域网。
-- 数据：不执行 `down -v`，不删除既有 PostgreSQL、Neo4j、MinIO 或 ChromaDB 数据卷。
+- 数据：不执行 `down -v`，不删除既有 PostgreSQL、Neo4j、MinIO 或 ChromaDB 数据卷。Git 只包含公开示例数据、迁移和导入脚本；不包含运行中的数据库备份。
 
 ## 2. 需要安装的内容
 
@@ -42,32 +64,53 @@ curl http://127.0.0.1:11434/api/tags
 ## 3. 获取代码与配置密钥
 
 ```bash
-git clone --branch factorynet-temporal-workbench \
+git clone --branch codex/merge-impact-chains \
   https://github.com/Joeysoda/nano-ontoprompt.git \
   nano-ontoprompt-workbench
 cd nano-ontoprompt-workbench
-cp .env.example .env
+./scripts/bootstrap_deployment.sh --seed-demo
 ```
 
-`.env` 已被 `.gitignore` 忽略。至少应修改以下值：
+上面最后一条命令会自动完成：生成本机 `.env` 和随机密钥、创建 PostgreSQL/FalkorDB 外部卷、构建并启动 Docker 服务、执行数据库迁移、导入并校验仓库内的公开 frePPLe 演示数据。脚本不会打印或上传密码，也不会把密钥写入 Git。重复运行是幂等的，不执行删除操作。
 
-```env
-ENVIRONMENT=development
-SECRET_KEY=<随机的长字符串>
-ENCRYPTION_KEY=<Fernet 密钥>
-FIRST_ADMIN_PASSWORD=<仅在 JWT 部署中使用的强密码>
-LITELLM_MASTER_KEY=<本地网关密钥>
-LITELLM_SALT_KEY=<本地网关盐值>
-MINIMAX_API_KEY=<轮换后的 M3 凭证；不用标准模式时留空>
-```
+如果暂时不导入 frePPLe 演示数据，可以运行 `./scripts/bootstrap_deployment.sh --no-seed`；之后再运行带 `--seed-demo` 的命令即可补充演示数据。
 
-生成 Fernet 密钥（只把输出写入自己的 `.env`，不要复制到 Git）：
+### 3.1 部署当前电脑上的未提交修复
+
+如果要让服务器与当前工作树完全一致，而不是只拿 GitHub 上最近一次提交，请在这台电脑的终端执行。命令不会同步 `.env`、Git 历史、依赖缓存或本地上传目录：
 
 ```bash
-python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+cd "/Users/nihou/Desktop/pku_security/proj4（ontology）/worktrees/merge-impact-chains"
+ssh -o IdentitiesOnly=yes -p <SSH端口> <用户名>@<服务器地址> "mkdir -p /srv/nano-ontoprompt-workbench"
+rsync -az \
+  --exclude .git \
+  --exclude .env \
+  --exclude frontend/node_modules \
+  --exclude backend/.venv \
+  --exclude uploads \
+  -e "ssh -o IdentitiesOnly=yes -p <SSH端口>" \
+  ./ <用户名>@<服务器地址>:/srv/nano-ontoprompt-workbench/
 ```
 
-本地 Compose 会覆盖数据库、Ollama、LiteLLM 和端口配置。不要把 `.env` 中的密码、令牌或 API Key 粘贴到 issue、截图或提交记录中。
+然后登录服务器并启动：
+
+```bash
+ssh -o IdentitiesOnly=yes -p <SSH端口> <用户名>@<服务器地址>
+cd /srv/nano-ontoprompt-workbench
+./scripts/bootstrap_deployment.sh --seed-demo
+```
+
+`rsync` 只同步代码，不会把本机 PostgreSQL、MinIO、FalkorDB 数据卷带到服务器；首次部署仍需执行下一节的演示数据导入，或由维护该分支的人提供经过校验的数据库/对象存储/图数据备份。
+
+`.env` 已被 `.gitignore` 忽略。脚本会自动生成以下值；只有在需要标准数据的 MiniMax M3 构建时，才由部署者在服务器本地补充 `MINIMAX_API_KEY`：
+
+```env
+BACKEND_AUTH_MODE=local_single_user
+FRONTEND_AUTH_MODE=local_single_user
+MINIMAX_API_KEY=<只保存在服务器 .env；不用标准模式时留空>
+```
+
+本地 Compose 会覆盖数据库、Ollama、LiteLLM 和端口配置。不要把 `.env` 中的密码、令牌或 API Key 粘贴到 issue、截图或提交记录中。首次部署无需向网页输入用户名和密码：本地模式直接进入工作台；`.env` 中生成的管理员密码仅为后端兼容配置，不作为网页登录凭证。
 
 ## 4. 启动完整 Docker 栈
 
@@ -91,6 +134,7 @@ docker compose \
 | `litellm` | 统一模型网关 | `14000` |
 | `db` | PostgreSQL 元数据 | `15432` |
 | `redis` | Celery 队列 | `16379` |
+| `falkordb` | 图投影存储 | `6381` |
 | `neo4j` | 图存储兼容服务 | `17474` / `17687` |
 | `minio` | 对象存储 | `19000` / `19001` |
 | `chromadb` | 向量检索兼容服务 | `18001` |
@@ -117,17 +161,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml \
 
 ### 4.1 FalkorDB 说明
 
-FalkorDB 不是 Compose 文件中的公共端口服务；没有它时，本体和动态数据模型仍可通过 PostgreSQL 事实回退运行。要启用原生图投影，可在宿主机额外启动一个本地实例：
-
-```bash
-docker volume create nano-ontoprompt_workbench_falkordb_data
-docker run -d --name nano-ontoprompt-falkordb --restart unless-stopped \
-  -p 127.0.0.1:6381:6379 \
-  -v nano-ontoprompt_workbench_falkordb_data:/data \
-  falkordb/falkordb:latest
-```
-
-然后在 `.env` 中确认：
+FalkorDB 已包含在 Compose 中，干净服务器执行上一节的启动命令即可自动启动，端口为 `6381`，数据卷为 `nano-ontoprompt_workbench_falkordb_data`。只有在宿主机已有其他服务占用 `6381` 时，才需要改用独立实例或调整端口；不要同时启动第二个同端口容器。若要让后端连接宿主机上的既有实例，再在 `.env` 中确认：
 
 ```env
 FALKORDB_HOST=host.docker.internal
@@ -179,6 +213,25 @@ curl 'http://127.0.0.1:18080/api/v2/model-routes/status?probe_local=true&probe_c
 新建本体在最终构建时创建；追加只能写入同一数据分类的已有本体新修订。构建完成后可在本体页面查看实体类型、真实实例、关系、逻辑规则、证据和质量审查。
 
 后台构建任务会持久化。常规和多模态页面的构建链接包含 `?run=<run_id>`，刷新后会恢复任务状态和结果卡片；时序构建使用独立任务详情页。
+
+### 6.1 导入情景推演固定样例
+
+新服务器上的数据库卷为空时，执行一次下面的幂等导入。样例文件和导入器都已随代码提供；重复执行不会创建第二份同名样例：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml \
+  cp data/frepple_demo/manufacturing_demo.json backend:/tmp/manufacturing_demo.json
+docker compose -f docker-compose.yml -f docker-compose.local.yml \
+  cp scripts/import_frepple_demo.py backend:/tmp/import_frepple_demo.py
+docker compose -f docker-compose.yml -f docker-compose.local.yml \
+  exec -T backend python /tmp/import_frepple_demo.py /tmp/manufacturing_demo.json
+docker compose -f docker-compose.yml -f docker-compose.local.yml \
+  cp scripts/verify_frepple_demo.py backend:/tmp/verify_frepple_demo.py
+docker compose -f docker-compose.yml -f docker-compose.local.yml \
+  exec -T backend python /tmp/verify_frepple_demo.py /tmp/manufacturing_demo.json
+```
+
+验证脚本应报告 `passed: true`。固定样例预期包含 363 个对象、903 条关系和 1,266 条证据；这些是演示数据，不是生产数据。
 
 ## 7. 任务与日志核验
 

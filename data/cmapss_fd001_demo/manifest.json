@@ -1,0 +1,19 @@
+{
+  "source": "NASA C-MAPSS FD001 train_FD001.txt",
+  "source_url": "https://phm-datasets.s3.amazonaws.com/NASA/6.+Turbofan+Engine+Degradation+Simulation+Data+Set.zip",
+  "source_member": "train_FD001.txt",
+  "license": "NASA public dataset; follow the source dataset terms",
+  "selection_algorithm": "按原始文件顺序选择前 5 台设备，每台前 20 个 cycle",
+  "units_requested": 5,
+  "cycles_requested_per_unit": 20,
+  "equipment_rows": 5,
+  "sensor_reading_rows": 100,
+  "files": {
+    "equipment": "equipment.csv",
+    "sensor_readings": "sensor_readings.csv"
+  },
+  "sha256": {
+    "equipment.csv": "b71ee1c30c71af37ac16591f87cc97f21a09221accbab1d9a6b0ffd4d387e343",
+    "sensor_readings.csv": "bdda1360c971e4f22ec29dbaef5aea767cbb36a25f6c22fb1af651f372ffd448"
+  }
+}

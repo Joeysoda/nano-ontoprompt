@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models.v2.dataset import Dataset, DatasetVersion
-from app.services.storage_service import StorageService, get_storage_service
+from app.services.storage_service import StorageService, get_storage_service, user_facing_storage_error
 
 
 class DatasetStorageError(RuntimeError):
@@ -16,7 +16,9 @@ class DatasetStorageError(RuntimeError):
         self.dataset_id = dataset_id
         self.storage_uri = storage_uri
         self.reason = reason
-        super().__init__(f"源文件不在当前对象存储：{reason}。可运行存储修复后重试")
+        # Keep the endpoint actionable even when MinIO returns a long English
+        # S3 error.  The original exception remains in server logs.
+        super().__init__(user_facing_storage_error(RuntimeError(reason), storage_uri))
 
 
 class DatasetService:

@@ -108,6 +108,54 @@ function stableColor(value: string) {
     hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
   return colors[Math.abs(hash) % colors.length];
 }
+
+const semanticColors: Record<string, string> = {
+  Episode: "#8b5cf6",
+  Observation: "#2563eb",
+  Machine: "#0f766e",
+  SensorChannel: "#64748b",
+  ProcessPhase: "#d97706",
+  ToolCondition: "#e11d48",
+  InspectionResult: "#16a34a",
+};
+
+function semanticKey(node: OntologyNode) {
+  return node.properties.name_en || node.id.split(":").pop() || "";
+}
+
+function semanticNodeColor(node: OntologyNode) {
+  return semanticColors[semanticKey(node)] || stableColor(String(node.properties.name || node.id));
+}
+
+function semanticGraphPositions(nodes: OntologyNode[]) {
+  const positions: Record<string, { x: number; y: number }> = {};
+  const slots: Record<string, { x: number; y: number }> = {
+    Machine: { x: 120, y: 300 },
+    Episode: { x: 390, y: 130 },
+    Observation: { x: 390, y: 330 },
+    SensorChannel: { x: 120, y: 530 },
+    ProcessPhase: { x: 680, y: 130 },
+    ToolCondition: { x: 680, y: 330 },
+    InspectionResult: { x: 680, y: 530 },
+  };
+  const fallback = { x: 900, y: 130 };
+  nodes.forEach((node, index) => {
+    const key = semanticKey(node);
+    positions[node.id] = slots[key] || { x: fallback.x, y: fallback.y + index * 100 };
+  });
+  return positions;
+}
+
+function uniqueVisualEdges(edges: OntologyEdge[]) {
+  const seen = new Set<string>();
+  return edges.filter((edge) => {
+    const key = `${edge.source}|${edge.target}|${edge.type || edge.label || ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function stringify(value: unknown) {
   if (value == null || value === "") return "—";
   if (
@@ -161,10 +209,14 @@ function PropertyRows({ properties }: { properties: PropertyDefinition[] }) {
   );
 }
 
-export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
+export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: string; dataClass?: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const [searchParams] = useSearchParams();
+  // The fixed semantic layout is specific to the FactoryNet temporal ontology.
+  // Other ontology types keep the original force-directed presentation so that
+  // multimodal evidence relationships are not forced into temporal slots.
+  const useTemporalLayout = dataClass === "temporal";
   const graphQuery = useQuery({ queryKey: ['ontology-graph', ontologyId], queryFn: ({ signal }) => apiClientV2.get<GraphData>(`/ontologies/${ontologyId}/graph`, { params: { view: 'ontology', limit: 1000 }, signal }) });
   const data = graphQuery.data;
   const loading = graphQuery.isPending;
@@ -198,20 +250,17 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
     () => new Map((data?.nodes || []).map((node) => [node.id, node])),
     [data],
   );
-  const relatedEdges = useMemo(
-    () =>
-      selectedNode
-        ? (data?.edges || []).filter(
-            (edge) =>
-              edge.source === selectedNode.id ||
-              edge.target === selectedNode.id,
-          )
-        : [],
-    [data, selectedNode],
-  );
+  const relatedEdges = useMemo(() => {
+    if (!selectedNode) return [];
+    const connected = (data?.edges || []).filter(
+      (edge) => edge.source === selectedNode.id || edge.target === selectedNode.id,
+    );
+    return useTemporalLayout ? uniqueVisualEdges(connected) : connected;
+  }, [data, selectedNode, useTemporalLayout]);
 
   useEffect(() => {
     if (!data || !containerRef.current) return;
+    const visualEdges = useTemporalLayout ? uniqueVisualEdges(data.edges) : data.edges;
     const elements = [
       ...data.nodes.map((node) => ({
         data: {
@@ -222,16 +271,20 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
               node.properties.name_en ||
               node.id,
           ).slice(0, 28),
-          color: stableColor(String(node.properties.name || node.id)),
+          color: useTemporalLayout
+            ? semanticNodeColor(node)
+            : stableColor(String(node.properties.name || node.id)),
           raw: node,
         },
       })),
-      ...data.edges.map((edge) => ({
+      ...visualEdges.map((edge) => ({
         data: {
           id: edge.id,
           source: edge.source,
           target: edge.target,
-          label: `${edge.label || edge.type}${edge.properties?.cardinality ? ` · ${edge.properties.cardinality}` : ""}`,
+          label: useTemporalLayout
+            ? edge.label || edge.type
+            : `${edge.label || edge.type}${edge.properties?.cardinality ? ` · ${edge.properties.cardinality}` : ""}`,
           raw: edge,
         },
       })),
@@ -266,16 +319,16 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
           selector: "edge",
           style: {
             label: "data(label)",
-            "font-size": "9px",
+            "font-size": useTemporalLayout ? "8px" : "9px",
             color: "#475569",
-            width: 1.5,
+            width: useTemporalLayout ? 1.25 : 1.5,
             "line-color": "#94a3b8",
             "target-arrow-color": "#94a3b8",
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
             "text-background-color": "#f8fafc",
             "text-background-opacity": 0.96,
-            "text-background-padding": "2px",
+            "text-background-padding": useTemporalLayout ? "3px" : "2px",
             "text-rotation": "autorotate",
           },
         },
@@ -303,16 +356,27 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
           },
         },
       ],
-      layout: {
-        name: "cose",
-        animate: false,
-        randomize: false,
-        componentSpacing: 100,
-        idealEdgeLength: 160,
-        nodeRepulsion: 8500,
-        numIter: 1400,
-      },
+      layout: useTemporalLayout
+        ? { name: "preset", fit: false }
+        : {
+            name: "cose",
+            animate: false,
+            randomize: false,
+            componentSpacing: 100,
+            idealEdgeLength: 160,
+            nodeRepulsion: 8500,
+            numIter: 1400,
+          },
     });
+    if (useTemporalLayout) {
+      const positions = semanticGraphPositions(data.nodes);
+      cy.nodes().forEach((node) => {
+        const position = positions[String(node.id())];
+        if (position) node.position(position);
+      });
+      cy.resize();
+      cy.fit(undefined, 54);
+    }
     cy.on("tap", "node", (event) =>
       setSelected({
         kind: "node",
@@ -329,11 +393,17 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
       if (event.target === cy) setSelected(null);
     });
     cyRef.current = cy;
+    const observer = useTemporalLayout ? new ResizeObserver(() => {
+      cy.resize();
+      cy.fit(undefined, 54);
+    }) : null;
+    observer?.observe(containerRef.current);
     return () => {
+      observer?.disconnect();
       cy.destroy();
       cyRef.current = null;
     };
-  }, [data, searchParams]);
+  }, [data, searchParams, useTemporalLayout]);
 
   useEffect(() => {
     const cy = cyRef.current;

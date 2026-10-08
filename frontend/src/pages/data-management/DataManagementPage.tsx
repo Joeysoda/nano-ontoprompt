@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { GitBranch, Table2, ArrowRight, CheckCircle, AlertTriangle, Clock, FileEdit, Activity, Images, Radio } from 'lucide-react'
 import pipelinesApi, { type Pipeline } from '@/api/v2/pipelines'
 import { apiClientV2 } from '@/api/client'
+import { DEFAULT_DYNAMIC_RUN_PATH } from '@/config/demoRoutes'
 
 interface CuratedDataset {
   id: string
@@ -63,14 +64,13 @@ export default function DataManagementPage() {
 
   return (
     <div className="wb-page max-w-[1320px]">
-      <div className="wb-page-header"><div><p className="wb-eyebrow">数据构筑</p><h1 className="wb-page-title mt-2">选择数据类型</h1><p className="wb-page-subtitle">常规、时序、多模态，或逐事件动态接收。</p></div></div>
-      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="wb-page-header"><div><p className="wb-eyebrow">数据工具</p><h1 className="wb-page-title mt-2">选择要查看的本体</h1><p className="wb-page-subtitle">时序和多模态数据可直接打开已有本体；动态数据构建用于逐条接收和暂停演示。</p></div></div>
+      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
         {[
-          { title: '常规数据', detail: 'CSV · Excel · JSON · 数据库表', icon: Table2, path: '/data/regular', tone: 'text-blue-700 bg-blue-50' },
-          { title: '时序数据', detail: 'FactoryNet · 时间轴 · 序列语义', icon: Activity, path: '/data/temporal', tone: 'text-teal-700 bg-teal-50' },
-          { title: '动态数据构建', detail: 'FactoryNet · 逐事件实时接收', icon: Radio, path: '/data/dynamic', tone: 'text-amber-700 bg-amber-50' },
-          { title: '多模态数据', detail: 'RGB · 深度 · 掩码 · 点云', icon: Images, path: '/data/multimodal', tone: 'text-violet-700 bg-violet-50' },
-        ].map(({ title, detail, icon: Icon, path, tone }) => <button key={title} type="button" onClick={() => navigate(path)} className="wb-choice-card flex items-start gap-3 text-left hover:border-gray-400"><span className={`flex h-10 w-10 items-center justify-center rounded-lg ${tone}`}><Icon size={18} /></span><span><strong className="text-sm">{title}</strong><span className="mt-1 block text-xs text-gray-500">{detail}</span><span className="mt-3 inline-flex items-center gap-1 text-xs text-gray-500">进入向导 <ArrowRight size={12} /></span></span></button>)}
+          { title: '时序数据', detail: 'FactoryNet · 时间轴 · 序列语义', action: '打开本体', icon: Activity, path: '/data/temporal', tone: 'text-teal-700 bg-teal-50' },
+          { title: '动态数据构建', detail: 'FactoryNet · 逐事件实时接收', action: '打开演示', icon: Radio, path: DEFAULT_DYNAMIC_RUN_PATH, tone: 'text-amber-700 bg-amber-50' },
+          { title: '多模态数据', detail: 'RGB · 深度 · 掩码 · 点云', action: '打开本体', icon: Images, path: '/data/multimodal', tone: 'text-violet-700 bg-violet-50' },
+        ].map(({ title, detail, action, icon: Icon, path, tone }) => <button key={title} type="button" onClick={() => navigate(path)} className="wb-choice-card flex items-start gap-3 text-left hover:border-gray-400"><span className={`flex h-10 w-10 items-center justify-center rounded-lg ${tone}`}><Icon size={18} /></span><span><strong className="text-sm">{title}</strong><span className="mt-1 block text-xs text-gray-500">{detail}</span><span className="mt-3 inline-flex items-center gap-1 text-xs text-gray-500">{action} <ArrowRight size={12} /></span></span></button>)}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

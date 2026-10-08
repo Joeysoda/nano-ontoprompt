@@ -14,10 +14,10 @@ import {
   Network,
   Radio,
   Settings,
-  Table2,
 } from 'lucide-react'
 import HelpFAQ from '@/components/HelpFAQ'
 import { useAuthStore } from '@/stores/authStore'
+import { DEFAULT_DYNAMIC_RUN_PATH } from '@/config/demoRoutes'
 
 interface SubItem { to: string; icon: React.ElementType; label: string; hint: string }
 interface NavItem { to: string; icon: React.ElementType; label: string; subItems?: SubItem[] }
@@ -32,16 +32,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [dataOpen, setDataOpen] = useState(true)
 
   const navItems: NavItem[] = [
-    { to: '/what-if', icon: FlaskConical, label: 'What-if / Scenarios' },
-    { to: '/scenarios', icon: FlaskConical, label: '通用 Scenario' },
     { to: '/overview', icon: LayoutDashboard, label: '总览' },
+    { to: '/what-if', icon: FlaskConical, label: '情景推演' },
+    { to: '/scenarios', icon: FlaskConical, label: '通用情景' },
     {
-      to: '/data', icon: Database, label: '数据构筑',
+      to: '/data', icon: Database, label: '数据工具',
       subItems: [
-        { to: '/data/regular', icon: Table2, label: '常规数据', hint: '表格与数据库' },
-        { to: '/data/temporal', icon: Activity, label: '时序数据', hint: '序列与时间轴' },
-        { to: '/data/dynamic', icon: Radio, label: '动态数据构建（实验）', hint: 'FactoryNet 逐事件演示' },
-        { to: '/data/multimodal', icon: Images, label: '多模态数据', hint: '图像、深度与点云' },
+        { to: '/data/temporal', icon: Activity, label: '时序数据', hint: '直接查看本体' },
+        { to: DEFAULT_DYNAMIC_RUN_PATH, icon: Radio, label: '动态数据构建', hint: '开始、暂停与逐事件演示' },
+        { to: '/data/multimodal', icon: Images, label: '多模态数据', hint: '直接查看本体' },
       ],
     },
     { to: '/ontologies', icon: Network, label: '本体库' },
@@ -49,7 +48,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/settings', icon: Settings, label: '设置' },
   ]
 
-  const isActive = (to: string) => location.pathname === to || location.pathname.startsWith(`${to}/`)
+  const isActive = (to: string) => {
+    const path = to.split('?')[0]
+    return location.pathname === path || location.pathname.startsWith(`${path}/`)
+  }
 
   return (
     <div className="min-h-screen bg-[var(--workbench-canvas)]">

@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ontoprompt
-      POSTGRES_USER: ontoprompt
-      POSTGRES_PASSWORD: ontoprompt
+      POSTGRES_DB: ${POSTGRES_DB:?run scripts/bootstrap_deployment.sh first}
+      POSTGRES_USER: ${POSTGRES_USER:?run scripts/bootstrap_deployment.sh first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/bootstrap_deployment.sh first}
     ports: ["5432:5432"]
     volumes:
       # Keep the established project database volume; changing this name
@@ -59,14 +59,14 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     environment:
       # Use a dedicated DB — do NOT share .env DATABASE_URL with ontoprompt
-      DATABASE_URL: postgresql://ontoprompt:ontoprompt@db:5432/litellm
+      DATABASE_URL: postgresql://${POSTGRES_USER:?run scripts/bootstrap_deployment.sh first}:${POSTGRES_PASSWORD:?run scripts/bootstrap_deployment.sh first}@db:5432/litellm
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
-      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:-}
-      UI_USERNAME: ${UI_USERNAME:-admin}
-      UI_PASSWORD: ${UI_PASSWORD:-}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?run scripts/bootstrap_deployment.sh first}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?run scripts/bootstrap_deployment.sh first}
+      UI_USERNAME: ${UI_USERNAME:?run scripts/bootstrap_deployment.sh first}
+      UI_PASSWORD: ${UI_PASSWORD:?run scripts/bootstrap_deployment.sh first}
     restart: unless-stopped
 
   frontend:
@@ -81,7 +81,7 @@ services:
   neo4j:
     image: neo4j:5-community
     environment:
-      NEO4J_AUTH: neo4j/ontoprompt123
+      NEO4J_AUTH: ${NEO4J_USER:?run scripts/bootstrap_deployment.sh first}/${NEO4J_PASSWORD:?run scripts/bootstrap_deployment.sh first}
     ports:
       - "7474:7474"
       - "7687:7687"
@@ -91,8 +91,8 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?run scripts/bootstrap_deployment.sh first}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?run scripts/bootstrap_deployment.sh first}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -119,6 +119,9 @@ volumes:
     name: nano-ontoprompt_pg_data
   neo4j_data:
   minio_data:
+    # 继续使用已恢复的对象存储卷；新机器可通过 MINIO_DATA_VOLUME
+    # 指定自己的卷名，避免把已有数据误挂到空卷。
+    name: ${MINIO_DATA_VOLUME:-nano-temporal-demo_minio_data}
   chroma_data:
   falkordb_data:
     external: true

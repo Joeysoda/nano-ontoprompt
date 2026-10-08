@@ -3,9 +3,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ontoprompt
-      POSTGRES_USER: ontoprompt
-      POSTGRES_PASSWORD: ontoprompt
+      POSTGRES_DB: ${POSTGRES_DB:?run scripts/bootstrap_deployment.sh first}
+      POSTGRES_USER: ${POSTGRES_USER:?run scripts/bootstrap_deployment.sh first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/bootstrap_deployment.sh first}
     ports: ["5432:5432"]
     volumes: [pg_data:/var/lib/postgresql/data]
     healthcheck:
@@ -39,7 +39,7 @@ services:
       - "7474:7474"
       - "7687:7687"
     environment:
-      NEO4J_AUTH: neo4j/ontoprompt123
+      NEO4J_AUTH: ${NEO4J_USER:?run scripts/bootstrap_deployment.sh first}/${NEO4J_PASSWORD:?run scripts/bootstrap_deployment.sh first}
     volumes: [neo4j_data:/data]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
@@ -53,8 +53,8 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?run scripts/bootstrap_deployment.sh first}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?run scripts/bootstrap_deployment.sh first}
     volumes: [minio_data:/data]
     command: server /data --console-address ":9001"
     healthcheck:

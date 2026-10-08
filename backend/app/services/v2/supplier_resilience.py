@@ -150,9 +150,9 @@ def calculate(snapshot, profile, scenario_time, scope_items=WOOD):
         ("inventory_consumed", "Inventory consumed", round(inventory_consumed, 2), "source units"),
         ("purchase_quantity", "Purchase quantity", round(total_purchase, 2), "source units"),
     ]
-    warnings = [{"code": "source_units_unspecified", "severity": "warning", "message": "Fixture wood units are source-defined; costs use synthetic cost units."}]
+    warnings = [{"code": "source_units_unspecified", "severity": "warning", "message": "样例中的木材单位沿用来源定义；成本使用演示用合成单位。"}]
     if quantity_short:
-        warnings.append({"code": "supplier_capacity", "severity": "warning", "message": f"{quantity_short:.2f} wood units exceed available supply."})
+        warnings.append({"code": "supplier_capacity", "severity": "warning", "message": f"{quantity_short:.2f} 个木材单位超过可用供应量。"})
     return {"demand_impacts": impacts, "supply_plan": [{"item": item, "supplier": profile["supplier"],
             "gross_required": round(gross[item], 2), "inventory": round(inventory[item], 2), "purchase_quantity": purchase[item],
             "lead_days": profile["lead_days"][item], "minimum_order": profile["minimum_order"][item],

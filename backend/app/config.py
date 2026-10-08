@@ -8,10 +8,10 @@ class Settings(BaseSettings):
     auth_mode: str = "jwt"  # local_single_user | jwt
     database_url: str = "sqlite:///./ontoprompt.db"
     redis_url: str = "redis://localhost:6379/0"
-    secret_key: str = "dev-secret-key"
+    secret_key: str = ""
     encryption_key: str = ""
     first_admin_user: str = "admin"
-    first_admin_password: str = "admin123"
+    first_admin_password: str = ""
     uploads_dir: str = "./uploads"
     access_token_expire_minutes: int = 1440  # 24h
 
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # v2 — Neo4j
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
-    neo4j_password: str = "ontoprompt123"
+    neo4j_password: str = ""
 
     # Industrial demonstrator graph backend. The platform-side Compose stack
     # Host tests use 127.0.0.1:6381; Docker Compose uses falkordb:6379.
@@ -37,8 +37,8 @@ class Settings(BaseSettings):
 
     # v2 — MinIO
     minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = "minioadmin"
-    minio_secret_key: str = "minioadmin"
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
     minio_use_ssl: bool = False
 
     # v2 — ChromaDB
@@ -52,11 +52,11 @@ settings = Settings()
 # 生产环境禁止使用默认凭据 — 启动即失败, 避免带默认密钥上线
 if settings.environment == "production":
     _insecure = []
-    if settings.secret_key == "dev-secret-key":
+    if not settings.secret_key:
         _insecure.append("SECRET_KEY")
-    if settings.first_admin_password == "admin123":
+    if not settings.first_admin_password:
         _insecure.append("FIRST_ADMIN_PASSWORD")
-    if settings.minio_access_key == "minioadmin" or settings.minio_secret_key == "minioadmin":
+    if not settings.minio_access_key or not settings.minio_secret_key:
         _insecure.append("MINIO_ACCESS_KEY/MINIO_SECRET_KEY")
     if not settings.encryption_key:
         _insecure.append("ENCRYPTION_KEY")

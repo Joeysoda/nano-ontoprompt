@@ -269,6 +269,16 @@ export default function DynamicDataPage() {
     }
   }, []);
 
+  // A fresh checkout has no database UUID to reuse. Mark the entry as a new
+  // demo so the server creates its own FactoryNet run instead of relying on a
+  // run ID from another machine. Existing run_id links remain bookmarkable.
+  useEffect(() => {
+    if (params.get("run_id") || params.get("new") === "1") return;
+    const next = new URLSearchParams(params);
+    next.set("new", "1");
+    setParams(next, { replace: true });
+  }, [params, setParams]);
+
   const loadGraph = useCallback(async (current: Run) => {
     const at = showHistory && historyAt !== null ? historyAt : undefined;
     return loadAllGraph(current.id, {
@@ -344,6 +354,7 @@ export default function DynamicDataPage() {
     try {
       const created = await apiClientV2.post<Run>("/dynamic-data/demo-sessions", { speed: 1 });
       const next = new URLSearchParams(params);
+      next.delete("new");
       next.set("run_id", created.id || created.run_id || "");
       setParams(next);
     } catch (reason) {
@@ -353,8 +364,42 @@ export default function DynamicDataPage() {
     }
   };
 
+  const createFreshAndStart = async (action: "start" | "step") => {
+    setBusy("restart");
+    setError("");
+    try {
+      const created = await apiClientV2.post<Run>("/dynamic-data/demo-sessions", {
+        speed,
+        episode_id: run?.episode_ids?.[0] || undefined,
+      });
+      const freshId = created.id || created.run_id || "";
+      if (!freshId) throw new Error("新演示运行未返回运行 ID");
+      const started = await apiClientV2.post<Run>(`/temporal-streams/${freshId}/control`, {
+        action,
+        speed,
+      });
+      const next = new URLSearchParams(params);
+      next.delete("new");
+      next.set("run_id", freshId);
+      setRun(started);
+      setGraph(null);
+      setSelectedNode(null);
+      setSelectedEdge(null);
+      setHistoryAt(null);
+      setParams(next, { replace: true });
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setBusy("");
+    }
+  };
+
   const control = async (action: string) => {
     if (!run) return;
+    if (["cancelled", "failed"].includes(run.status) && (action === "start" || action === "step")) {
+      await createFreshAndStart(action);
+      return;
+    }
     setBusy(action);
     setError("");
     try {
@@ -383,6 +428,7 @@ export default function DynamicDataPage() {
   const restartDemo = () => {
     const next = new URLSearchParams(params);
     next.delete("run_id");
+    next.set("new", "1");
     setRun(null);
     setGraph(null);
     setSelectedNode(null);
@@ -400,6 +446,7 @@ export default function DynamicDataPage() {
   const first = run?.first_received_ordinal ?? null;
   const latest = run?.watermark_ordinal ?? run?.current_ordinal ?? null;
   const live = run && ["created", "queued", "running", "pausing", "paused"].includes(run.status);
+  const restartable = run && ["cancelled", "failed"].includes(run.status);
   const statusTone = run?.status === "failed" ? "text-red-700 bg-red-50 border-red-200" : run?.status === "completed" || run?.status === "published" ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-slate-700 bg-slate-50 border-slate-200";
 
   if (!runId || !run) {
@@ -457,11 +504,11 @@ export default function DynamicDataPage() {
       <section className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 ${statusTone}`}>
         <div className="flex items-center gap-3">
           <span className={`h-3 w-3 rounded-full ${live && run.status !== "paused" ? "animate-pulse bg-emerald-500" : run.status === "failed" ? "bg-red-500" : "bg-slate-400"}`} />
-          <div><strong className="text-sm">{statusText[run.status] || run.status}</strong><p className="mt-0.5 text-[11px] opacity-80">{run.error || (run.status === "created" ? "点击开始后接收第一条数据" : run.status === "completed" ? "当前运行已接收完来源数据" : "只显示已经到达的事实")}</p></div>
+          <div><strong className="text-sm">{restartable ? "可以重新开始" : statusText[run.status] || run.status}</strong><p className="mt-0.5 text-[11px] opacity-80">{restartable ? "原运行已保留；点击重新开始会创建一个新的动态演示。" : run.error || (run.status === "created" ? "点击开始后接收第一条数据" : run.status === "completed" ? "当前运行已接收完来源数据" : "只显示已经到达的事实")}</p></div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-xs">速度<select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="ml-1 rounded border border-current/20 bg-white/70 px-2 py-1"><option value={0.5}>0.5 条/秒</option><option value={1}>1 条/秒</option><option value={2}>2 条/秒</option><option value={5}>5 条/秒</option><option value={10}>10 条/秒</option><option value={20}>20 条/秒</option></select></label>
-          <button disabled={!!busy || !["created", "paused", "queued"].includes(run.status)} onClick={() => void control(run.status === "paused" ? "resume" : "start")} className="rounded border border-current/20 bg-white/70 px-2.5 py-1.5 text-xs disabled:opacity-40"><Play size={12} className="mr-1 inline" />{run.status === "paused" ? "继续" : "开始"}</button>
+          <button disabled={!!busy || (!restartable && !["created", "paused", "queued"].includes(run.status))} onClick={() => void control(run.status === "paused" ? "resume" : "start")} className="rounded border border-current/20 bg-white/70 px-2.5 py-1.5 text-xs disabled:opacity-40"><Play size={12} className="mr-1 inline" />{restartable ? "重新开始" : run.status === "paused" ? "继续" : "开始"}</button>
           <button disabled={!!busy || !["running", "pausing"].includes(run.status)} onClick={() => void control("pause")} className="rounded border border-current/20 bg-white/70 px-2.5 py-1.5 text-xs disabled:opacity-40"><CirclePause size={12} className="mr-1 inline" />暂停</button>
           <button disabled={!!busy || !["created", "paused"].includes(run.status)} onClick={() => void control("step")} className="rounded border border-current/20 bg-white/70 px-2.5 py-1.5 text-xs disabled:opacity-40"><SkipForward size={12} className="mr-1 inline" />单步</button>
           <button disabled={!!busy || ["completed", "published", "failed", "cancelled"].includes(run.status)} onClick={() => void control("cancel")} className="rounded border border-red-300 bg-white/70 px-2.5 py-1.5 text-xs text-red-700 disabled:opacity-40"><Square size={11} className="mr-1 inline" />取消</button>

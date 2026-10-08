@@ -74,26 +74,26 @@ class RetryCommand(StrictBody):
 def _study(db, user, ontology_id, study_id):
     row = db.get(ScenarioStudy, study_id)
     if not row or row.ontology_id != ontology_id:
-        raise HTTPException(404, "Study not found")
+        raise HTTPException(404, "未找到研究")
     if user.role != "admin" and row.owner_id != user.id:
-        raise HTTPException(403, "Study access denied")
+        raise HTTPException(403, "没有研究访问权限")
     return row
 
 
 def _case(db, study, case_id):
     row = db.get(ScenarioStudyCase, case_id)
     if not row or row.study_id != study.id or db.get(ScenarioResource, row.scenario_id).status != "active":
-        raise HTTPException(404, "Case not found")
+        raise HTTPException(404, "未找到情景")
     return row
 
 
 def _snapshot(db, view_id, ontology_id):
     view = db.get(QueryDataView, view_id)
     if not view or view.ontology_id != ontology_id or view.status != "ready":
-        raise HTTPException(409, "Pinned QueryDataView is not ready")
+        raise HTTPException(409, "固定数据视图尚未就绪")
     graph = FalkorDBService()
     if not graph.available:
-        raise HTTPException(503, "FalkorDB unavailable")
+        raise HTTPException(503, "图数据库不可用")
     return FalkorReadAdapter(graph._graph(view.graph_key), graph_ontology_id=view.graph_key).read(ontology_id)
 
 
@@ -118,7 +118,7 @@ def _latest_compatible_run(db, case, compatibility, run_id=None):
         ScenarioRun.created_at.desc()
     ).first()
     if run_id and not run:
-        raise HTTPException(409, "Pinned Run is not compatible with this Case context")
+        raise HTTPException(409, "固定运行与当前情景上下文不兼容")
     if not run:
         return None, "no_compatible_result"
     manifest_view = (run.result_manifest or {}).get("provenance", {}).get("result_view_id")
@@ -222,10 +222,10 @@ def get_study(ontology_id: str, study_id: str, db=Depends(get_db), user=Depends(
 def rename_study(ontology_id: str, study_id: str, body: Rename, db=Depends(get_db), user=Depends(get_current_user)):
     study = _study(db, user, ontology_id, study_id)
     if study.etag != body.etag:
-        raise HTTPException(409, "Study changed; reload before renaming")
+        raise HTTPException(409, "研究已变化，请刷新后再重命名")
     study.name = body.name.strip()
     if not study.name:
-        raise HTTPException(422, "Study name cannot be blank")
+        raise HTTPException(422, "研究名称不能为空")
     study.etag += 1
     study.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -238,20 +238,20 @@ def create_case(ontology_id: str, study_id: str, body: CreateCase,
     study = _study(db, user, ontology_id, study_id)
     name = body.name.strip()
     if not name:
-        raise HTTPException(422, "Case name cannot be blank")
+        raise HTTPException(422, "情景名称不能为空")
     cases = db.query(ScenarioStudyCase).filter_by(study_id=study.id).all()
     if any(case.display_name.casefold() == name.casefold() and
            db.get(ScenarioResource, case.scenario_id).status == "active" for case in cases):
-        raise HTTPException(409, "Case name already exists")
+        raise HTTPException(409, "情景名称已存在")
     if body.source_case_id:
         source = _case(db, study, body.source_case_id)
         if source.case_kind == "baseline":
-            raise HTTPException(422, "Choose a candidate Case as the profile source")
+            raise HTTPException(422, "请选择一个候选情景作为配置来源")
     else:
         source = next((case for case in cases if case.case_kind == "candidate" and
                        db.get(ScenarioResource, case.scenario_id).status == "active"), None)
         if source is None:
-            raise HTTPException(409, "A candidate profile is required")
+            raise HTTPException(409, "需要候选情景配置")
     profile = dict(source.submitted_parameters)
     validate_profile(profile)
     scenario = ScenarioResource(ontology_id=ontology_id, owner_id=user.id, name=name,
@@ -276,13 +276,13 @@ def rename_case(ontology_id: str, study_id: str, case_id: str, body: RenameCase,
     study = _study(db, user, ontology_id, study_id)
     case = _case(db, study, case_id)
     if case.etag != body.etag:
-        raise HTTPException(409, "Case changed; reload before renaming")
+        raise HTTPException(409, "情景已变化，请刷新后再重命名")
     name = body.name.strip()
     if not name:
-        raise HTTPException(422, "Case name cannot be blank")
+        raise HTTPException(422, "情景名称不能为空")
     if db.query(ScenarioStudyCase).filter_by(study_id=study.id, display_name=name).filter(
             ScenarioStudyCase.id != case.id).first():
-        raise HTTPException(409, "Case name already exists")
+        raise HTTPException(409, "情景名称已存在")
     case.display_name = name
     case.etag += 1
     scenario = db.get(ScenarioResource, case.scenario_id)
@@ -301,11 +301,11 @@ def archive_case(ontology_id: str, study_id: str, case_id: str, body: ArchiveCas
     study = _study(db, user, ontology_id, study_id)
     case = _case(db, study, case_id)
     if case.case_kind == "baseline" or db.get(ScenarioResource, case.scenario_id).protected_demo:
-        raise HTTPException(422, "Prepared Cases cannot be archived")
+        raise HTTPException(422, "准备好的演示情景不能归档")
     if case.etag != body.etag:
-        raise HTTPException(409, "Case changed; reload before archiving")
+        raise HTTPException(409, "情景已变化，请刷新后再归档")
     if db.query(ScenarioRun).filter_by(case_id=case.id).filter(ScenarioRun.status.in_(["queued", "running"])).first():
-        raise HTTPException(409, "Wait for the active Run to finish")
+        raise HTTPException(409, "请等待当前运行完成")
     scenario = db.get(ScenarioResource, case.scenario_id)
     scenario.status = "archived"
     scenario.etag += 1
@@ -326,9 +326,9 @@ def case_graph(ontology_id: str, study_id: str, case_id: str,
     compatibility = _compatibility(study, db.get(QueryDataView, study.base_view_id))
     context = _context_ref(db, study, case, compatibility, run_id)
     if context_token and context_token != context["context_token"]:
-        raise HTTPException(409, "Scenario context is stale; reload the Study")
+        raise HTTPException(409, "情景上下文已过期，请刷新研究")
     if context["selection_reason"] == "inconsistent_result_view":
-        raise HTTPException(409, "Run result view provenance is inconsistent")
+        raise HTTPException(409, "运行结果视图来源不一致")
     view_id = context["selected_result_view_id"] or context["revision_view_id"]
     snapshot = _snapshot(db, view_id, ontology_id)
     kinds = {"Supplier", "SupplyOption", "Item", "Demand", "Operation", "MaterialRequirement", "Inventory", "DemandImpact"}
@@ -346,20 +346,20 @@ def case_graph(ontology_id: str, study_id: str, case_id: str,
 def update_options(ontology_id: str, study_id: str, body: Options, db=Depends(get_db), user=Depends(get_current_user)):
     study = _study(db, user, ontology_id, study_id)
     if study.etag != body.etag:
-        raise HTTPException(409, "Study changed; reload before editing")
+        raise HTTPException(409, "研究已变化，请刷新后再编辑")
     if body.smoothing_minutes != 0:
-        raise HTTPException(422, "Non-zero smoothing is not supported by this model")
+        raise HTTPException(422, "当前模型不支持非零平滑")
     try:
         anchor = datetime.fromisoformat(body.scenario_time.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise HTTPException(422, "Invalid scenario time") from exc
+        raise HTTPException(422, "情景时间无效") from exc
     if not datetime(2021, 1, 1) <= anchor.replace(tzinfo=None) <= datetime(2021, 12, 31):
-        raise HTTPException(422, "Scenario time must remain in the pinned fixture year")
+        raise HTTPException(422, "情景时间必须位于固定样例年份内")
     if not body.scope_items or not set(body.scope_items) <= set(WOOD):
-        raise HTTPException(422, "Scope must contain one or both wood materials")
+        raise HTTPException(422, "范围必须包含一种或两种木材")
     allowed = {"lead_days", "minimum_order", "order_multiple", "capacity", "cost_multiplier"}
     if not set(body.parameter_projection) <= allowed:
-        raise HTTPException(422, "Unknown parameter projection")
+        raise HTTPException(422, "未知的参数投影")
     study.scenario_time = body.scenario_time
     study.scope_definition = {"kind": "objects_on_graph", "items": body.scope_items}
     study.scope_hash = stable_hash(study.scope_definition)
@@ -377,20 +377,20 @@ def submit_action(ontology_id: str, study_id: str, case_id: str, body: Submit,
     study = _study(db, user, ontology_id, study_id)
     case = _case(db, study, case_id)
     if case.case_kind == "baseline":
-        raise HTTPException(422, "Baseline has no Action")
+        raise HTTPException(422, "基线方案没有操作")
     prior = db.query(ScenarioChangeSet).filter_by(scenario_id=case.scenario_id,
                                                    client_request_id=body.client_request_id).first()
     if prior:
         prior_profile = prior.ordered_edits[0].get("parameters", {}) if prior.ordered_edits else {}
         if stable_hash(prior_profile) != stable_hash(body.parameters):
-            raise HTTPException(409, "Action request ID was used with different parameters")
+            raise HTTPException(409, "操作请求编号已用于其他参数")
         revision = db.get(ScenarioRevision, prior.validation_report.get("revision_id"))
         return {"case": next(item for item in _view(db, study)["cases"] if item["id"] == case.id),
                 "revision": revision.revision, "changeset_id": revision.changeset_id}
     if body.etag != case.etag:
-        raise HTTPException(409, "Case changed; reload before submitting")
+        raise HTTPException(409, "情景已变化，请刷新后再提交")
     if body.action_key != "replace_wood_supplier_v1":
-        raise HTTPException(422, "Unsupported Action")
+        raise HTTPException(422, "不支持的操作")
     try:
         validate_profile(body.parameters)
         scenario = ScenarioService(db, ontology_id, user).get(case.scenario_id, write=True)
@@ -445,18 +445,18 @@ def start_run(ontology_id: str, study_id: str, case_id: str, body: RunCommand,
     study = _study(db, user, ontology_id, study_id)
     case = _case(db, study, case_id)
     if case.etag != body.etag:
-        raise HTTPException(409, "Case changed; reload before running")
+        raise HTTPException(409, "情景已变化，请刷新后再运行")
     if case.case_kind != "baseline" and case.definition_revision == 0:
-        raise HTTPException(409, "Submit the candidate Action before Run")
+        raise HTTPException(409, "请先提交候选操作再运行")
     view = db.get(QueryDataView, study.base_view_id)
     if not view or view.status != "ready":
-        raise HTTPException(409, "Base view unavailable")
+        raise HTTPException(409, "基础视图不可用")
     compatibility = _compatibility(study, view)
     existing_request = db.query(ScenarioRun).filter_by(case_id=case.id, client_request_id=body.client_request_id).first()
     if existing_request:
         if (existing_request.case_definition_revision != case.definition_revision
                 or existing_request.compatibility_hash != compatibility):
-            raise HTTPException(409, "Run request ID was used with different inputs")
+            raise HTTPException(409, "运行请求编号已用于其他输入")
         return _run_json(db, existing_request)
     dependency = None
     if case.case_kind != "baseline":
@@ -471,7 +471,7 @@ def start_run(ontology_id: str, study_id: str, case_id: str, body: RunCommand,
             existing = None
         if not existing:
             if not study.run_baseline_sim:
-                raise HTTPException(409, "A compatible Baseline run is required")
+                raise HTTPException(409, "需要兼容的基线运行")
             queued = db.query(ScenarioRun).filter_by(case_id=baseline.id, compatibility_hash=compatibility).filter(
                 ScenarioRun.status.in_(["queued", "running"])).order_by(ScenarioRun.created_at.desc()).first()
             existing = queued or _enqueue(db, user, study, baseline, compatibility)
@@ -484,7 +484,7 @@ def start_run(ontology_id: str, study_id: str, case_id: str, body: RunCommand,
 def get_run(ontology_id: str, run_id: str, db=Depends(get_db), user=Depends(get_current_user)):
     run = db.get(ScenarioRun, run_id)
     if not run or not run.study_id:
-        raise HTTPException(404, "Run not found")
+        raise HTTPException(404, "未找到运行")
     _study(db, user, ontology_id, run.study_id)
     return _run_json(db, run)
 
@@ -493,7 +493,7 @@ def get_run(ontology_id: str, run_id: str, db=Depends(get_db), user=Depends(get_
 def cancel_run(ontology_id: str, run_id: str, db=Depends(get_db), user=Depends(get_current_user)):
     run = db.get(ScenarioRun, run_id)
     if not run or not run.study_id:
-        raise HTTPException(404, "Run not found")
+        raise HTTPException(404, "未找到运行")
     _study(db, user, ontology_id, run.study_id)
     if run.status in ("queued", "running"):
         run.cancel_requested = True
@@ -505,10 +505,10 @@ def cancel_run(ontology_id: str, run_id: str, db=Depends(get_db), user=Depends(g
 def retry_run(ontology_id: str, run_id: str, body: RetryCommand, db=Depends(get_db), user=Depends(get_current_user)):
     previous = db.get(ScenarioRun, run_id)
     if not previous or not previous.study_id:
-        raise HTTPException(404, "Run not found")
+        raise HTTPException(404, "未找到运行")
     study = _study(db, user, ontology_id, previous.study_id)
     if previous.status not in {"failed", "cancelled"}:
-        raise HTTPException(409, "Only a failed or cancelled Run can be retried")
+        raise HTTPException(409, "只有失败或已取消的运行可以重试")
     case = _case(db, study, previous.case_id)
     result = start_run(ontology_id, study.id, case.id,
                        RunCommand(etag=case.etag, client_request_id=body.client_request_id), db, user)

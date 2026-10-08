@@ -16,10 +16,10 @@ type ActionRun = { id: string; status: string; action_type_id: string; error?: s
 function message(error: unknown): string {
   const status = getApiErrorStatus(error);
   const fallback: Record<number, string> = {
-    403: '没有执行此 Action 的权限',
+    403: '没有执行此操作的权限',
     409: '对象已变化，请刷新后重新预览',
-    410: 'Action 上下文已过期，请重新打开对象',
-    503: 'Action 服务暂不可用，请稍后重试',
+    410: '操作上下文已过期，请重新打开对象',
+    503: '操作服务暂不可用，请稍后重试',
   };
   if (error && typeof error === 'object' && 'response' in error) {
     const response = (error as { response?: { data?: { detail?: unknown } } }).response;
@@ -27,7 +27,7 @@ function message(error: unknown): string {
     if (typeof detail === 'string') return detail;
     if (detail && typeof detail === 'object') {
       const record = detail as { message?: string; error?: string };
-      return record.message || record.error || 'Action 未通过校验';
+      return record.message || record.error || '操作未通过校验';
     }
   }
   if (error && typeof error === 'object') {
@@ -42,7 +42,7 @@ function message(error: unknown): string {
     if (typeof payload.error === 'string') return payload.error;
   }
   if (status && fallback[status]) return fallback[status];
-  return error instanceof Error ? error.message : 'Action 未通过校验';
+  return error instanceof Error ? error.message : '操作未通过校验';
 }
 
 export default function ObjectActionRunner({ ontologyId, object, onClose, onCommitted }: {
@@ -121,7 +121,7 @@ export default function ObjectActionRunner({ ontologyId, object, onClose, onComm
     try {
       await apiClientV2.post(`/ontologies/${ontologyId}/actions/${action.id}/run`, payload);
       setPreview(null);
-      onCommitted?.('Action 已提交到 live。');
+      onCommitted?.('操作已提交到正式数据。');
       onClose();
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
@@ -136,11 +136,11 @@ export default function ObjectActionRunner({ ontologyId, object, onClose, onComm
   }
 
   return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section role="dialog" aria-modal="true" aria-label="执行对象 Action" className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
-      <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold">执行 Action</h2><p className="text-xs text-slate-500">{object.object_type} · {object.object_id} · live</p></div><button type="button" onClick={onClose} aria-label="关闭 Action">×</button></div>
-      <label className="mt-4 block text-sm">Action
+    <section role="dialog" aria-modal="true" aria-label="执行对象操作" className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+      <div className="flex items-start justify-between gap-3"><div><h2 className="text-base font-semibold">执行操作</h2><p className="text-xs text-slate-500">{object.object_type} · {object.object_id} · 正式数据</p></div><button type="button" onClick={onClose} aria-label="关闭操作">×</button></div>
+      <label className="mt-4 block text-sm">操作
         <select className="mt-1 w-full rounded border p-2" value={selected} onChange={(event) => { setSelected(event.target.value); setValues({}); setDraft({}); setInvalid({}); setPreview(null); setError(''); }}>
-          <option value="">选择已发布 Action</option>{actions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          <option value="">选择已发布操作</option>{actions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       </label>
       {action?.parameters?.map((parameter) => <label key={parameter.name} className="mt-3 block text-sm">{parameter.name}{parameter.required && ' *'}
@@ -149,11 +149,11 @@ export default function ObjectActionRunner({ ontologyId, object, onClose, onComm
           : <input className="mt-1 w-full rounded border p-2" aria-label={parameter.name} value={draft[parameter.name] || ''} onChange={event => updateParameter(parameter.name, parameter.type, event.target.value)} />}
         {invalid[parameter.name] && <span className="mt-1 block text-xs text-red-700">{invalid[parameter.name]}</span>}
       </label>)}
-      {!actions.length && !error && <p className="mt-3 text-xs text-slate-500">此对象类型没有可用的已发布 Action。</p>}
+      {!actions.length && !error && <p className="mt-3 text-xs text-slate-500">此对象类型没有可用的已发布操作。</p>}
       {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
       {success && <p role="status" className="mt-3 text-sm text-green-700">{success}</p>}
       {preview && <div className="mt-4 rounded border bg-slate-50 p-3 text-xs"><p className="font-medium">将提交 {preview.edits.filter((edit) => edit.op !== 'invoke_action').length} 项编辑到 {preview.target}</p><ul className="mt-2 space-y-1">{preview.edits.filter((edit) => edit.op !== 'invoke_action').map((edit, index) => <li key={index}>{edit.op}{edit.property ? ` · ${edit.property}` : ''}{edit.value !== undefined ? ` → ${String(edit.value)}` : ''}</li>)}</ul></div>}
-      {!!runs.length && <div className="mt-4 max-h-32 overflow-auto border-t pt-3"><h3 className="text-xs font-medium">最近的对象 Action</h3>{runs.map(run => <div key={run.id} className="mt-2 flex items-center justify-between text-xs"><span>{run.action_type_id} · {run.status}</span>{run.status === 'completed' && !!run.side_effect_results?.length && run.side_effect_results.every(item => item.op === 'set_property' || item.op === 'unset_property') && <button type="button" disabled={busy} onClick={() => void revert(run.id)} className="text-blue-700">回退属性编辑</button>}</div>)}</div>}
+      {!!runs.length && <div className="mt-4 max-h-32 overflow-auto border-t pt-3"><h3 className="text-xs font-medium">最近的对象操作</h3>{runs.map(run => <div key={run.id} className="mt-2 flex items-center justify-between text-xs"><span>{run.action_type_id} · {run.status}</span>{run.status === 'completed' && !!run.side_effect_results?.length && run.side_effect_results.every(item => item.op === 'set_property' || item.op === 'unset_property') && <button type="button" disabled={busy} onClick={() => void revert(run.id)} className="text-blue-700">回退属性编辑</button>}</div>)}</div>}
       <div className="mt-5 flex justify-end gap-2"><button type="button" className="rounded border px-3 py-2 text-sm" onClick={onClose}>关闭</button><button type="button" className="rounded border px-3 py-2 text-sm disabled:opacity-50" disabled={!selected || busy} onClick={() => void showPreview()}>预览</button><button type="button" className="rounded bg-blue-700 px-3 py-2 text-sm text-white disabled:opacity-50" disabled={!preview || busy} onClick={() => void submit()}>确认提交</button></div>
     </section>
   </div>;

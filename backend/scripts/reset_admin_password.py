@@ -1,7 +1,7 @@
 """重置 admin 用户密码。
 
 用法:
-    python scripts/reset_admin_password.py                       # 重置为 admin123
+    python scripts/reset_admin_password.py                       # 交互式输入新密码
     python scripts/reset_admin_password.py --password <new_pwd>  # 重置为指定密码
     python scripts/reset_admin_password.py --user <username>     # 指定用户名 (默认 admin)
 """
@@ -33,6 +33,12 @@ def main(username: str, password: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user", default="admin")
-    parser.add_argument("--password", default="admin123")
+    parser.add_argument("--password", help="仅在本机命令行传入的新密码；省略时安全地交互输入")
     args = parser.parse_args()
-    main(args.user, args.password)
+    password = args.password
+    if not password:
+        import getpass
+        password = getpass.getpass("请输入新的管理员密码：")
+    if len(password) < 8:
+        parser.error("密码至少需要 8 个字符")
+    main(args.user, password)

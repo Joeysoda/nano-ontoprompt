@@ -89,13 +89,12 @@ For a deep dive into the Ontology-as-a-Service architecture — including Object
 ### Option 1 — Docker Compose (local workbench)
 
 ```bash
-git clone https://github.com/Joeysoda/nano-ontoprompt.git
+git clone --branch codex/merge-impact-chains https://github.com/Joeysoda/nano-ontoprompt.git
 cd nano-ontoprompt
-cp .env.example .env
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+./scripts/bootstrap_deployment.sh --seed-demo
 ```
 
-This starts PostgreSQL, Redis, Neo4j, MinIO, ChromaDB, Celery worker/beat, LiteLLM, backend, and frontend. Install Ollama and pull `qwen3.5:0.8b` on the host for local quality audits. See [DEPLOYMENT_WORKBENCH_ZH.md](./DEPLOYMENT_WORKBENCH_ZH.md) for the complete setup, health checks, and recovery commands.
+The bootstrap script generates `.env` and random secrets on the target machine, creates the database/graph volumes, starts PostgreSQL, Redis, Neo4j, MinIO, ChromaDB, Celery worker/beat, LiteLLM, backend, and frontend, and imports the public frePPLe demo fixture. `.env`, API keys, and live database volumes are never committed. Install Ollama and pull `qwen3.5:0.8b` on the host for local quality audits. See [DEPLOYMENT_WORKBENCH_ZH.md](./DEPLOYMENT_WORKBENCH_ZH.md) for complete setup and recovery commands.
 
 Open [http://127.0.0.1:15173/overview](http://127.0.0.1:15173/overview). Local mode does not show a login page; the backend is available at `http://127.0.0.1:18080`.
 
@@ -178,10 +177,10 @@ See `.env.example` for the full list. Key settings:
 ```env
 ENVIRONMENT=development        # "production" enforces non-default secrets at startup
 DATABASE_URL=sqlite:///./ontoprompt.db
-SECRET_KEY=change-me
+SECRET_KEY=<generated locally by the bootstrap script>
 ENCRYPTION_KEY=                # Fernet key for encrypting stored API keys
 FIRST_ADMIN_USER=admin
-FIRST_ADMIN_PASSWORD=admin123
+FIRST_ADMIN_PASSWORD=<generated locally by the bootstrap script>
 
 # Optional services (graceful fallback when absent)
 REDIS_URL=redis://localhost:6379/0
@@ -204,8 +203,8 @@ ENABLE_LLM_FK_DETECTION=0
 **Login fails with `AggregateError [ECONNREFUSED]` in the frontend container.**
 Pull the latest code — the Vite proxy now targets `http://backend:8000` inside Docker via `VITE_API_PROXY_TARGET`. Then rebuild: `docker compose up -d --build frontend`.
 
-**Cannot login with `admin / admin123` on an existing deployment.**
-The admin user was seeded with the old default password. Reset it:
+**Login fails on an existing JWT deployment.**
+Do not use a fixed password from documentation. Reset it to a new password entered only on the target machine:
 
 ```bash
 # Docker
@@ -215,7 +214,7 @@ docker compose exec backend python scripts/reset_admin_password.py
 cd backend && python scripts/reset_admin_password.py
 ```
 
-Options: `--user <username>` (default `admin`), `--password <new_pwd>` (default `admin123`).
+Options: `--user <username>` (default `admin`), `--password <new_pwd>`. Never put the new password in a script, screenshot, or Git.
 
 **LLM extraction OOM-killed (macOS / low-memory environments).**
 Parallel extraction with multiple LLM calls can exhaust memory on machines with limited RAM. The code now defaults to serial extraction (`max_workers=1`). If you still hit issues, extract one domain at a time, or reduce the number of uploaded files per ontology.

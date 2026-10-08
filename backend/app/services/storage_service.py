@@ -26,6 +26,24 @@ logger = logging.getLogger(__name__)
 BUCKETS = ["raw-datasets", "curated-datasets", "media", "intermediate"]
 
 
+def user_facing_storage_error(exc: Exception, uri: str | None = None) -> str:
+    """将 MinIO/S3 的技术错误转换成可直接行动的中文提示。
+
+    原始 S3 响应通常包含英文协议细节和请求 ID。请求日志仍保留原始
+    异常，但接口返回只呈现桶、对象和下一步，避免演示页面出现整段英文。
+    """
+    text = str(exc)
+    bucket = ""
+    if uri and uri.startswith("s3://"):
+        bucket = uri[5:].split("/", 1)[0]
+    if "NoSuchBucket" in text or "specified bucket does not exist" in text:
+        suffix = f"「{bucket}」" if bucket else ""
+        return f"对象存储桶{suffix}不存在，当前数据卷可能未挂载。请先运行存储修复，再重试。"
+    if "NoSuchKey" in text or "NoSuchObject" in text or "not found" in text.lower():
+        return "源文件在对象存储中不存在，可能尚未恢复或已被移除。请运行存储修复或重新导入来源后重试。"
+    return "源文件暂时无法从对象存储读取。请检查存储服务状态，运行存储修复后重试。"
+
+
 class StorageService:
     """MinIO 对象存储, 含本地文件系统回退。
 

@@ -104,8 +104,8 @@ export default function ExplorerOperations({ ontologyId, expression, objectType,
       <div className="oe-resource-actions">
         <button type="button" disabled={busy} onClick={() => snapshot.mutate()}><LockKeyhole size={14} />固定当前数据</button>
         {context.data_view_id && <button type="button" onClick={() => onView('')}>返回 Live</button>}
-        <button type="button" disabled={busy || (!selectedIds.length && !context.data_view_id)} onClick={() => setSaveKind('static')}><Save size={14} />保存 List{selectedIds.length ? `（选中 ${selectedIds.length}）` : '（完整集合）'}</button>
-        <button type="button" disabled={busy} onClick={() => setSaveKind('dynamic')}><Save size={14} />保存 Exploration</button>
+        <button type="button" disabled={busy || (!selectedIds.length && !context.data_view_id)} onClick={() => setSaveKind('static')}><Save size={14} />保存列表{selectedIds.length ? `（选中 ${selectedIds.length}）` : '（完整集合）'}</button>
+        <button type="button" disabled={busy} onClick={() => setSaveKind('dynamic')}><Save size={14} />保存动态查询</button>
         <button type="button" disabled={busy || !context.data_view_id} onClick={() => exportData.mutate()}><Download size={14} />导出</button>
         <button type="button" aria-expanded={showResources} onClick={() => setShowResources(value => !value)}><Layers3 size={14} />集合工具<ChevronDown size={13} /></button>
       </div>
@@ -134,14 +134,14 @@ export default function ExplorerOperations({ ontologyId, expression, objectType,
     {error && <p role="alert" className="oe-operation-status oe-operation-status--error">{error instanceof Error ? error.message : explorerError(error)}</p>}
 
     {saveKind && <div className="oe-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSaveKind(null); }}>
-      <section role="dialog" aria-modal="true" aria-label={saveKind === 'static' ? '保存 List' : '保存 Exploration'} className="oe-save-dialog">
-        <header><div><p className="oe-kicker">SAVE RESOURCE</p><h2>{saveKind === 'static' ? '保存 List' : '保存 Exploration'}</h2></div><button type="button" aria-label="关闭保存弹窗" onClick={() => setSaveKind(null)}><X size={17} /></button></header>
+      <section role="dialog" aria-modal="true" aria-label={saveKind === 'static' ? '保存列表' : '保存动态查询'} className="oe-save-dialog">
+        <header><div><p className="oe-kicker">保存资源</p><h2>{saveKind === 'static' ? '保存列表' : '保存动态查询'}</h2></div><button type="button" aria-label="关闭保存弹窗" onClick={() => setSaveKind(null)}><X size={17} /></button></header>
         <p className="oe-save-dialog__description">{saveKind === 'static' ? `固定 ${selectedIds.length ? `${selectedIds.length} 个选中对象` : '完整集合成员'}，后续数据变化不会改变成员。` : '保存当前查询、筛选、关系路径与视图定义，重新打开时计算最新成员。'}</p>
         <label>名称 *<input autoFocus aria-label="集合名称" value={name} onChange={event => setName(event.target.value)} maxLength={200} placeholder={saveKind === 'static' ? '例如：Q4 重点订单' : '例如：待审批订单探索'} /></label>
         <label>说明<textarea aria-label="集合说明" value={description} onChange={event => setDescription(event.target.value)} placeholder="说明用途和维护人" /></label>
         <fieldset><legend>访问范围</legend><label><input type="radio" name="visibility" checked={visibility === 'private'} onChange={() => setVisibility('private')} />Private</label><label><input type="radio" name="visibility" checked={visibility === 'public'} onChange={() => setVisibility('public')} />Public</label></fieldset>
         <label>保存位置<input aria-label="保存位置" value={location} disabled={visibility === 'private'} onChange={event => setLocation(event.target.value)} /></label>
-        <footer><button type="button" onClick={() => setSaveKind(null)}>取消</button><button type="button" className="primary" disabled={busy || !name.trim()} onClick={() => save.mutate(saveKind)}>确认保存 {saveKind === 'static' ? 'List' : 'Exploration'}</button></footer>
+        <footer><button type="button" onClick={() => setSaveKind(null)}>取消</button><button type="button" className="primary" disabled={busy || !name.trim()} onClick={() => save.mutate(saveKind)}>确认保存 {saveKind === 'static' ? '列表' : '动态查询'}</button></footer>
       </section>
     </div>}
   </>;

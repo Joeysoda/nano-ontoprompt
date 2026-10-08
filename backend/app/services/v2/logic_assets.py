@@ -53,9 +53,9 @@ def _require(d: dict, fields: list[str]):
 
 
 SUPPLIER_RESILIENCE_ASSET = {
-    "asset_key": "supplier_resilience_v2", "name": "Wood supply resilience",
+    "asset_key": "supplier_resilience_v2", "name": "木材供应韧性",
     "kind": "what_if", "implementation": "supplier_resilience_v2",
-    "description": "Bounded deterministic supply impact over a pinned frePPLe scenario snapshot; not a global optimizer.",
+    "description": "在固定 frePPLe 场景快照上计算有边界的确定性供应影响；不代表全局最优解。",
     "version": "2.1.0", "interface_key": "manufacturing.supplier_resilience",
     "interface_version": "2.1.0", "executor_type": "local",
     "input_schema": _schema("supplier_resilience_v2", {

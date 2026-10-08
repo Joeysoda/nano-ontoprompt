@@ -84,7 +84,7 @@ export default function ObjectPanel({
         <button type="button" onClick={onClose} aria-label="关闭对象预览"><X size={16} /></button>
       </div>
       <div className="oe-object-panel__actions">
-        <button type="button" disabled={!ontologyId || !!dataViewId || readOnly} title={dataViewId || readOnly ? '当前上下文不能写入 live' : undefined} onClick={() => setShowActions(true)}>Actions</button>
+        <button type="button" disabled={!ontologyId || !!dataViewId || readOnly} title={dataViewId || readOnly ? '当前上下文不能写入正式数据' : undefined} onClick={() => setShowActions(true)}>操作</button>
         {onOpenGraph && <button type="button" onClick={onOpenGraph}>Open in Graph</button>}
         <button type="button" onClick={() => dialog.current?.showModal()}>完整对象视图</button>
       </div>
@@ -92,7 +92,7 @@ export default function ObjectPanel({
       {showEmptyState && !Object.keys(object.properties).length && <p className="oe-empty-copy">该对象没有可显示的授权属性。</p>}
       {children}
       {seriesId && ontologyId && dataViewId && <Suspense fallback={<p role="status">正在加载曲线…</p>}><TimeSeriesChart ontologyId={ontologyId} dataViewId={dataViewId} seriesId={seriesId} /></Suspense>}
-      {showActions && ontologyId && <Suspense fallback={<p role="status">正在加载 Action…</p>}><ObjectActionRunner ontologyId={ontologyId} object={object} onClose={() => setShowActions(false)} onCommitted={onActionCommitted} /></Suspense>}
+      {showActions && ontologyId && <Suspense fallback={<p role="status">正在加载操作…</p>}><ObjectActionRunner ontologyId={ontologyId} object={object} onClose={() => setShowActions(false)} onCommitted={onActionCommitted} /></Suspense>}
       <dialog ref={dialog} className="m-auto max-h-[90vh] w-[min(900px,95vw)] overflow-auto rounded border p-6" aria-label={`${object.object_id} 完整对象视图`}>
         <header className="flex items-center justify-between"><h2>{object.object_type} · {object.object_id}</h2><button onClick={() => dialog.current?.close()} autoFocus>关闭完整视图</button></header>
         {configured && <div className="mt-3 flex items-center gap-2"><button type="button" aria-pressed={!useConfigured} onClick={() => setUseConfigured(false)}>Standard</button><button type="button" aria-pressed={useConfigured} onClick={() => setUseConfigured(true)}>Configured v{viewVersion}</button></div>}

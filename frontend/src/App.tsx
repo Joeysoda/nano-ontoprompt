@@ -17,8 +17,8 @@ const DatasetsTab = React.lazy(() => import("@/pages/pipelines/datasets/Datasets
 const TransformsTab = React.lazy(() => import("@/pages/pipelines/transforms/TransformsTab"));
 const CuratedTab = React.lazy(() => import("@/pages/pipelines/curated/CuratedTab"));
 const DataManagementPage = React.lazy(() => import("@/pages/data-management/DataManagementPage"));
+const DatasetOntologyEntryPage = React.lazy(() => import("@/pages/data-management/DatasetOntologyEntryPage"));
 const StructuredDataPage = React.lazy(() => import("@/pages/data-management/structured/StructuredDataPage"));
-const RegularDataPage = React.lazy(() => import("@/pages/data-management/regular/RegularDataPage"));
 const MultimodalDataPage = React.lazy(() => import("@/pages/data-management/multimodal/MultimodalDataPage"));
 const TemporalConstructionWizard = React.lazy(() => import("@/pages/data-management/temporal/TemporalConstructionWizard"));
 const TemporalWorkbenchPage = React.lazy(() => import("@/pages/data-management/temporal/TemporalWorkbenchPage"));
@@ -114,12 +114,12 @@ export default function App() {
               path="/data/temporal"
               element={
                 <ProtectedRoute>
-                  <TemporalConstructionWizard />
+                  <DatasetOntologyEntryPage dataClass="temporal" />
                 </ProtectedRoute>
               }
             />
             <Route
-              path="/data/temporal/new"
+              path="/data/temporal/build"
               element={
                 <ProtectedRoute>
                   <TemporalConstructionWizard />
@@ -144,14 +144,22 @@ export default function App() {
             />
             <Route
               path="/data/regular"
+              element={<Navigate to="/data" replace />}
+            />
+            <Route
+              path="/data/regular/build"
+              element={<Navigate to="/data" replace />}
+            />
+            <Route
+              path="/data/multimodal"
               element={
                 <ProtectedRoute>
-                  <RegularDataPage />
+                  <DatasetOntologyEntryPage dataClass="multimodal" />
                 </ProtectedRoute>
               }
             />
             <Route
-              path="/data/multimodal"
+              path="/data/multimodal/build"
               element={
                 <ProtectedRoute>
                   <MultimodalDataPage />
@@ -165,6 +173,18 @@ export default function App() {
                   <DynamicDataPage />
                 </ProtectedRoute>
               }
+            />
+            <Route
+              path="/data/dynamic/build"
+              element={
+                <ProtectedRoute>
+                  <DynamicDataPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/data/temporal/new"
+              element={<Navigate to="/data/temporal/build" replace />}
             />
             <Route
               path="/data/structured"

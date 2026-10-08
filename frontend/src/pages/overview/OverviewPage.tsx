@@ -4,15 +4,15 @@ import {
   Activity,
   ArrowRight,
   Database,
-  FileSpreadsheet,
   Images,
   Network,
+  Radio,
   ShieldCheck,
-  Table2,
   Timer,
 } from 'lucide-react'
 import { apiClientV2 } from '@/api/client'
 import StatusBadge from '@/components/StatusBadge'
+import { DEFAULT_DYNAMIC_RUN_PATH } from '@/config/demoRoutes'
 
 interface RecentOntology {
   id: string
@@ -62,9 +62,10 @@ const dataTypes: Array<{
   icon: Icon
   tone: string
   path: string
+  countKey?: string
 }> = [
-  { title: '常规数据', subtitle: '表格与数据库', detail: 'CSV · Excel · JSON · 数据库表', icon: Table2, tone: 'blue', path: '/data/regular' },
   { title: '时序数据', subtitle: '序列与时间轴', detail: 'FactoryNet · Ordinal · Instant', icon: Activity, tone: 'teal', path: '/data/temporal' },
+  { title: '动态数据构建', subtitle: '逐事件接收', detail: '开始 · 暂停 · 单步 · 历史事实', icon: Radio, tone: 'amber', path: DEFAULT_DYNAMIC_RUN_PATH, countKey: 'temporal' },
   { title: '多模态数据', subtitle: '图像、深度与点云', detail: 'RGB-D · 掩码 · 证据关联', icon: Images, tone: 'violet', path: '/data/multimodal' },
 ]
 
@@ -77,7 +78,6 @@ const viewTypes: Array<{ title: string; detail: string; icon: Icon; path: string
 ]
 
 const cases = [
-  { name: 'C-MAPSS FD001', tag: '常规数据', detail: '设备与传感器读数', path: '/data/regular', icon: FileSpreadsheet, tone: 'bg-blue-50 text-blue-700' },
   { name: 'FactoryNet CNC', tag: '时序数据', detail: '机器、工序、传感器与时间轴', path: '/data/temporal', icon: Activity, tone: 'bg-teal-50 text-teal-700' },
   { name: 'I‑BADAS', tag: '多模态数据', detail: '12 组 RGB-D、掩码与点云样例', path: '/data/multimodal', icon: Images, tone: 'bg-violet-50 text-violet-700' },
 ]
@@ -87,7 +87,9 @@ function toneClasses(tone: string) {
     ? { icon: 'bg-blue-50 text-blue-700', border: 'hover:border-blue-300' }
     : tone === 'teal'
       ? { icon: 'bg-teal-50 text-teal-700', border: 'hover:border-teal-300' }
-      : { icon: 'bg-violet-50 text-violet-700', border: 'hover:border-violet-300' }
+      : tone === 'amber'
+        ? { icon: 'bg-amber-50 text-amber-700', border: 'hover:border-amber-300' }
+        : { icon: 'bg-violet-50 text-violet-700', border: 'hover:border-violet-300' }
 }
 
 export default function OverviewPage() {
@@ -106,17 +108,17 @@ export default function OverviewPage() {
         <div>
           <p className="wb-eyebrow">工作区总览</p>
           <h1 className="wb-page-title mt-2">本体构筑工作台</h1>
-          <p className="wb-page-subtitle">选择数据类型，开始一次构建。</p>
+          <p className="wb-page-subtitle">选择入口，直接查看本体或开始动态数据演示。</p>
         </div>
         <button type="button" onClick={() => navigate('/data')} className="wb-button-primary"><ArrowRight size={16} />开始构建</button>
       </header>
 
-      <section className="grid grid-cols-3 gap-4" aria-label="数据分类">
-        {dataTypes.map(({ title, subtitle, detail, icon: IconComponent, tone, path }) => {
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="数据分类">
+        {dataTypes.map(({ title, subtitle, detail, icon: IconComponent, tone, path, countKey }) => {
           const colors = toneClasses(tone)
           return <button key={title} type="button" onClick={() => navigate(path)} className={`group wb-surface flex min-h-[130px] items-start gap-4 p-5 text-left transition hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(15,23,42,.07)] ${colors.border}`}>
             <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${colors.icon}`}><IconComponent size={21} strokeWidth={1.7} /></span>
-            <span className="min-w-0 flex-1"><span className="block text-base font-semibold tracking-tight">{title}</span><span className="mt-1 block text-xs text-slate-500">{subtitle}</span><span className="mt-3 block truncate text-[11px] text-slate-400">{detail}</span><span className="mt-2 block text-[11px] font-medium text-slate-500">已登记 {classCounts?.[tone === 'blue' ? 'regular' : tone === 'teal' ? 'temporal' : 'multimodal'] ?? 0} 个</span></span>
+            <span className="min-w-0 flex-1"><span className="block text-base font-semibold tracking-tight">{title}</span><span className="mt-1 block text-xs text-slate-500">{subtitle}</span><span className="mt-3 block truncate text-[11px] text-slate-400">{detail}</span><span className="mt-2 block text-[11px] font-medium text-slate-500">{countKey ? `可用 ${classCounts?.[countKey] ?? 0} 个` : `已登记 ${classCounts?.[tone === 'blue' ? 'regular' : tone === 'teal' ? 'temporal' : 'multimodal'] ?? 0} 个`}</span></span>
             <ArrowRight size={16} className="mt-1 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-700" />
           </button>
         })}
@@ -124,8 +126,8 @@ export default function OverviewPage() {
 
       <section className="grid grid-cols-[1.15fr_.85fr] gap-5">
         <div className="wb-surface p-5">
-          <div className="flex items-start justify-between"><div><p className="wb-eyebrow">案例入口</p><h2 className="mt-1 text-base font-semibold">可直接打开的构建案例</h2></div><button type="button" onClick={() => navigate('/data')} className="text-xs text-slate-500 hover:text-slate-900">查看全部 <ArrowRight size={13} className="ml-1 inline" /></button></div>
-          <div className="mt-5 grid grid-cols-3 gap-3">
+          <div className="flex items-start justify-between"><div><p className="wb-eyebrow">案例入口</p><h2 className="mt-1 text-base font-semibold">可直接打开的案例</h2></div><button type="button" onClick={() => navigate('/data')} className="text-xs text-slate-500 hover:text-slate-900">查看全部 <ArrowRight size={13} className="ml-1 inline" /></button></div>
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {cases.map(({ name, tag, detail, path, icon: IconComponent, tone }) => <button key={name} type="button" onClick={() => navigate(path)} className="group rounded-xl border border-slate-200 p-4 text-left transition hover:border-slate-400 hover:bg-slate-50"><div className="flex items-center justify-between"><span className={`flex h-8 w-8 items-center justify-center rounded-lg ${tone}`}><IconComponent size={16} strokeWidth={1.8} /></span><ArrowRight size={14} className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-700" /></div><p className="mt-4 text-sm font-semibold">{name}</p><p className="mt-1 text-[11px] text-slate-400">{tag}</p><p className="mt-3 text-xs leading-5 text-slate-500">{detail}</p></button>)}
           </div>
         </div>

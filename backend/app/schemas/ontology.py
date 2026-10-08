@@ -15,7 +15,7 @@ class OntologyCreate(BaseModel):
     @classmethod
     def validate_domain(cls, v):
         if v not in VALID_DOMAINS:
-            raise ValueError(f"Domain must be one of: {VALID_DOMAINS}")
+            raise ValueError(f"领域必须是以下选项之一：{VALID_DOMAINS}")
         return v
 
 class OntologyUpdate(BaseModel):

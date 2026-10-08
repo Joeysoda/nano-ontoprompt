@@ -46,7 +46,7 @@ from app.services.v2.temporal_profile_service import serialize_profile, run_prof
 from app.services.v2.dataset_service import DatasetService
 from app.config import settings
 from app.services.v2.graph.falkordb_service import FalkorDBService
-from app.services.storage_service import get_storage_service
+from app.services.storage_service import get_storage_service, user_facing_storage_error
 
 router = APIRouter(prefix="/temporal", dependencies=[Depends(get_current_user)])
 ontology_router = APIRouter(prefix="/{ontology_id}/temporal", dependencies=[Depends(get_current_user)])
@@ -75,7 +75,7 @@ def _read_source_object(storage_uri: str | None) -> bytes:
     try:
         return get_storage_service().get_object(storage_uri)
     except Exception as exc:
-        raise HTTPException(424, detail={"error": "STORAGE_OBJECT_MISSING", "message": f"源文件不在当前对象存储：{exc}。可运行存储修复后重试", "storage_uri": storage_uri}) from exc
+        raise HTTPException(424, detail={"error": "STORAGE_OBJECT_MISSING", "message": user_facing_storage_error(exc, storage_uri), "storage_uri": storage_uri}) from exc
 
 
 class TemporalRunCreate(BaseModel):

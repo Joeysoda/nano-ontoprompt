@@ -142,8 +142,8 @@ function PipelineMappingInfo({ ontology }: { ontology: OntologyDetail }) {
   return (
     <div className="bg-white rounded-xl border p-6 space-y-4">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold">Pipeline Mapping 状态</span>
-        <span className="px-2 py-0.5 rounded text-xs bg-blue-50 border border-blue-200 text-blue-700">Pipeline 模式</span>
+        <span className="text-sm font-semibold">数据管道映射状态</span>
+        <span className="px-2 py-0.5 rounded text-xs bg-blue-50 border border-blue-200 text-blue-700">数据管道模式</span>
       </div>
       {mappings.length === 0 ? (
         <p className="text-sm text-gray-400">暂无 Mapping 配置。请先在 Pipelines → Curated Datasets 中审批数据，然后在新建本体时配置 Mapping。</p>
@@ -297,7 +297,7 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
             <dt className="text-xs text-gray-500 mb-0.5">构建方式</dt>
             <dd>
               {isPipelineMode
-                ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-blue-50 border border-blue-200 text-blue-700">Pipeline Mapping</span>
+                ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-blue-50 border border-blue-200 text-blue-700">数据管道映射</span>
                 : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-50 border border-amber-200 text-amber-700">简易 LLM 提取</span>
               }
             </dd>

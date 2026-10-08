@@ -31,6 +31,11 @@ def get_user_by_id(db: Session, user_id: str) -> User | None:
 
 def seed_admin(db: Session):
     if db.query(User).filter(User.role == "admin").count() == 0:
+        if not settings.first_admin_password:
+            # A fresh checkout must opt in to a generated local credential (the
+            # Docker bootstrap script does this).  Never seed a public default
+            # password into a database.
+            return
         import uuid
         admin = User(
             id=str(uuid.uuid4()),

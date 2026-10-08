@@ -90,11 +90,12 @@
 ### 方式一 — Docker Compose（本地工作台）
 
 ```bash
-cp .env.example .env
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+git clone --branch codex/merge-impact-chains https://github.com/Joeysoda/nano-ontoprompt.git
+cd nano-ontoprompt
+./scripts/bootstrap_deployment.sh --seed-demo
 ```
 
-本地演示端口为前端 `15173`、后端 `18080`；同时启动 PostgreSQL、Redis、Neo4j、MinIO、ChromaDB、Celery worker/beat 和 LiteLLM。
+脚本会在本机生成 `.env` 和随机密钥，创建数据库/图存储卷，启动 PostgreSQL、Redis、Neo4j、MinIO、ChromaDB、Celery worker/beat、LiteLLM、后端和前端，并导入公开的 frePPLe 演示数据。`.env`、API Key 和数据库卷不会进入 Git。
 
 打开 [http://127.0.0.1:15173/overview](http://127.0.0.1:15173/overview)。Ollama 与 `qwen3.5:0.8b` 的安装、M3 凭证和安全配置见 [Docker 与后端部署说明](./DEPLOYMENT_WORKBENCH_ZH.md)。
 
@@ -175,10 +176,10 @@ nano-ontoprompt/
 ```env
 ENVIRONMENT=development        # 设为 production 时, 默认密钥未修改将拒绝启动
 DATABASE_URL=sqlite:///./ontoprompt.db
-SECRET_KEY=change-me
+SECRET_KEY=<由部署脚本在本机生成>
 ENCRYPTION_KEY=                # Fernet 密钥, 用于加密存储的 API Key
 FIRST_ADMIN_USER=admin
-FIRST_ADMIN_PASSWORD=admin123
+FIRST_ADMIN_PASSWORD=<由部署脚本在本机生成>
 
 # 可选服务 (缺失时优雅降级)
 REDIS_URL=redis://localhost:6379/0
@@ -205,8 +206,8 @@ ENABLE_LLM_FK_DETECTION=0
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build frontend backend
 ```
 
-**已有部署用 `admin / admin123` 登录失败。**
-admin 用户用旧的默认密码 seed,需要重置:
+**已有 JWT 部署登录失败。**
+不要在文档或命令中使用固定密码；为已有 JWT 部署重置为一个仅在本机输入的新密码:
 
 ```bash
 # Docker
@@ -216,7 +217,7 @@ docker compose exec backend python scripts/reset_admin_password.py
 cd backend && python scripts/reset_admin_password.py
 ```
 
-可选参数: `--user <username>` (默认 `admin`)、`--password <new_pwd>` (默认 `admin123`)。
+可选参数: `--user <username>`（默认 `admin`）、`--password <new_pwd>`。不要把新密码写入脚本、截图或 Git。
 
 **LLM 提取被 OOM-kill(macOS 或低内存环境)。**
 并行 LLM 提取在内存有限的机器上可能耗尽资源。代码已默认改为串行提取(`max_workers=1`)。如仍遇到问题,可逐域提取,或减少每次提取上传的文件数。

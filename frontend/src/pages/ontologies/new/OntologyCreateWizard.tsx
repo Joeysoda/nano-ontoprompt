@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ontologyApi } from '@/api/ontologies'
-import { apiClientV2 } from '@/api/client'
+import { apiClientV2, formatApiError } from '@/api/client'
 import pipelinesApi, { type Pipeline } from '@/api/v2/pipelines'
 import curatedApi from '@/api/v2/curated'
 import { DOMAINS } from '@/types/ontology'
@@ -35,13 +35,13 @@ interface ApiError { detail?: string | { message?: string }; message?: string }
 
 // Human Review 已移除 — 用户可在本体详情页自行修改
 const BUILD_PHASES = [
-  { key: 'entity',    label: '① Entity Type 识别',  icon: '01' },
-  { key: 'property',  label: '② Property Mapping',   icon: '02' },
-  { key: 'relation',  label: '③ Relation 推断',      icon: '03' },
-  { key: 'logic',     label: '④ Logic Discovery',    icon: '04' },
-  { key: 'action',    label: '⑤ Action Discovery',   icon: '05' },
-  { key: 'neo4j',     label: '⑥ 写入 Neo4j',         icon: '06' },
-  { key: 'chroma',    label: '⑦ 写入 ChromaDB',      icon: '07' },
+  { key: 'entity',    label: '① 实体类型识别',  icon: '01' },
+  { key: 'property',  label: '② 属性映射',   icon: '02' },
+  { key: 'relation',  label: '③ 关系推断',      icon: '03' },
+  { key: 'logic',     label: '④ 逻辑规则发现',    icon: '04' },
+  { key: 'action',    label: '⑤ 操作发现',   icon: '05' },
+  { key: 'neo4j',     label: '⑥ 写入图数据库',         icon: '06' },
+  { key: 'chroma',    label: '⑦ 写入向量检索库',      icon: '07' },
   { key: 'publish',   label: '⑧ 完成',               icon: '08' },
 ]
 
@@ -60,7 +60,7 @@ const STATUS_STYLE: Record<string, string> = {
 }
 
 function StepIndicator({ current }: { current: 0 | 1 | 2 }) {
-  const labels = ['基本信息', '选择数据集', 'Mapping 配置']
+  const labels = ['基本信息', '选择数据集', '映射配置']
   return (
     <div className="flex gap-2 mb-6 text-xs">
       {labels.map((s, i) => (
@@ -287,8 +287,7 @@ export default function OntologyCreateWizard() {
       else { setCreatedOntologyId(res.id); setStep('select_datasets') }
     },
     onError: (e: unknown) => {
-      const error = e as ApiError
-      setError(error.message || (typeof error.detail === 'object' ? error.detail.message : error.detail) || '创建失败')
+      setError(formatApiError(e, '创建本体失败，请检查名称、领域和服务状态后重试'))
     },
   })
 
@@ -316,7 +315,7 @@ export default function OntologyCreateWizard() {
           className="group text-left p-6 rounded-xl border-2 transition-all hover:border-black hover:shadow-md border-gray-200">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><GitBranch size={20} className="text-blue-600" /></div>
-            <span className="font-semibold">Pipeline Mapping</span>
+            <span className="font-semibold">数据管道映射</span>
           </div>
           <p className="text-sm text-gray-600 mb-4">从已审批的 Curated Datasets 映射生成本体。</p>
           <ul className="text-xs text-gray-500 space-y-1"><li>✓ 结构化/半结构化数据</li><li>✓ 精细化建模</li><li>✓ 企业级大规模数据</li></ul>
@@ -332,7 +331,7 @@ export default function OntologyCreateWizard() {
         <ArrowLeft size={14} /> 返回选择方式
       </button>
       <h2 className="text-xl font-semibold mb-1">新建本体</h2>
-      <p className="text-sm text-gray-400 mb-2">{mode === 'simple_llm' ? '简易 LLM 提取' : 'Pipeline Mapping'}</p>
+      <p className="text-sm text-gray-400 mb-2">{mode === 'simple_llm' ? '简易 LLM 提取' : '数据管道映射'}</p>
       {mode === 'pipeline_mapping' && <StepIndicator current={0} />}
       <div className="bg-white rounded-xl border p-6 space-y-4">
         <div>
@@ -366,7 +365,7 @@ export default function OntologyCreateWizard() {
   if (step === 'select_datasets') return (
     <div>
       <h2 className="text-xl font-semibold mb-1">选择数据集</h2>
-      <p className="text-sm text-gray-400 mb-4">Pipeline Mapping</p>
+      <p className="text-sm text-gray-400 mb-4">数据管道映射</p>
       <StepIndicator current={1} />
 
       <div className="bg-white rounded-xl border p-6">
@@ -486,7 +485,7 @@ export default function OntologyCreateWizard() {
             className="px-5 py-2 bg-black text-white rounded-lg text-sm disabled:opacity-40 flex items-center gap-2"
           >
             {suggestionsLoading && <Loader2 size={14} className="animate-spin" />}
-            下一步：Mapping 配置
+            下一步：映射配置
           </button>
         </div>
       </div>
@@ -502,7 +501,7 @@ export default function OntologyCreateWizard() {
         <ArrowLeft size={14} /> 返回选择数据集
       </button>
       <h2 className="text-xl font-semibold mb-1">审批结构化数据</h2>
-      <p className="text-sm text-gray-400 mb-5">批准数据后，可返回上一步继续选择数据集进行 Mapping。</p>
+      <p className="text-sm text-gray-400 mb-5">批准数据后，可返回上一步继续选择数据集并配置映射。</p>
 
       {datasetsLoading ? (
         <div className="flex items-center gap-2 text-gray-400 py-10"><Loader2 size={16} className="animate-spin" /> 加载中...</div>
@@ -573,8 +572,8 @@ export default function OntologyCreateWizard() {
 
   if (step === 'mapping_config') return (
     <div>
-      <h2 className="text-xl font-semibold mb-1">Mapping 配置</h2>
-      <p className="text-sm text-gray-400 mb-4">Pipeline Mapping · LLM 辅助建议，可修改后确认</p>
+      <h2 className="text-xl font-semibold mb-1">映射配置</h2>
+      <p className="text-sm text-gray-400 mb-4">数据管道映射 · LLM 辅助建议，可修改后确认</p>
       <StepIndicator current={2} />
       <div className="space-y-4">
         {[...selectedDatasetIds].map(dsId => {
@@ -586,7 +585,7 @@ export default function OntologyCreateWizard() {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="text-sm font-medium">{ds.name}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">→ Entity Type</p>
+                  <p className="text-xs text-gray-400 mt-0.5">→ 实体类型</p>
                 </div>
                 <div className="text-right">
                   <input value={sug.entity_class}
@@ -614,11 +613,11 @@ export default function OntologyCreateWizard() {
                   <p className="text-blue-600 mt-1">基于外键、值模式和 Link Mapping 生成，并推断 cardinality。</p>
                 </div>
                 <div className="bg-amber-50 border border-amber-100 rounded-lg p-2">
-                  <p className="font-medium text-amber-700">Logic Discovery</p>
+                  <p className="font-medium text-amber-700">逻辑规则发现</p>
                   <p className="text-amber-600 mt-1">从 mapping、schema 质量、状态列和关系生成 draft 规则。</p>
                 </div>
                 <div className="bg-purple-50 border border-purple-100 rounded-lg p-2">
-                  <p className="font-medium text-purple-700">Action Discovery</p>
+                  <p className="font-medium text-purple-700">操作发现</p>
                   <p className="text-purple-600 mt-1">从 Object Type、Link Type、Review 和 Writeback 生成 draft 动作。</p>
                 </div>
               </div>
@@ -641,7 +640,7 @@ export default function OntologyCreateWizard() {
     const pct = Math.round(currentPhase / BUILD_PHASES.length * 100)
     return (
       <div className="max-w-xl mx-auto py-8">
-        <h2 className="text-xl font-semibold mb-2 text-center">Ontology Mapping 进行中</h2>
+        <h2 className="text-xl font-semibold mb-2 text-center">本体映射进行中</h2>
         <p className="text-sm text-gray-400 text-center mb-6">{createdOntologyId?.slice(0, 8)}</p>
         <div className="mb-6">
           <div className="flex justify-between text-xs text-gray-500 mb-1"><span>进度</span><span>{pct}%</span></div>

@@ -18,7 +18,7 @@ from app.services.v2.object_query.normalize import stable_hash
 
 router = APIRouter()
 
-DEMO_CASES = (("baseline", "Baseline", "baseline"), ("supplier_b", "Supplier B", "candidate"), ("supplier_c", "Supplier C", "candidate"))
+DEMO_CASES = (("baseline", "基线方案", "baseline"), ("supplier_b", "供应商 B", "candidate"), ("supplier_c", "供应商 C", "candidate"))
 
 
 def supplier_manifest():
@@ -65,17 +65,20 @@ def _ensure_base_view(db, ontology, user, graph):
     if existing:
         return existing
     metadata = load_sql_metadata(db, ontology.id)
-    return build_live_view(db, graph, metadata, ontology.id, user.id, digest, 86400)
+    # The prepared demonstration is a reviewed, read-only fixture. Keep the
+    # pinned view long enough for a classroom/demo handoff instead of making
+    # it expire after a single day while the source data remains available.
+    return build_live_view(db, graph, metadata, ontology.id, user.id, digest, 30 * 86400)
 
 
 @router.post("/demo/bootstrap")
 def bootstrap_demo(db=Depends(get_db), user=Depends(get_current_user)):
     ontology = _find_demo_ontology(db, user)
     if not ontology:
-        raise HTTPException(409, detail={"code": "frepple_demo_not_imported", "message": "The pinned frePPLe demo fixture is not available"})
+        raise HTTPException(409, detail={"code": "frepple_demo_not_imported", "message": "固定 frePPLe 演示样例尚未导入"})
     graph = FalkorDBService()
     if not graph.available:
-        raise HTTPException(503, detail={"code": "graph_unavailable", "message": "FalkorDB is unavailable"})
+        raise HTTPException(503, detail={"code": "graph_unavailable", "message": "图数据库不可用"})
     try:
         view = _ensure_base_view(db, ontology, user, graph)
         manifest = supplier_manifest()
@@ -91,8 +94,8 @@ def bootstrap_demo(db=Depends(get_db), user=Depends(get_current_user)):
         digest = stable_hash(manifest)
         study = db.query(ScenarioStudy).filter_by(ontology_id=ontology.id, source_manifest_digest=digest).first()
         if not study:
-            study = ScenarioStudy(ontology_id=ontology.id, owner_id=user.id, name="Wood Supply Resilience",
-                description="Supplier replacement on the pinned frePPLe manufacturing fixture",
+            study = ScenarioStudy(ontology_id=ontology.id, owner_id=user.id, name="木材供应韧性演示",
+                description="基于固定 frePPLe 制造样例的供应商替换演示",
                 base_view_id=view.id, source_manifest_digest=digest,
                 scenario_time=manifest["scenario_time"], scope_definition=manifest["scope"],
                 scope_hash=stable_hash(manifest["scope"]), model_key=manifest["model"]["key"],
@@ -105,7 +108,7 @@ def bootstrap_demo(db=Depends(get_db), user=Depends(get_current_user)):
             case_row = db.query(ScenarioStudyCase).filter_by(study_id=study.id, case_key=key).first()
             row = db.get(ScenarioResource, case_row.scenario_id) if case_row else None
             if not row:
-                row = svc.create(CreateScenarioRequest(name=name, description=f"{name} wood supply profile", base_view_id=view.id, protected_demo=True))
+                row = svc.create(CreateScenarioRequest(name=name, description=f"{name} 的木材供应方案", base_view_id=view.id, protected_demo=True))
             profile = manifest["profiles"][key]
             if not case_row:
                 case_row = ScenarioStudyCase(study_id=study.id, scenario_id=row.id, case_key=key,

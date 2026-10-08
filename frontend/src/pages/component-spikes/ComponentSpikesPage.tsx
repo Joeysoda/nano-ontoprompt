@@ -51,7 +51,7 @@ function QueryBuilderSpike() {
         </div>
         <span className="spike-status">narrow role</span>
       </div>
-      <p className="spike-copy">验证嵌套条件编辑和 AST 导出。这里的 JSON 只是 adapter preview，不是 Object Set 后端合同。</p>
+      <p className="spike-copy">验证嵌套条件编辑和结构导出。这里的 JSON 只是适配预览，不是对象集合后端合同。</p>
       <div className="query-builder-shell">
         <QueryBuilder fields={fields} query={query} onQueryChange={setQuery} showCombinatorsBetweenRules />
       </div>
@@ -141,8 +141,8 @@ function ChartSpike() {
         </div>
         <span className="spike-status">narrow role</span>
       </div>
-      <p className="spike-copy">验证 Actual/Scenario overlay、tooltip 和 resize。数据时间语义、权限、降级状态不由图表库决定。</p>
-      <div ref={chartRef} className="chart-canvas" role="img" aria-label="Actual and Scenario preview time series" />
+      <p className="spike-copy">验证实际值与情景值叠加、提示和自适应尺寸。数据时间语义、权限、降级状态不由图表库决定。</p>
+      <div ref={chartRef} className="chart-canvas" role="img" aria-label="实际值与情景值预览时间序列" />
     </section>
   );
 }
@@ -153,7 +153,7 @@ export default function ComponentSpikesPage() {
       <div className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Integration lab</p>
         <h1 className="mt-2 text-2xl font-semibold text-slate-900">开源组件 Spike</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">三个组件都被限制在可替换的 UI adapter 边界内。本页面不读取生产 Ontology 数据，也不改变 Object Set、Action 或 Scenario 语义。</p>
+        <p className="mt-2 max-w-3xl text-sm text-slate-600">三个组件都被限制在可替换的界面适配边界内。本页面不读取生产本体数据，也不改变对象集合、操作或情景语义。</p>
       </div>
       <div className="spike-grid">
         <QueryBuilderSpike />

@@ -68,7 +68,7 @@ function ScenarioGraph({ context, diff }: { context: Context; diff: NonNullable<
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-600" />新增</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600" />消失</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-slate-400" />未变化</span></div>
     </div>
     <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-      <svg viewBox="0 0 780 380" className="h-[300px] min-w-[680px] w-full" role="img" aria-label="What-If 情景数据模型关系差异">
+      <svg viewBox="0 0 780 380" className="h-[300px] min-w-[680px] w-full" role="img" aria-label="情景数据模型关系差异">
         <defs><marker id="what-if-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#64748b" /></marker></defs>
         {edges.map((edge) => {
           const start = positions.get(edge.source); const end = positions.get(edge.target);
@@ -153,7 +153,7 @@ export default function WhatIfTab({ ontologyId }: { ontologyId: string }) {
       setRun(started); setStep(3);
     } catch (reason: any) { setError(String(reason?.detail?.message || reason?.message || "推演启动失败")); }
   };
-  if (!targetId) return <div className="rounded-xl border border-slate-200 bg-white p-8 text-center"><h2 className="text-sm font-semibold text-slate-900">先选择一个基线观测</h2><p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">What-If 只对选定的 FactoryNet Observation 及其两跳邻域运行。请先打开数据模型，选择一个观测实例。</p><button onClick={() => navigate(`/ontologies/${ontologyId}?tab=data_model`)} className="mt-5 rounded-md bg-slate-800 px-4 py-2 text-xs text-white">返回数据模型</button></div>;
+  if (!targetId) return <div className="rounded-xl border border-slate-200 bg-white p-8 text-center"><h2 className="text-sm font-semibold text-slate-900">先选择一个基线观测</h2><p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">情景推演只对选定的 FactoryNet 观测及其两跳邻域运行。请先打开数据模型，选择一个观测实例。</p><button onClick={() => navigate(`/ontologies/${ontologyId}?tab=data_model`)} className="mt-5 rounded-md bg-slate-800 px-4 py-2 text-xs text-white">返回数据模型</button></div>;
   if (loading) return <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500"><Loader2 size={17} className="mr-2 animate-spin" />正在准备推演基线</div>;
   if (error && !context) return <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700"><AlertTriangle size={16} className="mr-2 inline" />{error}</div>;
   if (!context || !target) return <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">请先在 FactoryNet 数据模型中选择一个 Observation</div>;

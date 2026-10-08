@@ -45,7 +45,7 @@ export default function TemporalSnapshotConnector({ ontologyId, snapshotId, payl
         <label>插值<select value={mapping.interpolation} onChange={event => update('interpolation', event.target.value)}><option value="none">不插值</option><option value="step">阶梯</option><option value="linear">线性</option></select></label>
       </>}
     </div>}
-    {!types.length && withEvents && <p role="status">当前 Ontology 尚无可用的已发布 Event 类型。</p>}
+    {!types.length && withEvents && <p role="status">当前本体尚无可用的已发布事件类型。</p>}
     {snapshot.error && <p role="alert">{explorerError(snapshot.error)}</p>}{publish.error && <p role="alert">{explorerError(publish.error)}</p>}
     <button className="mt-3 rounded bg-slate-900 px-3 py-2 text-white disabled:opacity-50" disabled={snapshot.data?.status !== 'published' || publish.isPending || (withEvents && !canMap)} onClick={() => publish.mutate()}>{publish.isPending ? '正在建立查询视图…' : '打开已发布快照'}</button>
   </section>;

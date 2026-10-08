@@ -92,10 +92,10 @@ export default function OntologyDetailPage() {
     { key: "data_model", label: "数据模型" },
     ...(temporal ? [{ key: "dynamic" as Tab, label: "动态演化（实验）" }] : []),
     { key: "entities", label: "实体" },
-    { key: "objects", label: "Objects" },
+    { key: "objects", label: "对象查询" },
     { key: "logic", label: "逻辑规则" },
     { key: "audit", label: "质量审查" },
-    ...(temporal ? [{ key: "what_if" as Tab, label: "What-If 推演" }] : []),
+    ...(temporal ? [{ key: "what_if" as Tab, label: "情景推演" }] : []),
     { key: "reasoning", label: "推理验证" },
     { key: "decisions", label: "决策与影响链" },
     { key: "agent", label: "Agent 决策" },
@@ -150,14 +150,14 @@ export default function OntologyDetailPage() {
               </div>
             }
           >
-            <GraphTab key={refreshKey} ontologyId={id!} />
+            <GraphTab key={refreshKey} ontologyId={id!} dataClass={ontology.data_class} />
           </Suspense>
         </OntologyCanvasBoundary>
       )}
       {activeTab === "data_model" && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载数据模型</div>}><DataModelTab key={refreshKey} ontologyId={id!} dataClass={ontology.data_class} /></Suspense>}
       {activeTab === "dynamic" && temporal && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载动态演化</div>}><DynamicEvolutionTab ontologyId={id!} /></Suspense>}
       {activeTab === "entities" && <EntitiesTab key={refreshKey} ontologyId={id!} />}
-      {activeTab === "objects" && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载 Objects</div>}><ObjectQueryTab key={id} ontologyId={id!} /></Suspense>}
+      {activeTab === "objects" && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载对象查询</div>}><ObjectQueryTab key={id} ontologyId={id!} /></Suspense>}
       {activeTab === "logic" && <LogicTab key={refreshKey} ontologyId={id!} />}
       {activeTab === "audit" && <AuditTab ontologyId={id!} />}
       {activeTab === "what_if" && temporal && <WhatIfTab ontologyId={id!} />}

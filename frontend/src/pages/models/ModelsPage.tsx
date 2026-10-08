@@ -33,7 +33,7 @@ const PROVIDERS: Record<string, Array<{ value: string; label: string }>> = {
   ],
 }
 
-const USAGE_TAGS = ['VLM提取', '结构化提取', '宽表分析', 'Ontology Mapping', 'NL-to-Cypher', 'OCR文字提取']
+const USAGE_TAGS = ['VLM提取', '结构化提取', '宽表分析', '本体映射', '自然语言查询', 'OCR文字提取']
 
 type ModelFormData = { name: string; config_type: 'llm' | 'ocr' | 'other'; provider: string; api_key?: string; api_base?: string; models_str?: string; options_json?: string; ocr_enabled?: string; ocr_lang?: string; ocr_device?: string }
 type ApiError = { detail?: string; message?: string; response?: { data?: { detail?: string } } }
