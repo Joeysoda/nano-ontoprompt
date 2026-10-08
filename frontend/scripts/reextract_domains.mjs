@@ -108,7 +108,7 @@ async function waitExtraction(page, maxMin = 12) {
     if (result !== 'ok') { results.push({ name, status: result }); continue; }
 
     // Quality badge
-    const badge = await page.locator('text=/\d+ 个问题|完美通过|质量通过/').first().textContent().catch(() => '');
+    const badge = await page.locator('text=/(?:[0-9])+ 个问题|完美通过|质量通过/').first().textContent().catch(() => '');
     console.log(`  P0: ${badge.trim()}`);
 
     // API stats

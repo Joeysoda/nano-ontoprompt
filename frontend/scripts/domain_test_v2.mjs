@@ -7,7 +7,6 @@ import fs from 'fs';
 import path from 'path';
 
 const BASE_URL = 'http://localhost:5173';
-const API_URL = 'http://localhost:8000';
 const SCREENSHOT_DIR = './screenshots_v2';
 const RESULTS_FILE = './test_results_v2.json';
 const TEST_DATA_BASE = path.resolve('../test_data');
@@ -241,7 +240,7 @@ async function testDomain(page, domain, idx) {
       await ss(page, `${pfx}_08_entities`);
       result.screenshots.entities = `${pfx}_08_entities.png`;
       result.tabsTested.push('实体');
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     // 11. 逻辑规则标签
     try {
@@ -251,7 +250,7 @@ async function testDomain(page, domain, idx) {
       await ss(page, `${pfx}_09_logic`);
       result.screenshots.logic = `${pfx}_09_logic.png`;
       result.tabsTested.push('逻辑规则');
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     // 12. 动作标签
     try {
@@ -261,7 +260,7 @@ async function testDomain(page, domain, idx) {
       await ss(page, `${pfx}_10_actions`);
       result.screenshots.actions = `${pfx}_10_actions.png`;
       result.tabsTested.push('动作');
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     result.pageLoadTime = Date.now() - t1;
     result.status = result.filesUploaded > 0 ? 'PASS' :

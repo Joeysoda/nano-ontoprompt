@@ -1,5 +1,5 @@
 ﻿import { chromium } from '@playwright/test';
-import fs from 'fs'; import path from 'path'; import http from 'http';
+import path from 'path'; import http from 'http';
 import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SS = path.join(__dirname, 'sc_fulltest_screenshots');

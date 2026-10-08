@@ -22,31 +22,33 @@ services:
     ports: ["6381:6379"]
     volumes: [falkordb_data:/data]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   backend:
     build: ./backend
     ports: ["8000:8000"]
     env_file: .env
     environment:
-      # Resolve FalkorDB over the Compose network.  The host fallback used
-      # to make the API silently report an unavailable graph when this stack
-      # was started without a separately managed host service.
-      FALKORDB_HOST: falkordb
-      FALKORDB_PORT: 6379
+      FALKORDB_HOST: ${FALKORDB_HOST:-falkordb}
+      FALKORDB_PORT: ${FALKORDB_PORT:-6379}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
     depends_on: [db, redis, falkordb]
-    volumes: [./backend:/app, ./uploads:/uploads]
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes: [./backend:/app, ./uploads:/uploads, ./data/frepple_demo:/state:ro, ./test_data:/test_data:ro]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   celery_worker:
     build: ./backend
     env_file: .env
     environment:
-      FALKORDB_HOST: falkordb
-      FALKORDB_PORT: 6379
+      FALKORDB_HOST: ${FALKORDB_HOST:-falkordb}
+      FALKORDB_PORT: ${FALKORDB_PORT:-6379}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
     depends_on: [db, redis, falkordb]
-    volumes: [./backend:/app, ./uploads:/uploads]
+    volumes: [./backend:/app, ./uploads:/uploads, ./data/frepple_demo:/state:ro, ./test_data:/test_data:ro]
     command: celery -A app.tasks.celery_app worker --loglevel=info
 
   litellm:

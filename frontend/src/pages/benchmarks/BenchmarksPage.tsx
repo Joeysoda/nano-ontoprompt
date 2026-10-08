@@ -6,7 +6,7 @@ export default function BenchmarksPage() {
   const [benchmark, setBenchmark] = useState('OSKGC')
   const [predicted, setPredicted] = useState('[{"id":"equipment-1","type":"Equipment"}]')
   const [gold, setGold] = useState('[{"id":"equipment-1","type":"Equipment"}]')
-  const [result, setResult] = useState<any>(null)
+  const [result, setResult] = useState<unknown>(null)
   const [error, setError] = useState('')
   const run = async () => {
     setError('')
@@ -20,7 +20,7 @@ export default function BenchmarksPage() {
         gold_triples: [],
       })
       setResult(response)
-    } catch (e: any) { setError(e?.detail || e?.message || '评测失败') }
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : '评测失败') }
   }
   return <div className="max-w-4xl">
     <h2 className="text-xl font-semibold mb-2">评测实验</h2>
@@ -32,6 +32,6 @@ export default function BenchmarksPage() {
       <button disabled={!ontologyId} onClick={run} className="bg-black text-white px-4 py-2 rounded disabled:opacity-40">运行评测</button>
       {error && <p className="text-red-600 text-sm">{error}</p>}
     </div>
-    {result && <pre className="mt-5 bg-gray-900 text-green-200 rounded p-4 text-xs overflow-auto">{JSON.stringify(result, null, 2)}</pre>}
+    {result != null ? <pre className="mt-5 bg-gray-900 text-green-200 rounded p-4 text-xs overflow-auto">{String(JSON.stringify(result, null, 2) ?? '')}</pre> : null}
   </div>
 }

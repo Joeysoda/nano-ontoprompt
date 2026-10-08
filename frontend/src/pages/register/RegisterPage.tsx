@@ -17,8 +17,8 @@ export default function RegisterPage() {
     try {
       await authApi.register(data.username, data.email, data.password)
       navigate('/login')
-    } catch (e: any) {
-      setError(e?.message || '注册失败，请检查信息')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '注册失败，请检查信息')
     } finally {
       setLoading(false)
     }

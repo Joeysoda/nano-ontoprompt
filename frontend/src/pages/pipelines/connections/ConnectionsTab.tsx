@@ -167,7 +167,9 @@ export default function ConnectionsTab() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadConnections() }, [])
+  useEffect(() => {
+    void Promise.resolve().then(loadConnections)
+  }, [])
   useEffect(() => {
     apiClientV2.get('/connections/templates')
       .then((res: unknown) => {

@@ -105,8 +105,12 @@ function WebGLPointCloud({ asset }: { asset: EvidenceAsset }) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError("");
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        setLoading(true);
+        setError("");
+      }
+    });
     const endpoint =
       asset.pointcloud_url?.replace(/^\/api\/v2/, "") ||
       `/multimodal/assets/${asset.id}/pointcloud`;
@@ -280,8 +284,8 @@ function WebGLPointCloud({ asset }: { asset: EvidenceAsset }) {
       gl.deleteBuffer(pointBuffer);
       gl.deleteBuffer(lineBuffer);
       gl.deleteProgram(program);
-    } catch (err: any) {
-      setError(err?.message || "点云渲染失败");
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "点云渲染失败");
     }
   }, [payload, camera]);
 
@@ -525,12 +529,9 @@ export function MultimodalEvidenceWorkspace({
         .filter((role, index, all) => all.indexOf(role) === index) || [],
     [evidence],
   );
-  useEffect(() => {
-    if (!availableRoles.includes(tab))
-      setTab(
-        availableRoles.includes("rgb") ? "rgb" : availableRoles[0] || "rgb",
-      );
-  }, [availableRoles.join("|"), tab]);
+  const activeTab = availableRoles.includes(tab)
+    ? tab
+    : availableRoles.includes("rgb") ? "rgb" : availableRoles[0] || "rgb";
   if (!evidence)
     return (
       <div className="wb-empty mt-4">
@@ -556,14 +557,14 @@ export function MultimodalEvidenceWorkspace({
             key={role}
             type="button"
             onClick={() => setTab(role)}
-            className={`wb-filter-chip ${tab === role ? "wb-filter-chip-active" : ""}`}
+            className={`wb-filter-chip ${activeTab === role ? "wb-filter-chip-active" : ""}`}
           >
             {roleLabel[role] || role}
           </button>
         ))}
       </div>
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        {tab === "rgb" && rgb && (
+        {activeTab === "rgb" && rgb && (
           <div>
             <img
               src={rgb.preview_url}
@@ -576,7 +577,7 @@ export function MultimodalEvidenceWorkspace({
             </p>
           </div>
         )}
-        {tab === "depth" && depth && (
+        {activeTab === "depth" && depth && (
           <div>
             <img
               src={depth.preview_url}
@@ -621,7 +622,7 @@ export function MultimodalEvidenceWorkspace({
             )}
           </div>
         )}
-        {(tab === "mask" || tab === "mask_visible") && (
+        {(activeTab === "mask" || activeTab === "mask_visible") && (
           <div>
             <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden rounded border border-slate-200 bg-slate-900">
               {rgb && (
@@ -666,11 +667,11 @@ export function MultimodalEvidenceWorkspace({
             </div>
           </div>
         )}
-        {tab === "point_cloud" && asset("point_cloud") && (
+        {activeTab === "point_cloud" && asset("point_cloud") && (
           <WebGLPointCloud asset={asset("point_cloud")!} />
         )}
-        {tab === "metadata" && <MetadataPanel evidence={evidence} />}
-        {!tabs.includes(tab) && (
+        {activeTab === "metadata" && <MetadataPanel evidence={evidence} />}
+        {!tabs.includes(activeTab) && (
           <div className="wb-empty">
             <Layers3 size={20} />
             当前样例没有此模态

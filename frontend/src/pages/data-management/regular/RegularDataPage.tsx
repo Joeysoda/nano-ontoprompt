@@ -8,6 +8,11 @@ type Ontology = { id: string; name: string; domain?: string; data_class?: string
 type Column = { name: string; type?: string; sample_values?: unknown[] }
 type Run = { id: string; ontology_id?: string; dataset_id?: string; mode?: string; config?: { privacy_level?: 'standard' | 'private'; mode?: 'create' | 'append'; selection?: { fields?: string[] } }; status: string; progress?: { completed?: number; total?: number; stage?: string; pct?: number }; metrics?: Record<string, unknown>; error?: string; revision_id?: string }
 type Suggestion = { kind?: string; source?: string; target?: string; target_relation?: string; confidence?: number; extractor?: string; [key: string]: unknown }
+type DatasetVersion = { version_no: number }
+type MappingTask = { status?: string; stage?: string; progress?: { pct?: number }; trace?: Array<{ stage?: string; detail?: string; status?: string }>; result?: { suggestions?: Suggestion[] }; error?: string }
+type DraftResponse = { id?: string; privacy_level?: 'standard' | 'private' }
+type MappingResponse = { mapping_task_id?: string; mapping?: { suggestions?: Suggestion[]; stage?: string; status?: string; error?: string } }
+type PreflightResponse = { preflight?: { allowed?: boolean } }
 
 const STEPS = ['数据集', '内容选择', '处理配置', '本体映射', '确认构建']
 const statusLabel: Record<string, string> = { queued: '排队中', running: '处理中', completed: '已完成', failed: '失败', waiting_for_model: '等待模型', cancelled: '已取消' }
@@ -34,9 +39,9 @@ export default function RegularDataPage() {
       const ontologyItems = (os?.items || []).filter(item => item.data_class === 'regular' && item.status === 'created')
       setDatasets(list); setOntologies(ontologyItems); setDatasetId(current => current || list[0]?.id || ''); setOntologyId(current => ontologyItems.some(item => item.id === current) ? current : ontologyItems[0]?.id || '')
       setTargetMode(current => current === 'append' && !ontologyItems.length ? 'create' : current)
-    } catch (err: any) { setError(errorText(err)) } finally { setLoading(false) }
+    } catch (error: unknown) { setError(errorText(error)) } finally { setLoading(false) }
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { void Promise.resolve().then(load) }, [])
 
   useEffect(() => {
     if (!restoredRunId || run?.id === restoredRunId) return
@@ -55,28 +60,30 @@ export default function RegularDataPage() {
   }, [restoredRunId, run?.id])
 
   useEffect(() => {
-    if (!datasetId) { setColumns([]); setRows([]); return }
+    if (!datasetId) { void Promise.resolve().then(() => { setColumns([]); setRows([]) }); return }
     let cancelled = false
     const fetchPreview = async () => {
       try {
-        const [schema, versions] = await Promise.all([apiClientV2.get<{ columns: Column[] }>(`/datasets/${datasetId}/schema`), apiClientV2.get<any[]>(`/datasets/${datasetId}/versions`)]); const nextColumns = schema?.columns || []; if (cancelled) return
+        const [schema, versions] = await Promise.all([apiClientV2.get<{ columns: Column[] }>(`/datasets/${datasetId}/schema`), apiClientV2.get<DatasetVersion[]>(`/datasets/${datasetId}/versions`)]); const nextColumns = schema?.columns || []; if (cancelled) return
         setColumns(nextColumns); setFields(current => current.length ? current.filter(field => nextColumns.some(column => column.name === field)) : nextColumns.map(column => column.name))
         const version = Array.isArray(versions) ? versions[versions.length - 1] : null
         if (version) { const preview = await apiClientV2.get<{ rows?: Record<string, unknown>[] }>(`/datasets/${datasetId}/versions/${version.version_no}/preview?limit=20`); if (!cancelled) setRows(preview?.rows || (Array.isArray(preview) ? preview as unknown as Record<string, unknown>[] : [])) }
-      } catch (err: any) { if (!cancelled) setError(errorText(err)) }
+      } catch (error: unknown) { if (!cancelled) setError(errorText(error)) }
     }
     fetchPreview(); return () => { cancelled = true }
   }, [datasetId])
 
+  const activeRunId = run?.id
+  const activeRunStatus = run?.status
   useEffect(() => {
-    if (!run || !['queued', 'running', 'waiting_for_model'].includes(run.status)) return
-    const timer = window.setInterval(() => apiClientV2.get<Run>(`/construction-runs/${run.id}`).then(setRun).catch(() => {}), 1600)
+    if (!activeRunId || !activeRunStatus || !['queued', 'running', 'waiting_for_model'].includes(activeRunStatus)) return
+    const timer = window.setInterval(() => apiClientV2.get<Run>(`/construction-runs/${activeRunId}`).then(setRun).catch(() => {}), 1600)
     return () => window.clearInterval(timer)
-  }, [run?.id, run?.status])
+  }, [activeRunId, activeRunStatus])
 
   useEffect(() => {
     if (!mappingTaskId || mappingReady) return
-    const timer = window.setInterval(() => apiClientV2.get<any>(`/mapping-tasks/${mappingTaskId}`).then(task => {
+    const timer = window.setInterval(() => apiClientV2.get<MappingTask>(`/mapping-tasks/${mappingTaskId}`).then(task => {
       setMappingTask(task)
       if (task.status === 'completed') {
         const next = Array.isArray(task.result?.suggestions) ? task.result.suggestions : []
@@ -90,7 +97,7 @@ export default function RegularDataPage() {
 
   const upload = async (file: File) => {
     setUploading(true); setError('')
-    try { const form = new FormData(); form.append('file', file); await apiClientV2.post('/datasets/upload', form); await load() } catch (err: any) { setError(errorText(err)) } finally { setUploading(false); if (uploadRef.current) uploadRef.current.value = '' }
+    try { const form = new FormData(); form.append('file', file); await apiClientV2.post('/datasets/upload', form); await load() } catch (error: unknown) { setError(errorText(error)) } finally { setUploading(false); if (uploadRef.current) uploadRef.current.value = '' }
   }
   const resetTargetDraft = () => { setDraftId(''); setMappingTaskId(''); setMappingTask(null); setMappingReady(false); setSuggestions([]); setConfirmed([]) }
   const switchTargetMode = (mode: 'create' | 'append') => {
@@ -105,17 +112,17 @@ export default function RegularDataPage() {
     const selection = { fields, columns: fields, row_limit: Math.max(1, Math.min(rowLimit, 10000)), dedupe, mapping_key: mappingKey }
     const processing = { privacy_level: privacy, normalization: true, dedupe }
     const target = { target_mode: targetMode, ontology_id: targetMode === 'append' ? ontologyId : null, new_ontology_name: targetMode === 'create' ? newOntologyName.trim() : null, new_ontology_domain: '制造' }
-    if (draftId) { const patched = await apiClientV2.patch<any>(`/construction/drafts/${draftId}`, { privacy_level: privacy, selection, processing_config: processing, ...target }); if (patched?.privacy_level && patched.privacy_level !== privacy) setPrivacy(patched.privacy_level); return draftId }
+    if (draftId) { const patched = await apiClientV2.patch<DraftResponse>(`/construction/drafts/${draftId}`, { privacy_level: privacy, selection, processing_config: processing, ...target }); if (patched?.privacy_level && patched.privacy_level !== privacy) setPrivacy(patched.privacy_level); return draftId }
     const created = await apiClientV2.post<{ id: string; privacy_level?: 'standard' | 'private' }>('/construction/drafts', { dataset_id: datasetId, data_class: 'regular', privacy_level: privacy, selection, processing_config: processing, ...target }); if (created?.privacy_level && created.privacy_level !== privacy) setPrivacy(created.privacy_level); setDraftId(created.id); return created.id
   }
   const generateMapping = async () => {
     setBusy(true); setError('')
-    try { const id = await ensureDraft(); const result = await apiClientV2.post<any>(`/construction/drafts/${id}/generate-mapping`); const next = Array.isArray(result?.mapping?.suggestions) ? result.mapping.suggestions : []; if (next.length) { setSuggestions(next); setConfirmed(next.map((_: Suggestion, index: number) => index)); setMappingReady(true) } else if (result?.mapping_task_id) { setMappingTaskId(result.mapping_task_id); setMappingTask({ stage: result?.mapping?.stage || '排队', progress: { pct: 0 }, trace: [] }); setMappingReady(false) } else if (result?.mapping?.status === 'waiting_for_model') setError(result.mapping.error || '标准数据等待 MiniMax M3') } catch (err: any) { setError(errorText(err)) } finally { setBusy(false) }
+    try { const id = await ensureDraft(); const result = await apiClientV2.post<MappingResponse>(`/construction/drafts/${id}/generate-mapping`); const next = Array.isArray(result?.mapping?.suggestions) ? result.mapping.suggestions : []; if (next.length) { setSuggestions(next); setConfirmed(next.map((_: Suggestion, index: number) => index)); setMappingReady(true) } else if (result?.mapping_task_id) { setMappingTaskId(result.mapping_task_id); setMappingTask({ stage: result?.mapping?.stage || '排队', progress: { pct: 0 }, trace: [] }); setMappingReady(false) } else if (result?.mapping?.status === 'waiting_for_model') setError(result.mapping.error || '标准数据等待 MiniMax M3') } catch (error: unknown) { setError(errorText(error)) } finally { setBusy(false) }
   }
   const build = async () => {
     if (!mappingReady || confirmed.length === 0) { setError('请先确认本体映射'); return }
     setBusy(true); setError('')
-    try { const id = await ensureDraft(); await apiClientV2.patch(`/construction/drafts/${id}`, { mapping: { suggestions, confirmed: confirmed.map(index => suggestions[index]) } }); const created = await apiClientV2.post<Run>(`/construction/drafts/${id}/build`, { mapping_confirmed: true, mode: targetMode }); setRun(created); setStep(4); setSearchParams({ run: created.id }, { replace: true }) } catch (err: any) { setError(errorText(err)) } finally { setBusy(false) }
+    try { const id = await ensureDraft(); await apiClientV2.patch(`/construction/drafts/${id}`, { mapping: { suggestions, confirmed: confirmed.map(index => suggestions[index]) } }); const created = await apiClientV2.post<Run>(`/construction/drafts/${id}/build`, { mapping_confirmed: true, mode: targetMode }); setRun(created); setStep(4); setSearchParams({ run: created.id }, { replace: true }) } catch (error: unknown) { setError(errorText(error)) } finally { setBusy(false) }
   }
   const next = async () => {
     if (step === 0 && !datasetId) { setError('请选择已有数据集或导入文件'); return }
@@ -124,7 +131,7 @@ export default function RegularDataPage() {
     if (step === 1 && fields.length === 0) { setError('至少选择一个字段'); return }
     if (step === 3 && (!mappingReady || confirmed.length === 0)) { setError('请先生成并确认映射建议'); return }
     setError('')
-    if (step === 0 || step === 2 || step === 1) { setBusy(true); try { const id = await ensureDraft(); if (step === 2) { const preflight = await apiClientV2.post<any>(`/construction/drafts/${id}/m3-preflight`); if (preflight?.preflight?.allowed || privacy === 'private') { const result = await apiClientV2.post<any>(`/construction/drafts/${id}/generate-mapping`); const nextSuggestions = Array.isArray(result?.mapping?.suggestions) ? result.mapping.suggestions : []; if (nextSuggestions.length) { setSuggestions(nextSuggestions); setConfirmed(nextSuggestions.map((_: Suggestion, index: number) => index)); setMappingReady(true) } else if (result?.mapping_task_id) { setMappingTaskId(result.mapping_task_id); setMappingTask({ stage: result?.mapping?.stage || '排队', progress: { pct: 0 }, trace: [] }); setMappingReady(false) } else if (result?.mapping?.status === 'waiting_for_model') { setError(result.mapping.error || 'MiniMax M3 正在等待恢复'); return } } } } catch (err: any) { setError(errorText(err)); return } finally { setBusy(false) } }
+    if (step === 0 || step === 2 || step === 1) { setBusy(true); try { const id = await ensureDraft(); if (step === 2) { const preflight = await apiClientV2.post<PreflightResponse>(`/construction/drafts/${id}/m3-preflight`); if (preflight?.preflight?.allowed || privacy === 'private') { const result = await apiClientV2.post<MappingResponse>(`/construction/drafts/${id}/generate-mapping`); const nextSuggestions = Array.isArray(result?.mapping?.suggestions) ? result.mapping.suggestions : []; if (nextSuggestions.length) { setSuggestions(nextSuggestions); setConfirmed(nextSuggestions.map((_: Suggestion, index: number) => index)); setMappingReady(true) } else if (result?.mapping_task_id) { setMappingTaskId(result.mapping_task_id); setMappingTask({ stage: result?.mapping?.stage || '排队', progress: { pct: 0 }, trace: [] }); setMappingReady(false) } else if (result?.mapping?.status === 'waiting_for_model') { setError(result.mapping.error || 'MiniMax M3 正在等待恢复'); return } } } } catch (error: unknown) { setError(errorText(error)); return } finally { setBusy(false) } }
     setStep(value => Math.min(4, value + 1))
   }
   const toggleField = (name: string) => setFields(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name])

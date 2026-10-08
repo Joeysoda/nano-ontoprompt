@@ -10,7 +10,7 @@ import { mkdirSync, rmSync } from 'fs'
 const BASE   = 'http://localhost:5173'
 const OID    = '6af1850d-11d0-4302-a8cf-d24dcc3b30da'
 const SS_DIR = 'detail_pages_screenshots'
-try { rmSync(SS_DIR, { recursive: true }) } catch {}
+try { rmSync(SS_DIR, { recursive: true }) } catch { /* directory may not exist */ }
 mkdirSync(SS_DIR, { recursive: true })
 
 let step = 0

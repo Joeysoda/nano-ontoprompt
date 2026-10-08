@@ -56,10 +56,9 @@ export default function CuratedTab() {
   const [reviewing, setReviewing] = useState<string | null>(null)
 
   useEffect(() => {
-    apiClientV2.get('/curated')
-      .then((res: any) => {
-        const arr = Array.isArray(res) ? res : (res.data ?? [])
-        setDatasets(arr)
+    apiClientV2.get<CuratedDataset[]>('/curated')
+      .then(res => {
+        setDatasets(Array.isArray(res) ? res : [])
       })
       .catch(() => setDatasets([]))
       .finally(() => setLoading(false))
@@ -68,8 +67,7 @@ export default function CuratedTab() {
   const loadPreview = async (id: string) => {
     if (previews[id]) return
     try {
-      const res: any = await apiClientV2.get(`/curated/${id}/preview?limit=50`)
-      const data = res.data ?? res
+      const data = await apiClientV2.get<PreviewData>(`/curated/${id}/preview?limit=50`)
       setPreviews(p => ({ ...p, [id]: { rows: data.rows ?? [], count: data.count ?? 0, error: data.error } }))
     } catch {
       setPreviews(p => ({ ...p, [id]: { rows: [], count: 0, error: 'Failed to load' } }))
@@ -79,8 +77,8 @@ export default function CuratedTab() {
   const loadQuality = async (id: string) => {
     if (reports[id]) return
     try {
-      const res: any = await apiClientV2.get(`/curated/${id}/quality`)
-      setReports(p => ({ ...p, [id]: res.data ?? res }))
+      const report = await apiClientV2.get<QualityReport>(`/curated/${id}/quality`)
+      setReports(p => ({ ...p, [id]: report }))
     } catch {/* ignore */}
   }
 

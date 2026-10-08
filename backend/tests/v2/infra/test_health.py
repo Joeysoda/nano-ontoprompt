@@ -8,6 +8,8 @@ needed). External services (Neo4j, MinIO, ChromaDB) will be reported as
 """
 from fastapi.testclient import TestClient
 from app.main import app
+from app import main
+from time import perf_counter
 
 client = TestClient(app)
 
@@ -58,3 +60,23 @@ def test_health_status_key_is_ok():
     response = client.get("/health")
     data = response.json()
     assert data["status"] == "ok"
+
+
+def test_health_returns_promptly_when_optional_services_are_absent(monkeypatch):
+    """Missing optional services must not turn liveness into a hanging call."""
+    monkeypatch.setattr(main, "_tcp_reachable", lambda *_args, **_kwargs: False)
+
+    class HealthyDb:
+        def execute(self, _statement):
+            return None
+
+    started = perf_counter()
+    data = main.health(HealthyDb())
+    elapsed = perf_counter() - started
+
+    assert elapsed < 0.5
+    assert data["db"] == "ok"
+    assert data["neo4j"] == "unavailable"
+    assert data["falkordb"] == "unavailable"
+    assert data["minio"] == "unavailable"
+    assert data["chroma"] == "unavailable"

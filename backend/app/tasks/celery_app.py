@@ -10,6 +10,9 @@ celery_app = Celery("ontoprompt",
                         "app.tasks.v2.temporal_construction",
                         "app.tasks.v2.connection_sync",
                         "app.tasks.v2.workbench",
+                        "app.tasks.v2.object_query",
+                        "app.tasks.v2.scenario",
+                        "app.tasks.v2.scenario_tracking",
                         "app.tasks.v2.temporal_replay",
                         "app.tasks.v2.temporal_stream",
                     ])
@@ -17,3 +20,6 @@ celery_app = Celery("ontoprompt",
 # broker 不可用时快速失败 (默认会长时间重试, 导致 API 请求阻塞)
 celery_app.conf.task_publish_retry = False
 celery_app.conf.broker_connection_timeout = 3
+celery_app.conf.beat_schedule = {
+    'tracking-scenarios-every-ten-minutes': {'task': 'scenario_tracking.rebase_due', 'schedule': 600.0},
+}

@@ -2,9 +2,13 @@ import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useDropzone } from 'react-dropzone'
 import { useTranslation } from 'react-i18next'
+import type { AxiosProgressEvent } from 'axios'
 import { ontologyApi } from '@/api/ontologies'
 import { apiClient } from '@/api/client'
+import type { UploadedFile } from '@/types/ontology'
 import { Trash2, Upload } from 'lucide-react'
+
+type FileRow = UploadedFile & { conversion_ok?: boolean; conversion_error?: string }
 
 export default function FilesTab({ ontologyId }: { ontologyId: string }) {
   const { t } = useTranslation()
@@ -14,7 +18,7 @@ export default function FilesTab({ ontologyId }: { ontologyId: string }) {
 
   const { data: files = [], isLoading } = useQuery({
     queryKey: ['files', ontologyId],
-    queryFn: () => ontologyApi.listFiles(ontologyId) as any,
+    queryFn: () => ontologyApi.listFiles(ontologyId),
   })
 
   const deleteMut = useMutation({
@@ -33,13 +37,14 @@ export default function FilesTab({ ontologyId }: { ontologyId: string }) {
       try {
         await apiClient.post(`/ontologies/${ontologyId}/files`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
-          onUploadProgress: (evt: any) => {
+          onUploadProgress: (evt: AxiosProgressEvent) => {
             const pct = evt.total ? Math.round((evt.loaded / evt.total) * 100) : 0
             setUploadState(prev => prev ? { ...prev, pct } : null)
           },
-        } as any)
-      } catch (e: any) {
-        const msg = e?.detail || e?.message || String(e)
+        })
+      } catch (e: unknown) {
+        const error = e as { detail?: string; message?: string }
+        const msg = error.detail || error.message || String(e)
         setUploadError(t('files.upload_failed', { message: msg }))
         console.error('Upload failed:', file.name, e)
       }
@@ -120,7 +125,7 @@ export default function FilesTab({ ontologyId }: { ontologyId: string }) {
 
       {isLoading ? <p className="text-gray-400 text-sm">{t('common.loading')}</p> : (
         <div className="bg-white rounded-lg border overflow-hidden">
-          {(files as any[]).length === 0 ? (
+          {(files as FileRow[]).length === 0 ? (
             <p className="text-center text-gray-400 py-8 text-sm">{t('files.empty')}</p>
           ) : (
             <table className="w-full text-sm">
@@ -132,7 +137,7 @@ export default function FilesTab({ ontologyId }: { ontologyId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {(files as any[]).map((f: any) => (
+                {(files as FileRow[]).map(f => (
                   <tr key={f.id} className="border-b">
                     <td className="px-4 py-3">{f.filename}</td>
                     <td className="px-4 py-3 text-gray-500">{formatSize(f.file_size)}</td>

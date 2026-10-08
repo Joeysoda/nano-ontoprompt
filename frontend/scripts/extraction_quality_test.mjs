@@ -34,7 +34,7 @@ async function apiGet(path, token) {
   const browser = await chromium.launch({ headless: false, slowMo: 50 });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
-  let token = '';
+  let token;
 
   // ─── 1. 登录，获取 token ──────────────────────────────────────────────────────
   console.log('\n=== 1. 登录 ===');
@@ -195,7 +195,7 @@ async function apiGet(path, token) {
   if (token) {
     const entities = await apiGet(`/ontologies/${oid}/entities`, token);
     console.log(`\n  📦 提取实体数: ${entities.length}`);
-    let withProps = 0, withLogic = 0, withActions = 0;
+    let withProps = 0;
     for (const e of entities.slice(0, 10)) {
       const props = e.properties ?? {};
       const hasProps = Object.keys(props).length > 0;

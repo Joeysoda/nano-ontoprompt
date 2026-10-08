@@ -29,7 +29,7 @@ async function apiGet(path, token) {
   const browser = await chromium.launch({ headless: false, slowMo: 50 });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
-  let token = '';
+  let token;
 
   // ══════════════════════════════════════════════════════════════════════════
   // 1. 登录

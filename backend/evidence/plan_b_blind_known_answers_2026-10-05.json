@@ -1,0 +1,44 @@
+{
+  "fixture": {
+    "ontology_id": "frepple-d7eb98078882b234c395fd05",
+    "source_commit": "73e5be3d1573db043209111325dd921d68cf4b88",
+    "source_sha256": "d7eb98078882b234c395fd053c5f6fbda33810cb90add2adb4bf7d62f28637ef",
+    "metadata_digest": "6e5be8676eed4e55153498a3bc4fd8ff64ede3e6cf9ce18677bb27155a7bd3fe"
+  },
+  "answers": {
+    "B01": {"type": "Demand", "total": 220, "open": 16, "closed": 204},
+    "B02": [
+      ["Demand 07", 40], ["Demand 04", 30], ["Demand 08", 30],
+      ["Demand 01", 20], ["Demand 05", 20], ["Demand 09", 20], ["Demand 14", 20]
+    ],
+    "B03": {"item": "round table", "customer": "Customer near shop 2", "location": "shop 2"},
+    "B04": {"name": "Demand 07", "quantity": 40, "due": "2021-01-02 00:00:00"},
+    "B05": [
+      {"item": "chair", "count": 5, "quantity": 80},
+      {"item": "varnished chair", "count": 5, "quantity": 40},
+      {"item": "round table", "count": 3, "quantity": 60},
+      {"item": "square table", "count": 3, "quantity": 70}
+    ],
+    "B06": [
+      {"customer": "Customer near shop 1", "count": 8, "quantity": 175},
+      {"customer": "Customer near shop 2", "count": 8, "quantity": 75}
+    ],
+    "B07": [
+      ["Demand 02", 10], ["Demand 03", 10], ["Demand 06", 10],
+      ["Demand 10", 10], ["Demand 11", 10], ["Demand 12", 5],
+      ["Demand 13", 5], ["Demand 15", 5], ["Demand 16", 5]
+    ],
+    "B08": "The Exploration preserves the dynamic Object Set definition and read/context settings, not a copied member list.",
+    "B09": "The List preserves the complete pinned member IDs; the data view ID identifies the immutable read snapshot.",
+    "B10": [
+      ["chair supplier", "chair", 2592000.0, 50],
+      ["cushion supplier", "cushion", 1209600.0, 200],
+      ["screw supplier", "screws", 86400.0, 3000],
+      ["wood supplier", "wooden beam", 604800.0, 1],
+      ["wood supplier", "wooden panel", 86400.0, 400]
+    ],
+    "B11": {"operation": "Drying varnish for chair", "duration_seconds": 21600.0, "duration_per": null},
+    "B12": "Demand 01 and its Object Set URL/state remain selected after graph navigation and browser history restore."
+  },
+  "separation_rule": "Do not include this file in participant or Agent prompts. Use it only for scoring after the run."
+}

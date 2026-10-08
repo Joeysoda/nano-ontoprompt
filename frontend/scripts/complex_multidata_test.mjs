@@ -47,7 +47,7 @@ async function waitExtraction(page, maxMinutes = 8) {
   const browser = await chromium.launch({ headless: false, slowMo: 40 });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
-  let token = '';
+  let token;
 
   // ══════════════════════════════════════════════════════════════════════════
   // 1. 登录
@@ -196,7 +196,7 @@ async function waitExtraction(page, maxMinutes = 8) {
   await page.screenshot({ path: ss('实体列表') });
 
   // API 数据概览
-  let entities = [], logic = [], actions = [];
+  let entities, logic, actions;
   if (token) {
     entities = await apiGet(`/ontologies/${oid}/entities`, token);
     logic    = await apiGet(`/ontologies/${oid}/logic`, token);
@@ -234,7 +234,6 @@ async function waitExtraction(page, maxMinutes = 8) {
       await page.screenshot({ path: ss('实体属性编辑模式') });
 
       // 删除第一行属性（如有）
-      const delBtn = page.locator('button').filter({ has: page.locator('svg') }).nth(0);
       const xBtns = page.locator('tbody button');
       if (await xBtns.count() > 0) {
         await xBtns.first().click();

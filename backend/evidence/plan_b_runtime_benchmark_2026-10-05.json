@@ -1,0 +1,64 @@
+{
+  "recorded_at": "2026-10-05T15:45:21.574096+00:00",
+  "environment": {
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41",
+    "python": "3.12.14",
+    "ontology_id": "frepple-d7eb98078882b234c395fd05",
+    "runs": 25,
+    "warmup": 3
+  },
+  "operations": {
+    "explorer_load": {
+      "samples": 25,
+      "requests": 25,
+      "p50_ms": 35.128,
+      "p95_ms": 110.254,
+      "p99_ms": 134.637,
+      "max_ms": 136.756
+    },
+    "explorer_pivot": {
+      "samples": 25,
+      "requests": 25,
+      "p50_ms": 35.371,
+      "p95_ms": 111.025,
+      "p99_ms": 131.457,
+      "max_ms": 132.347
+    },
+    "explorer_compare": {
+      "samples": 25,
+      "requests": 25,
+      "p50_ms": 37.96,
+      "p95_ms": 116.162,
+      "p99_ms": 143.757,
+      "max_ms": 147.434
+    },
+    "action_preview": {
+      "samples": 25,
+      "requests": 25,
+      "p50_ms": 9.154,
+      "p95_ms": 10.783,
+      "p99_ms": 11.824,
+      "max_ms": 12.147
+    },
+    "action_submit": {
+      "samples": 25,
+      "requests": 25,
+      "p50_ms": 17.648,
+      "p95_ms": 19.023,
+      "p99_ms": 20.95,
+      "max_ms": 21.517
+    },
+    "combined_requests": 50,
+    "fixture": "disposable Postgres + FalkorDB ontology"
+  },
+  "resource": {
+    "memory_before_mb": 534.074,
+    "memory_after_mb": 537.762,
+    "memory_peak_observed_mb": 538.172,
+    "total_http_requests": 141
+  },
+  "browser_evidence": {
+    "cancellation_recovery": "object-explorer-workflow: slow load recovers with one request",
+    "duplicate_submit": "object-explorer-workflow: busy submit produces one run request"
+  }
+}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch, type UseFormRegister, type UseFormHandleSubmit, type UseFormSetValue } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { modelApi } from '@/api/ontologies'
 import { apiClientV2 } from '@/api/client'
@@ -35,6 +35,14 @@ const PROVIDERS: Record<string, Array<{ value: string; label: string }>> = {
 
 const USAGE_TAGS = ['VLM提取', '结构化提取', '宽表分析', 'Ontology Mapping', 'NL-to-Cypher', 'OCR文字提取']
 
+type ModelFormData = { name: string; config_type: 'llm' | 'ocr' | 'other'; provider: string; api_key?: string; api_base?: string; models_str?: string; options_json?: string; ocr_enabled?: string; ocr_lang?: string; ocr_device?: string }
+type ApiError = { detail?: string; message?: string; response?: { data?: { detail?: string } } }
+type Invocation = {
+  id: string; model_name?: string; route_alias?: string; status?: string; metadata?: { purpose?: string };
+  duration_ms?: number; created_at?: string; construction_run_id?: string; audit_task_id?: string;
+  request?: string; response?: string; error?: string; request_hash?: string; response_hash?: string;
+}
+
 function modelList(text?: string) {
   return text ? text.split('\n').map((s: string) => s.trim()).filter(Boolean) : []
 }
@@ -48,7 +56,7 @@ function parseOptions(text?: string) {
   }
 }
 
-function buildPayload(data: any, usageTags: string[]) {
+function buildPayload(data: ModelFormData, usageTags: string[]) {
   const options = {
     ...parseOptions(data.options_json),
     usage_tags: usageTags,
@@ -80,16 +88,16 @@ export default function ModelsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ModelConfig | null>(null)
   const [testResult, setTestResult] = useState<Record<string, string>>({})
   const [formTags, setFormTags] = useState<string[]>([])
-  const { register, handleSubmit, reset, watch, setValue: setCreateValue } = useForm<any>({
+  const { register, handleSubmit, reset, control, setValue: setCreateValue } = useForm<ModelFormData>({
     defaultValues: { config_type: 'llm', provider: 'openai', ocr_enabled: 'false', ocr_lang: 'ch', ocr_device: 'cpu' },
   })
 
   const { data: models = [], isLoading } = useQuery({
-    queryKey: ['models'], queryFn: () => modelApi.list() as any,
+    queryKey: ['models'], queryFn: () => modelApi.list(),
   })
-  const localProbe = useQuery({ queryKey: ['local-model-probe'], queryFn: () => modelApi.localProbe() as any, refetchInterval: 15000 })
-  const routeStatus = useQuery({ queryKey: ['model-route-status'], queryFn: () => modelApi.routeStatus() as any, refetchInterval: 30000 })
-  const invocationQuery = useQuery({ queryKey: ['model-invocations'], queryFn: () => apiClientV2.get<{ items?: any[] }>('/model-invocations?limit=20') as any, refetchInterval: 15000 })
+  const localProbe = useQuery({ queryKey: ['local-model-probe'], queryFn: () => modelApi.localProbe(), refetchInterval: 15000 })
+  const routeStatus = useQuery({ queryKey: ['model-route-status'], queryFn: () => modelApi.routeStatus(), refetchInterval: 30000 })
+  const invocationQuery = useQuery({ queryKey: ['model-invocations'], queryFn: () => apiClientV2.get<{ items?: Invocation[] }>('/model-invocations?limit=20'), refetchInterval: 15000 })
   const [expandedInvocation, setExpandedInvocation] = useState<string | null>(null)
   const visibleModels = useMemo(() => {
     const all = models as ModelConfig[]
@@ -104,10 +112,11 @@ export default function ModelsPage() {
   }, [models])
 
   const [createError, setCreateError] = useState('')
+  const createConfigType = useWatch({ control, name: 'config_type' }) || 'llm'
   const createMut = useMutation({
-    mutationFn: (data: any) => modelApi.create(buildPayload(data, formTags)),
+    mutationFn: (data: ModelFormData) => modelApi.create(buildPayload(data, formTags)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['models'] }); setShowCreate(false); reset(); setFormTags([]); setCreateError('') },
-    onError: (err: any) => setCreateError(err?.response?.data?.detail || err?.detail || err?.message || '保存失败'),
+    onError: (err: ApiError) => setCreateError(err.response?.data?.detail || err.detail || err.message || '保存失败'),
   })
 
   const deleteMut = useMutation({
@@ -117,20 +126,21 @@ export default function ModelsPage() {
 
   const testMut = useMutation({
     mutationFn: (id: string) => modelApi.test(id),
-    onSuccess: (res: any, id) => {
-      const data = res?.data || res
+    onSuccess: (res: unknown, id) => {
+      const data = (res && typeof res === 'object' && 'data' in res ? res.data : res) as { ok?: boolean; response?: string } | undefined
       setTestResult(prev => ({ ...prev, [id]: data?.ok === false ? `未启用：${data.response || ''}` : '连接成功' }))
     },
-    onError: (err: any, id) => setTestResult(prev => ({ ...prev, [id]: `连接失败：${err?.detail || '请检查服务地址'}` })),
+    onError: (err: ApiError, id) => setTestResult(prev => ({ ...prev, [id]: `连接失败：${err.detail || '请检查服务地址'}` })),
   })
 
   // ── 编辑 ──
   const [editTarget, setEditTarget] = useState<ModelConfig | null>(null)
   const [editTags, setEditTags] = useState<string[]>([])
-  const { register: regEdit, handleSubmit: handleEditSubmit, setValue, watch: watchEdit } = useForm<any>()
+  const { register: regEdit, handleSubmit: handleEditSubmit, setValue, control: editControl } = useForm<ModelFormData>()
+  const editConfigType = useWatch({ control: editControl, name: 'config_type' }) || 'llm'
 
   const updateMut = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => modelApi.update(id, buildPayload(data, editTags)),
+    mutationFn: ({ id, data }: { id: string; data: ModelFormData }) => modelApi.update(id, buildPayload(data, editTags)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['models'] }); setEditTarget(null); setEditTags([]) },
   })
 
@@ -139,8 +149,9 @@ export default function ModelsPage() {
     try {
       await apiClientV2.delete(`/model-invocations/${id}?confirm=true`)
       qc.invalidateQueries({ queryKey: ['model-invocations'] })
-    } catch (err: any) {
-      window.alert(err?.detail || err?.message || '删除失败')
+    } catch (err: unknown) {
+      const error = err as ApiError
+      window.alert(error.detail || error.message || '删除失败')
     }
   }
 
@@ -183,13 +194,13 @@ export default function ModelsPage() {
         </div>
         <div className="mt-4 grid md:grid-cols-3 gap-3">
           <div className="rounded-lg bg-gray-50 p-3"><p className="text-[11px] text-gray-500">LiteLLM 网关</p><p className={`mt-2 text-sm font-medium ${routeStatus.data?.gateway?.reachable ? 'text-emerald-700' : 'text-amber-700'}`}>{routeStatus.isLoading ? '探测中…' : routeStatus.data?.gateway?.reachable ? '可达' : routeStatus.data?.gateway?.configured ? '未连接' : '未配置'}</p></div>
-          {(routeStatus.data?.routes || []).map((route: any) => <div key={route.alias} className="rounded-lg bg-gray-50 p-3"><p className="text-[11px] text-gray-500">{route.alias} · {route.purpose}</p><p className={`mt-2 flex items-center gap-1.5 text-sm font-medium ${route.available ? 'text-emerald-700' : 'text-amber-700'}`}>{route.available ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}{route.available ? '可用' : route.configured ? (route.upstream_authorized === false ? '上游未授权' : route.alias === 'MiniMax-M3' ? '待云端验证' : '待探测') : '未配置'}</p>{route.error && <p className="mt-1 text-[11px] text-amber-700 break-words">{route.error}</p>}</div>)}
+          {(routeStatus.data?.routes || []).map(route => <div key={route.alias} className="rounded-lg bg-gray-50 p-3"><p className="text-[11px] text-gray-500">{route.alias} · {route.purpose}</p><p className={`mt-2 flex items-center gap-1.5 text-sm font-medium ${route.available ? 'text-emerald-700' : 'text-amber-700'}`}>{route.available ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}{route.available ? '可用' : route.configured ? (route.upstream_authorized === false ? '上游未授权' : route.alias === 'MiniMax-M3' ? '待云端验证' : '待探测') : '未配置'}</p>{route.error && <p className="mt-1 text-[11px] text-amber-700 break-words">{route.error}</p>}</div>)}
         </div>
       </section>
 
       <section className="wb-surface p-5">
         <div className="flex items-start justify-between gap-4"><div><p className="wb-eyebrow">调用留痕</p><h2 className="mt-1 text-base font-semibold">最近模型调用</h2><p className="mt-1 text-xs text-gray-500">保存可见请求与响应、路由和哈希；不保存隐藏思维或未发送的二进制内容</p></div><button onClick={() => invocationQuery.refetch()} className="wb-button-secondary text-xs">刷新日志</button></div>
-        {invocationQuery.isLoading ? <p className="mt-4 text-xs text-gray-400">加载日志…</p> : (invocationQuery.data?.items || []).length === 0 ? <div className="wb-empty mt-4 py-5">暂无模型调用记录</div> : <div className="mt-4 space-y-2">{(invocationQuery.data?.items || []).map((item: any) => <div key={item.id} className="rounded-lg border border-gray-200 bg-white"><button type="button" className="w-full px-3 py-2.5 text-left" onClick={() => setExpandedInvocation(expandedInvocation === item.id ? null : item.id)}><div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${item.status === 'completed' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-red-500' : 'bg-amber-500'}`} /><span className="text-sm font-medium">{item.model_name || item.route_alias}</span><span className="text-xs text-gray-500">{item.metadata?.purpose || '模型调用'} · {item.status}</span><span className="ml-auto text-[11px] text-gray-400">{item.duration_ms == null ? '—' : `${item.duration_ms} ms`}</span></div><p className="mt-1 text-[11px] text-gray-400">{item.created_at || ''}{item.construction_run_id ? ` · run ${String(item.construction_run_id).slice(0, 8)}` : ''}{item.audit_task_id ? ` · audit ${String(item.audit_task_id).slice(0, 8)}` : ''}</p></button>{expandedInvocation === item.id && <div className="border-t bg-slate-50 p-3 space-y-2"><div><p className="text-[11px] text-gray-500 mb-1">可见请求</p><pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border bg-white p-2 text-[11px] text-gray-700">{item.request || '（未记录）'}</pre></div><div><p className="text-[11px] text-gray-500 mb-1">可见响应</p><pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border bg-white p-2 text-[11px] text-gray-700">{item.response || item.error || '（未返回）'}</pre></div><div className="flex items-center justify-between"><span className="text-[11px] text-gray-400">request {item.request_hash?.slice(0, 12) || '—'} · response {item.response_hash?.slice(0, 12) || '—'}</span><button type="button" onClick={() => deleteInvocation(item.id)} className="text-[11px] text-red-600 hover:underline">确认删除</button></div></div>}</div>)}</div>}
+        {invocationQuery.isLoading ? <p className="mt-4 text-xs text-gray-400">加载日志…</p> : (invocationQuery.data?.items || []).length === 0 ? <div className="wb-empty mt-4 py-5">暂无模型调用记录</div> : <div className="mt-4 space-y-2">{(invocationQuery.data?.items || []).map(item => <div key={item.id} className="rounded-lg border border-gray-200 bg-white"><button type="button" className="w-full px-3 py-2.5 text-left" onClick={() => setExpandedInvocation(expandedInvocation === item.id ? null : item.id)}><div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${item.status === 'completed' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-red-500' : 'bg-amber-500'}`} /><span className="text-sm font-medium">{item.model_name || item.route_alias}</span><span className="text-xs text-gray-500">{item.metadata?.purpose || '模型调用'} · {item.status}</span><span className="ml-auto text-[11px] text-gray-400">{item.duration_ms == null ? '—' : `${item.duration_ms} ms`}</span></div><p className="mt-1 text-[11px] text-gray-400">{item.created_at || ''}{item.construction_run_id ? ` · run ${String(item.construction_run_id).slice(0, 8)}` : ''}{item.audit_task_id ? ` · audit ${String(item.audit_task_id).slice(0, 8)}` : ''}</p></button>{expandedInvocation === item.id && <div className="border-t bg-slate-50 p-3 space-y-2"><div><p className="text-[11px] text-gray-500 mb-1">可见请求</p><pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border bg-white p-2 text-[11px] text-gray-700">{item.request || '（未记录）'}</pre></div><div><p className="text-[11px] text-gray-500 mb-1">可见响应</p><pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded border bg-white p-2 text-[11px] text-gray-700">{item.response || item.error || '（未返回）'}</pre></div><div className="flex items-center justify-between"><span className="text-[11px] text-gray-400">request {item.request_hash?.slice(0, 12) || '—'} · response {item.response_hash?.slice(0, 12) || '—'}</span><button type="button" onClick={() => deleteInvocation(item.id)} className="text-[11px] text-red-600 hover:underline">确认删除</button></div></div>}</div>)}</div>}
       </section>
 
       <div className="grid gap-4">
@@ -230,9 +241,9 @@ export default function ModelsPage() {
       </div>
 
       {/* 新建弹窗 */}
-      {showCreate && <ModelFormModal title="新建模型" onClose={() => { setShowCreate(false); setCreateError('') }} onSubmit={(d: any) => createMut.mutate(d)}
+      {showCreate && <ModelFormModal title="新建模型" onClose={() => { setShowCreate(false); setCreateError('') }} onSubmit={(d: ModelFormData) => createMut.mutate(d)}
         isPending={createMut.isPending} formTags={formTags} setFormTags={setFormTags} register={register}
-        handleSubmit={handleSubmit} configType={watch('config_type') || 'llm'} setValue={setCreateValue} error={createError} />}
+        handleSubmit={handleSubmit} configType={createConfigType} setValue={setCreateValue} error={createError} />}
 
       {/* 编辑弹窗 */}
       {editTarget && (
@@ -251,13 +262,13 @@ export default function ModelsPage() {
                 </select></div>
               <div><label className="block text-sm font-medium mb-1">Provider *</label>
                 <select {...regEdit('provider', { required: true })} className="w-full border rounded-lg px-3 py-2 text-sm">
-                  {(PROVIDERS[watchEdit('config_type') || 'llm'] || PROVIDERS.llm).map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  {(PROVIDERS[editConfigType] || PROVIDERS.llm).map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select></div>
               <div><label className="block text-sm font-medium mb-1">API Base</label>
                 <input {...regEdit('api_base')} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
               <div><label className="block text-sm font-medium mb-1">模型名（每行一个）</label>
                 <textarea {...regEdit('models_str')} rows={3} className="w-full border rounded-lg px-3 py-2 text-sm font-mono" /></div>
-              {(watchEdit('config_type') || 'llm') === 'ocr' && (
+              {editConfigType === 'ocr' && (
                 <div className="grid grid-cols-3 gap-3">
                   <div><label className="block text-sm font-medium mb-1">启用运行</label>
                     <select {...regEdit('ocr_enabled')} className="w-full border rounded-lg px-3 py-2 text-sm">
@@ -272,7 +283,7 @@ export default function ModelsPage() {
                 </div>
               )}
               <div><label className="block text-sm font-medium mb-1">高级参数 JSON</label>
-                <textarea {...regEdit('options_json')} rows={3} placeholder={'{\"timeout\": 30}'} className="w-full border rounded-lg px-3 py-2 text-sm font-mono" /></div>
+                <textarea {...regEdit('options_json')} rows={3} placeholder='{"timeout": 30}' className="w-full border rounded-lg px-3 py-2 text-sm font-mono" /></div>
               <div><label className="text-xs text-gray-500 mb-2 block">用途标签</label>
                 <div className="flex flex-wrap gap-2">
                   {USAGE_TAGS.map(tag => {
@@ -299,7 +310,10 @@ export default function ModelsPage() {
 }
 
 /** 新建模型表单弹窗 */
-function ModelFormModal({ title, onClose, onSubmit, isPending, formTags, setFormTags, register, handleSubmit, configType, setValue, error }: any) {
+function ModelFormModal({ title, onClose, onSubmit, isPending, formTags, setFormTags, register, handleSubmit, configType, setValue, error }: {
+  title: string; onClose: () => void; onSubmit: (data: ModelFormData) => void; isPending: boolean; formTags: string[]; setFormTags: React.Dispatch<React.SetStateAction<string[]>>;
+  register: UseFormRegister<ModelFormData>; handleSubmit: UseFormHandleSubmit<ModelFormData>; configType: string; setValue: UseFormSetValue<ModelFormData>; error: string;
+}) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded-lg shadow-lg p-6 w-[480px] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -309,7 +323,7 @@ function ModelFormModal({ title, onClose, onSubmit, isPending, formTags, setForm
           <div><label className="block text-sm font-medium mb-1">名称 *</label>
             <input {...register('name', { required: true })} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
           <div><label className="block text-sm font-medium mb-1">配置分类 *</label>
-            <select {...register('config_type', { required: true, onChange: (e: any) => setValue('provider', PROVIDERS[e.target.value]?.[0]?.value || 'custom') })} className="w-full border rounded-lg px-3 py-2 text-sm">
+            <select {...register('config_type', { required: true, onChange: e => setValue('provider', PROVIDERS[e.target.value]?.[0]?.value || 'custom') })} className="w-full border rounded-lg px-3 py-2 text-sm">
               {CONFIG_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select></div>
           <div><label className="block text-sm font-medium mb-1">Provider *</label>
@@ -337,7 +351,7 @@ function ModelFormModal({ title, onClose, onSubmit, isPending, formTags, setForm
             </div>
           )}
           <div><label className="block text-sm font-medium mb-1">高级参数 JSON</label>
-            <textarea {...register('options_json')} rows={3} placeholder={'{\"timeout\": 30}'} className="w-full border rounded-lg px-3 py-2 text-sm font-mono" /></div>
+            <textarea {...register('options_json')} rows={3} placeholder='{"timeout": 30}' className="w-full border rounded-lg px-3 py-2 text-sm font-mono" /></div>
           <div><label className="text-xs text-gray-500 mb-2 block">用途标签</label>
             <div className="flex flex-wrap gap-2">{[...USAGE_TAGS].map(tag => {
               const sel = formTags.includes(tag)

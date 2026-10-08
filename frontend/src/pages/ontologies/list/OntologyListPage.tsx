@@ -20,7 +20,7 @@ export default function OntologyListPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['ontologies'],
-    queryFn: () => ontologyApi.list({ page_size: 1000 }) as any,
+    queryFn: () => ontologyApi.list({ page_size: 1000 }),
   })
 
   const deleteMut = useMutation({
@@ -32,7 +32,7 @@ export default function OntologyListPage() {
     },
   })
 
-  const allItems: OntologyListItem[] = data?.items ?? []
+  const allItems = useMemo<OntologyListItem[]>(() => data?.items ?? [], [data])
 
   const filteredItems = useMemo(() => {
     let list = allItems

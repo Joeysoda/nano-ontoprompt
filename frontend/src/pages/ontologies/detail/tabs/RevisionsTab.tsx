@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, GitCompareArrows, History, Loader2, RotateCcw, TriangleAlert } from 'lucide-react'
 import { apiClientV2 } from '@/api/client'
 
@@ -34,7 +34,7 @@ export default function RevisionsTab({ ontologyId }: { ontologyId: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -44,14 +44,15 @@ export default function RevisionsTab({ ontologyId }: { ontologyId: string }) {
       setCurrentId(result?.current_revision_id || next.find(item => item.is_current)?.id || null)
       setLeftId(current => current || next[1]?.id || next[0]?.id || '')
       setRightId(current => current || next[0]?.id || '')
-    } catch (err: any) {
-      setError(err?.detail || err?.message || '版本列表加载失败')
+    } catch (err: unknown) {
+      const error = err as { detail?: string; message?: string }
+      setError(error.detail || error.message || '版本列表加载失败')
     } finally {
       setLoading(false)
     }
-  }
+  }, [ontologyId])
 
-  useEffect(() => { load() }, [ontologyId])
+  useEffect(() => { Promise.resolve().then(load) }, [load])
   const left = useMemo(() => items.find(item => item.id === leftId), [items, leftId])
   const right = useMemo(() => items.find(item => item.id === rightId), [items, rightId])
 
@@ -63,8 +64,9 @@ export default function RevisionsTab({ ontologyId }: { ontologyId: string }) {
     setBusy(true); setError('')
     try {
       setDiff(await apiClientV2.get<DiffResponse>(`/ontologies/${ontologyId}/revisions/compare`, { params: { left: leftId, right: rightId } }))
-    } catch (err: any) {
-      setError(err?.detail || err?.message || '版本差异加载失败')
+    } catch (err: unknown) {
+      const error = err as { detail?: string; message?: string }
+      setError(error.detail || error.message || '版本差异加载失败')
     } finally { setBusy(false) }
   }
 
@@ -75,8 +77,9 @@ export default function RevisionsTab({ ontologyId }: { ontologyId: string }) {
       const created = await apiClientV2.post<Revision>(`/ontologies/${ontologyId}/revisions/${revision.id}/restore`)
       await load()
       setRightId(created.id)
-    } catch (err: any) {
-      setError(err?.detail || err?.message || '恢复版本失败')
+    } catch (err: unknown) {
+      const error = err as { detail?: string; message?: string }
+      setError(error.detail || error.message || '恢复版本失败')
     } finally { setBusy(false) }
   }
 

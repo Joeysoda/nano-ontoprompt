@@ -1,0 +1,20 @@
+.spike-grid { display: grid; gap: 1rem; }
+.spike-card { border: 1px solid #e2e8f0; border-radius: 0.75rem; background: #fff; padding: 1.25rem; box-shadow: 0 1px 2px rgb(15 23 42 / 0.04); }
+.spike-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.spike-eyebrow { margin: 0 0 .3rem; color: #64748b; font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.spike-card h2 { margin: 0; color: #0f172a; font-size: 1.05rem; font-weight: 650; }
+.spike-status { border-radius: 999px; background: #eff6ff; color: #1d4ed8; padding: .25rem .55rem; font-size: .68rem; font-weight: 700; white-space: nowrap; }
+.spike-copy { margin: .65rem 0 1rem; color: #64748b; font-size: .8rem; line-height: 1.55; }
+.query-builder-shell { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: .5rem; padding: .8rem; background: #f8fafc; }
+.query-builder-shell .ruleGroup { border-color: #cbd5e1; background: #fff; }
+.query-builder-shell button, .query-builder-shell select, .query-builder-shell input { border: 1px solid #cbd5e1; border-radius: .35rem; background: #fff; padding: .3rem .45rem; font-size: .75rem; }
+.spike-code { max-height: 9rem; overflow: auto; margin: .8rem 0 0; border-radius: .45rem; background: #0f172a; color: #dbeafe; padding: .75rem; font-size: .7rem; line-height: 1.45; }
+.table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; color: #64748b; font-size: .75rem; }
+.table-toolbar button { border: 1px solid #cbd5e1; border-radius: .35rem; background: #fff; padding: .35rem .6rem; font-size: .72rem; }
+.table-scroll { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: .5rem; }
+.spike-table { min-width: 700px; width: 100%; border-collapse: collapse; color: #334155; font-size: .76rem; }
+.spike-table th { background: #f8fafc; color: #64748b; font-size: .68rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: .04em; }
+.spike-table th, .spike-table td { border-bottom: 1px solid #e2e8f0; padding: .65rem .7rem; white-space: nowrap; }
+.spike-table tbody tr:last-child td { border-bottom: 0; }
+.chart-canvas { height: 280px; width: 100%; }
+@media (min-width: 1100px) { .spike-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; } }

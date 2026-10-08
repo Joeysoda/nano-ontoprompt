@@ -23,6 +23,16 @@ services:
       timeout: 5s
       retries: 5
 
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports: ["6381:6379"]
+    volumes: [falkordb_data:/var/lib/falkordb/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   neo4j:
     image: neo4j:5.20-community
     ports:
@@ -72,6 +82,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      falkordb:
+        condition: service_healthy
       neo4j:
         condition: service_healthy
       minio:
@@ -79,6 +91,9 @@ services:
       chromadb:
         condition: service_healthy
     volumes: [./backend:/app, ./uploads:/uploads]
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   celery_worker:
@@ -89,6 +104,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      falkordb:
+        condition: service_healthy
       neo4j:
         condition: service_healthy
       minio:
@@ -96,6 +113,9 @@ services:
       chromadb:
         condition: service_healthy
     volumes: [./backend:/app, ./uploads:/uploads]
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
     command: celery -A app.tasks.extraction worker --loglevel=info
 
   frontend:
@@ -112,3 +132,4 @@ volumes:
   neo4j_data:
   minio_data:
   chroma_data:
+  falkordb_data:

@@ -152,7 +152,7 @@ async function testDomain(page, domain, idx) {
       await sleep(2000);
       r.screenshots.graph = await ss(page, `${pfx}_06_graph`);
       r.tabsAccessed.push('知识图谱');
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     // ── 5. 实体 ─────────────────────────────────────────────
     try {
@@ -160,7 +160,7 @@ async function testDomain(page, domain, idx) {
       await sleep(1500);
       r.screenshots.entities = await ss(page, `${pfx}_07_entities`);
       r.tabsAccessed.push('实体');
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     // ── 6. 逻辑规则 ─────────────────────────────────────────
     try {
@@ -168,7 +168,7 @@ async function testDomain(page, domain, idx) {
       await sleep(1200);
       r.screenshots.logic = await ss(page, `${pfx}_08_logic`);
       r.tabsAccessed.push('逻辑规则');
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     // ── 7. 动作 ─────────────────────────────────────────────
     try {
@@ -176,7 +176,7 @@ async function testDomain(page, domain, idx) {
       await sleep(1200);
       r.screenshots.actions = await ss(page, `${pfx}_09_actions`);
       r.tabsAccessed.push('动作');
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     // ── 8. LLM提取配置 ───────────────────────────────────────
     try {
@@ -184,7 +184,7 @@ async function testDomain(page, domain, idx) {
       await sleep(1200);
       r.screenshots.llm = await ss(page, `${pfx}_10_llm`);
       r.tabsAccessed.push('LLM提取配置');
-    } catch(e) {}
+    } catch { /* optional page section unavailable */ }
 
     r.status = r.ontologyId ? (r.filesUploaded > 0 ? 'PASS' : 'PARTIAL') : 'FAIL';
     console.log(`  结果: ${r.status} | 文件 ${r.filesUploaded}/${domain.files.length} | Tab: ${r.tabsAccessed.join(',')}`);

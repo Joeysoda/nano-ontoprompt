@@ -12,11 +12,6 @@ const OID = 'ef1a1be8-d336-4c82-af43-eddd9fe75019';
 mkdirSync(SSDIR, { recursive: true });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function apiGet(p, token) {
-  const res = await fetch(`${API}${p}`, { headers: { Authorization: `Bearer ${token}` } });
-  return (await res.json()).data ?? (await res.json());
-}
-
 (async () => {
   const browser = await chromium.launch({ headless: false, slowMo: 40 });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });

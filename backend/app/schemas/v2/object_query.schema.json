@@ -1,0 +1,2839 @@
+{
+  "$defs": {
+    "AndFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "and": "#/$defs/AndFilter",
+                "array_match": "#/$defs/ArrayFilter",
+                "comparison": "#/$defs/ComparisonFilter",
+                "interval": "#/$defs/IntervalFilter",
+                "not": "#/$defs/NotFilter",
+                "null_test": "#/$defs/NullFilter",
+                "or": "#/$defs/OrFilter",
+                "text": "#/$defs/TextFilter"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AndFilter"
+              },
+              {
+                "$ref": "#/$defs/OrFilter"
+              },
+              {
+                "$ref": "#/$defs/NotFilter"
+              },
+              {
+                "$ref": "#/$defs/ComparisonFilter"
+              },
+              {
+                "$ref": "#/$defs/NullFilter"
+              },
+              {
+                "$ref": "#/$defs/TextFilter"
+              },
+              {
+                "$ref": "#/$defs/ArrayFilter"
+              },
+              {
+                "$ref": "#/$defs/IntervalFilter"
+              }
+            ]
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        },
+        "kind": {
+          "const": "and",
+          "enum": [
+            "and"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "items"
+      ],
+      "title": "AndFilter",
+      "type": "object"
+    },
+    "ArrayFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "array_match",
+          "enum": [
+            "array_match"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "contains_any",
+            "contains_all"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "property": {
+          "$ref": "#/$defs/PropertyRef"
+        },
+        "values": {
+          "items": {},
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "property",
+        "mode",
+        "values"
+      ],
+      "title": "ArrayFilter",
+      "type": "object"
+    },
+    "AsBaseObjectTypesObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "as_base_object_types",
+          "enum": [
+            "as_base_object_types"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "input"
+      ],
+      "title": "AsBaseObjectTypesObjectSet",
+      "type": "object"
+    },
+    "AsTypeObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "as_type",
+          "enum": [
+            "as_type"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "type_ref": {
+          "$ref": "#/$defs/TypeRef"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "type_ref"
+      ],
+      "title": "AsTypeObjectSet",
+      "type": "object"
+    },
+    "BaseObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "base",
+          "enum": [
+            "base"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "type_ref": {
+          "$ref": "#/$defs/TypeRef"
+        }
+      },
+      "required": [
+        "kind",
+        "type_ref"
+      ],
+      "title": "BaseObjectSet",
+      "type": "object"
+    },
+    "ComparisonFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "comparison",
+          "enum": [
+            "comparison"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "in"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "property": {
+          "$ref": "#/$defs/PropertyRef"
+        },
+        "value": {
+          "title": "Value"
+        }
+      },
+      "required": [
+        "kind",
+        "property",
+        "op",
+        "value"
+      ],
+      "title": "ComparisonFilter",
+      "type": "object"
+    },
+    "DerivedAggregation": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "filter": "#/$defs/DerivedFilter",
+              "method_input": "#/$defs/DerivedMethodInput",
+              "traverse": "#/$defs/DerivedTraverse"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DerivedMethodInput"
+            },
+            {
+              "$ref": "#/$defs/DerivedFilter"
+            },
+            {
+              "$ref": "#/$defs/DerivedTraverse"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "aggregation",
+          "enum": [
+            "aggregation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        },
+        "op": {
+          "enum": [
+            "count",
+            "sum",
+            "avg",
+            "min",
+            "max",
+            "exact_distinct",
+            "approximate_distinct",
+            "collect_list",
+            "collect_set"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "property": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PropertyRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "op"
+      ],
+      "title": "DerivedAggregation",
+      "type": "object"
+    },
+    "DerivedFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "filter": "#/$defs/DerivedFilter",
+              "method_input": "#/$defs/DerivedMethodInput",
+              "traverse": "#/$defs/DerivedTraverse"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DerivedMethodInput"
+            },
+            {
+              "$ref": "#/$defs/DerivedFilter"
+            },
+            {
+              "$ref": "#/$defs/DerivedTraverse"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "filter",
+          "enum": [
+            "filter"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "where": {
+          "discriminator": {
+            "mapping": {
+              "and": "#/$defs/AndFilter",
+              "array_match": "#/$defs/ArrayFilter",
+              "comparison": "#/$defs/ComparisonFilter",
+              "interval": "#/$defs/IntervalFilter",
+              "not": "#/$defs/NotFilter",
+              "null_test": "#/$defs/NullFilter",
+              "or": "#/$defs/OrFilter",
+              "text": "#/$defs/TextFilter"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AndFilter"
+            },
+            {
+              "$ref": "#/$defs/OrFilter"
+            },
+            {
+              "$ref": "#/$defs/NotFilter"
+            },
+            {
+              "$ref": "#/$defs/ComparisonFilter"
+            },
+            {
+              "$ref": "#/$defs/NullFilter"
+            },
+            {
+              "$ref": "#/$defs/TextFilter"
+            },
+            {
+              "$ref": "#/$defs/ArrayFilter"
+            },
+            {
+              "$ref": "#/$defs/IntervalFilter"
+            }
+          ],
+          "title": "Where"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "where"
+      ],
+      "title": "DerivedFilter",
+      "type": "object"
+    },
+    "DerivedMethodInput": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "method_input",
+          "enum": [
+            "method_input"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "DerivedMethodInput",
+      "type": "object"
+    },
+    "DerivedSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "filter": "#/$defs/DerivedFilter",
+              "method_input": "#/$defs/DerivedMethodInput",
+              "traverse": "#/$defs/DerivedTraverse"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DerivedMethodInput"
+            },
+            {
+              "$ref": "#/$defs/DerivedFilter"
+            },
+            {
+              "$ref": "#/$defs/DerivedTraverse"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "selection",
+          "enum": [
+            "selection"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "property": {
+          "$ref": "#/$defs/PropertyRef"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "property"
+      ],
+      "title": "DerivedSelection",
+      "type": "object"
+    },
+    "DerivedTraverse": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "filter": "#/$defs/DerivedFilter",
+              "method_input": "#/$defs/DerivedMethodInput",
+              "traverse": "#/$defs/DerivedTraverse"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DerivedMethodInput"
+            },
+            {
+              "$ref": "#/$defs/DerivedFilter"
+            },
+            {
+              "$ref": "#/$defs/DerivedTraverse"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "traverse",
+          "enum": [
+            "traverse"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/$defs/LinkRef"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "link"
+      ],
+      "title": "DerivedTraverse",
+      "type": "object"
+    },
+    "EmptyObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "empty",
+          "enum": [
+            "empty"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "type_ref": {
+          "$ref": "#/$defs/TypeRef"
+        }
+      },
+      "required": [
+        "kind",
+        "type_ref"
+      ],
+      "title": "EmptyObjectSet",
+      "type": "object"
+    },
+    "ExecutionContext": {
+      "additionalProperties": false,
+      "properties": {
+        "consistency": {
+          "default": "live",
+          "enum": [
+            "live",
+            "projection_guarded",
+            "snapshot"
+          ],
+          "title": "Consistency",
+          "type": "string"
+        },
+        "data_view_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data View Id"
+        },
+        "metadata_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metadata Digest"
+        },
+        "ontology_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Ontology Id",
+          "type": "string"
+        },
+        "projection_token": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Projection Token"
+        },
+        "revision_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision Id"
+        },
+        "revision_policy": {
+          "default": "latest",
+          "enum": [
+            "latest",
+            "pinned"
+          ],
+          "title": "Revision Policy",
+          "type": "string"
+        },
+        "scenario_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scenario Id"
+        },
+        "scenario_revision": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scenario Revision"
+        }
+      },
+      "required": [
+        "ontology_id"
+      ],
+      "title": "ExecutionContext",
+      "type": "object"
+    },
+    "FilterObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "filter",
+          "enum": [
+            "filter"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "where": {
+          "discriminator": {
+            "mapping": {
+              "and": "#/$defs/AndFilter",
+              "array_match": "#/$defs/ArrayFilter",
+              "comparison": "#/$defs/ComparisonFilter",
+              "interval": "#/$defs/IntervalFilter",
+              "not": "#/$defs/NotFilter",
+              "null_test": "#/$defs/NullFilter",
+              "or": "#/$defs/OrFilter",
+              "text": "#/$defs/TextFilter"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AndFilter"
+            },
+            {
+              "$ref": "#/$defs/OrFilter"
+            },
+            {
+              "$ref": "#/$defs/NotFilter"
+            },
+            {
+              "$ref": "#/$defs/ComparisonFilter"
+            },
+            {
+              "$ref": "#/$defs/NullFilter"
+            },
+            {
+              "$ref": "#/$defs/TextFilter"
+            },
+            {
+              "$ref": "#/$defs/ArrayFilter"
+            },
+            {
+              "$ref": "#/$defs/IntervalFilter"
+            }
+          ],
+          "title": "Where"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "where"
+      ],
+      "title": "FilterObjectSet",
+      "type": "object"
+    },
+    "InterfaceBaseObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "include_all_base_object_properties": {
+          "default": false,
+          "title": "Include All Base Object Properties",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "interface_base",
+          "enum": [
+            "interface_base"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "type_ref": {
+          "$ref": "#/$defs/TypeRef"
+        }
+      },
+      "required": [
+        "kind",
+        "type_ref"
+      ],
+      "title": "InterfaceBaseObjectSet",
+      "type": "object"
+    },
+    "InterfaceTraverseObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "interface_traverse",
+          "enum": [
+            "interface_traverse"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/$defs/LinkRef"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "link"
+      ],
+      "title": "InterfaceTraverseObjectSet",
+      "type": "object"
+    },
+    "IntersectObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+                "as_type": "#/$defs/AsTypeObjectSet",
+                "base": "#/$defs/BaseObjectSet",
+                "empty": "#/$defs/EmptyObjectSet",
+                "filter": "#/$defs/FilterObjectSet",
+                "interface_base": "#/$defs/InterfaceBaseObjectSet",
+                "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+                "intersect": "#/$defs/IntersectObjectSet",
+                "linked": "#/$defs/LinkedObjectSet",
+                "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+                "reachable": "#/$defs/ReachableObjectSet",
+                "reference": "#/$defs/ReferenceObjectSet",
+                "static": "#/$defs/StaticObjectSet",
+                "subtract": "#/$defs/SubtractObjectSet",
+                "traverse": "#/$defs/TraverseObjectSet",
+                "union": "#/$defs/UnionObjectSet",
+                "with_properties": "#/$defs/WithPropertiesObjectSet"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/BaseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/EmptyObjectSet"
+              },
+              {
+                "$ref": "#/$defs/LinkedObjectSet"
+              },
+              {
+                "$ref": "#/$defs/ReachableObjectSet"
+              },
+              {
+                "$ref": "#/$defs/InterfaceBaseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/StaticObjectSet"
+              },
+              {
+                "$ref": "#/$defs/ReferenceObjectSet"
+              },
+              {
+                "$ref": "#/$defs/FilterObjectSet"
+              },
+              {
+                "$ref": "#/$defs/TraverseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/InterfaceTraverseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/UnionObjectSet"
+              },
+              {
+                "$ref": "#/$defs/IntersectObjectSet"
+              },
+              {
+                "$ref": "#/$defs/SubtractObjectSet"
+              },
+              {
+                "$ref": "#/$defs/NearestNeighborsObjectSet"
+              },
+              {
+                "$ref": "#/$defs/WithPropertiesObjectSet"
+              },
+              {
+                "$ref": "#/$defs/AsTypeObjectSet"
+              },
+              {
+                "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+              }
+            ]
+          },
+          "maxItems": 20,
+          "minItems": 2,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "kind": {
+          "const": "intersect",
+          "enum": [
+            "intersect"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "inputs"
+      ],
+      "title": "IntersectObjectSet",
+      "type": "object"
+    },
+    "IntervalFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "interval",
+          "enum": [
+            "interval"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "lower": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lower"
+        },
+        "lower_inclusive": {
+          "default": true,
+          "title": "Lower Inclusive",
+          "type": "boolean"
+        },
+        "property": {
+          "$ref": "#/$defs/PropertyRef"
+        },
+        "upper": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upper"
+        },
+        "upper_inclusive": {
+          "default": true,
+          "title": "Upper Inclusive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "property"
+      ],
+      "title": "IntervalFilter",
+      "type": "object"
+    },
+    "LinkRef": {
+      "additionalProperties": false,
+      "properties": {
+        "api_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Api Name",
+          "type": "string"
+        },
+        "direction": {
+          "default": "out",
+          "enum": [
+            "out",
+            "in"
+          ],
+          "title": "Direction",
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_name"
+      ],
+      "title": "LinkRef",
+      "type": "object"
+    },
+    "LinkedObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "count_op": {
+          "default": "gte",
+          "enum": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte"
+          ],
+          "title": "Count Op",
+          "type": "string"
+        },
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "linked",
+          "enum": [
+            "linked"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/$defs/LinkRef"
+        },
+        "quantifier": {
+          "enum": [
+            "any",
+            "none",
+            "all",
+            "count"
+          ],
+          "title": "Quantifier",
+          "type": "string"
+        },
+        "where": {
+          "discriminator": {
+            "mapping": {
+              "and": "#/$defs/AndFilter",
+              "array_match": "#/$defs/ArrayFilter",
+              "comparison": "#/$defs/ComparisonFilter",
+              "interval": "#/$defs/IntervalFilter",
+              "not": "#/$defs/NotFilter",
+              "null_test": "#/$defs/NullFilter",
+              "or": "#/$defs/OrFilter",
+              "text": "#/$defs/TextFilter"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AndFilter"
+            },
+            {
+              "$ref": "#/$defs/OrFilter"
+            },
+            {
+              "$ref": "#/$defs/NotFilter"
+            },
+            {
+              "$ref": "#/$defs/ComparisonFilter"
+            },
+            {
+              "$ref": "#/$defs/NullFilter"
+            },
+            {
+              "$ref": "#/$defs/TextFilter"
+            },
+            {
+              "$ref": "#/$defs/ArrayFilter"
+            },
+            {
+              "$ref": "#/$defs/IntervalFilter"
+            }
+          ],
+          "title": "Where"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "link",
+        "quantifier",
+        "where"
+      ],
+      "title": "LinkedObjectSet",
+      "type": "object"
+    },
+    "NearestNeighborsObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Input"
+        },
+        "k": {
+          "maximum": 100,
+          "minimum": 1,
+          "title": "K",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "nearest_neighbors",
+          "enum": [
+            "nearest_neighbors"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "property": {
+          "$ref": "#/$defs/PropertyRef"
+        },
+        "query": {
+          "discriminator": {
+            "mapping": {
+              "text": "#/$defs/TextNearestQuery",
+              "vector": "#/$defs/VectorNearestQuery"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TextNearestQuery"
+            },
+            {
+              "$ref": "#/$defs/VectorNearestQuery"
+            }
+          ],
+          "title": "Query"
+        },
+        "similarity_threshold": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Similarity Threshold"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "property",
+        "query",
+        "k"
+      ],
+      "title": "NearestNeighborsObjectSet",
+      "type": "object"
+    },
+    "NotFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "discriminator": {
+            "mapping": {
+              "and": "#/$defs/AndFilter",
+              "array_match": "#/$defs/ArrayFilter",
+              "comparison": "#/$defs/ComparisonFilter",
+              "interval": "#/$defs/IntervalFilter",
+              "not": "#/$defs/NotFilter",
+              "null_test": "#/$defs/NullFilter",
+              "or": "#/$defs/OrFilter",
+              "text": "#/$defs/TextFilter"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AndFilter"
+            },
+            {
+              "$ref": "#/$defs/OrFilter"
+            },
+            {
+              "$ref": "#/$defs/NotFilter"
+            },
+            {
+              "$ref": "#/$defs/ComparisonFilter"
+            },
+            {
+              "$ref": "#/$defs/NullFilter"
+            },
+            {
+              "$ref": "#/$defs/TextFilter"
+            },
+            {
+              "$ref": "#/$defs/ArrayFilter"
+            },
+            {
+              "$ref": "#/$defs/IntervalFilter"
+            }
+          ],
+          "title": "Item"
+        },
+        "kind": {
+          "const": "not",
+          "enum": [
+            "not"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "item"
+      ],
+      "title": "NotFilter",
+      "type": "object"
+    },
+    "NullFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "is_null": {
+          "default": true,
+          "title": "Is Null",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "null_test",
+          "enum": [
+            "null_test"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "property": {
+          "$ref": "#/$defs/PropertyRef"
+        }
+      },
+      "required": [
+        "kind",
+        "property"
+      ],
+      "title": "NullFilter",
+      "type": "object"
+    },
+    "OrFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "and": "#/$defs/AndFilter",
+                "array_match": "#/$defs/ArrayFilter",
+                "comparison": "#/$defs/ComparisonFilter",
+                "interval": "#/$defs/IntervalFilter",
+                "not": "#/$defs/NotFilter",
+                "null_test": "#/$defs/NullFilter",
+                "or": "#/$defs/OrFilter",
+                "text": "#/$defs/TextFilter"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AndFilter"
+              },
+              {
+                "$ref": "#/$defs/OrFilter"
+              },
+              {
+                "$ref": "#/$defs/NotFilter"
+              },
+              {
+                "$ref": "#/$defs/ComparisonFilter"
+              },
+              {
+                "$ref": "#/$defs/NullFilter"
+              },
+              {
+                "$ref": "#/$defs/TextFilter"
+              },
+              {
+                "$ref": "#/$defs/ArrayFilter"
+              },
+              {
+                "$ref": "#/$defs/IntervalFilter"
+              }
+            ]
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        },
+        "kind": {
+          "const": "or",
+          "enum": [
+            "or"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "items"
+      ],
+      "title": "OrFilter",
+      "type": "object"
+    },
+    "OrderBy": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "default": "asc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "nulls": {
+          "default": "last",
+          "enum": [
+            "first",
+            "last"
+          ],
+          "title": "Nulls",
+          "type": "string"
+        },
+        "property": {
+          "$ref": "#/$defs/PropertyRef"
+        }
+      },
+      "required": [
+        "property"
+      ],
+      "title": "OrderBy",
+      "type": "object"
+    },
+    "ParameterSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_fields": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "title": "Allowed Fields",
+          "type": "array"
+        },
+        "data_type": {
+          "enum": [
+            "string",
+            "boolean",
+            "integer",
+            "decimal",
+            "date",
+            "timestamp",
+            "object",
+            "array"
+          ],
+          "title": "Data Type",
+          "type": "string"
+        },
+        "default": {
+          "default": null,
+          "title": "Default"
+        },
+        "element_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "string",
+                "boolean",
+                "integer",
+                "decimal",
+                "date",
+                "timestamp",
+                "object"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Element Type"
+        },
+        "enum": {
+          "anyOf": [
+            {
+              "items": {},
+              "maxItems": 1000,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enum"
+        },
+        "max_length": {
+          "default": 1000,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Length",
+          "type": "integer"
+        },
+        "maximum": {
+          "default": null,
+          "title": "Maximum"
+        },
+        "minimum": {
+          "default": null,
+          "title": "Minimum"
+        },
+        "nullable": {
+          "default": false,
+          "title": "Nullable",
+          "type": "boolean"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "data_type",
+        "allowed_fields"
+      ],
+      "title": "ParameterSpec",
+      "type": "object"
+    },
+    "PropertyRef": {
+      "additionalProperties": false,
+      "properties": {
+        "api_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Api Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_name"
+      ],
+      "title": "PropertyRef",
+      "type": "object"
+    },
+    "ReachableObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "include_seed": {
+          "default": false,
+          "title": "Include Seed",
+          "type": "boolean"
+        },
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "reachable",
+          "enum": [
+            "reachable"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/$defs/LinkRef"
+        },
+        "max_depth": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Max Depth",
+          "type": "integer"
+        },
+        "max_nodes": {
+          "default": 1000,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Nodes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "link"
+      ],
+      "title": "ReachableObjectSet",
+      "type": "object"
+    },
+    "ReadOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "explain": {
+          "default": false,
+          "title": "Explain",
+          "type": "boolean"
+        },
+        "include_total": {
+          "default": false,
+          "title": "Include Total",
+          "type": "boolean"
+        },
+        "materialization_limit": {
+          "default": 1000,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Materialization Limit",
+          "type": "integer"
+        },
+        "order_by": {
+          "items": {
+            "$ref": "#/$defs/OrderBy"
+          },
+          "maxItems": 10,
+          "title": "Order By",
+          "type": "array"
+        },
+        "page_size": {
+          "default": 50,
+          "maximum": 200,
+          "minimum": 1,
+          "title": "Page Size",
+          "type": "integer"
+        },
+        "page_token": {
+          "anyOf": [
+            {
+              "maxLength": 8192,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page Token"
+        },
+        "select": {
+          "items": {
+            "$ref": "#/$defs/PropertyRef"
+          },
+          "maxItems": 200,
+          "title": "Select",
+          "type": "array"
+        }
+      },
+      "title": "ReadOptions",
+      "type": "object"
+    },
+    "ReferenceObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "definition_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Definition Version"
+        },
+        "kind": {
+          "const": "reference",
+          "enum": [
+            "reference"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "object_set_id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Object Set Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "object_set_id"
+      ],
+      "title": "ReferenceObjectSet",
+      "type": "object"
+    },
+    "StaticObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "static",
+          "enum": [
+            "static"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "object_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10000,
+          "title": "Object Ids",
+          "type": "array"
+        },
+        "type_ref": {
+          "$ref": "#/$defs/TypeRef"
+        }
+      },
+      "required": [
+        "kind",
+        "type_ref",
+        "object_ids"
+      ],
+      "title": "StaticObjectSet",
+      "type": "object"
+    },
+    "SubtractObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Base"
+        },
+        "kind": {
+          "const": "subtract",
+          "enum": [
+            "subtract"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "subtract": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+                "as_type": "#/$defs/AsTypeObjectSet",
+                "base": "#/$defs/BaseObjectSet",
+                "empty": "#/$defs/EmptyObjectSet",
+                "filter": "#/$defs/FilterObjectSet",
+                "interface_base": "#/$defs/InterfaceBaseObjectSet",
+                "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+                "intersect": "#/$defs/IntersectObjectSet",
+                "linked": "#/$defs/LinkedObjectSet",
+                "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+                "reachable": "#/$defs/ReachableObjectSet",
+                "reference": "#/$defs/ReferenceObjectSet",
+                "static": "#/$defs/StaticObjectSet",
+                "subtract": "#/$defs/SubtractObjectSet",
+                "traverse": "#/$defs/TraverseObjectSet",
+                "union": "#/$defs/UnionObjectSet",
+                "with_properties": "#/$defs/WithPropertiesObjectSet"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/BaseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/EmptyObjectSet"
+              },
+              {
+                "$ref": "#/$defs/LinkedObjectSet"
+              },
+              {
+                "$ref": "#/$defs/ReachableObjectSet"
+              },
+              {
+                "$ref": "#/$defs/InterfaceBaseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/StaticObjectSet"
+              },
+              {
+                "$ref": "#/$defs/ReferenceObjectSet"
+              },
+              {
+                "$ref": "#/$defs/FilterObjectSet"
+              },
+              {
+                "$ref": "#/$defs/TraverseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/InterfaceTraverseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/UnionObjectSet"
+              },
+              {
+                "$ref": "#/$defs/IntersectObjectSet"
+              },
+              {
+                "$ref": "#/$defs/SubtractObjectSet"
+              },
+              {
+                "$ref": "#/$defs/NearestNeighborsObjectSet"
+              },
+              {
+                "$ref": "#/$defs/WithPropertiesObjectSet"
+              },
+              {
+                "$ref": "#/$defs/AsTypeObjectSet"
+              },
+              {
+                "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+              }
+            ]
+          },
+          "maxItems": 19,
+          "minItems": 1,
+          "title": "Subtract",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "base",
+        "subtract"
+      ],
+      "title": "SubtractObjectSet",
+      "type": "object"
+    },
+    "TextFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "fuzzy": {
+          "default": false,
+          "title": "Fuzzy",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "text",
+          "enum": [
+            "text"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "contains",
+            "starts_with",
+            "match_all_tokens",
+            "match_any_token"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "property": {
+          "$ref": "#/$defs/PropertyRef"
+        },
+        "query": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "property",
+        "mode",
+        "query"
+      ],
+      "title": "TextFilter",
+      "type": "object"
+    },
+    "TextNearestQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "text",
+          "enum": [
+            "text"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "TextNearestQuery",
+      "type": "object"
+    },
+    "TraverseObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "traverse",
+          "enum": [
+            "traverse"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/$defs/LinkRef"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "link"
+      ],
+      "title": "TraverseObjectSet",
+      "type": "object"
+    },
+    "TypeRef": {
+      "additionalProperties": false,
+      "properties": {
+        "api_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Api Name",
+          "type": "string"
+        },
+        "kind": {
+          "default": "object",
+          "enum": [
+            "object",
+            "interface"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_name"
+      ],
+      "title": "TypeRef",
+      "type": "object"
+    },
+    "UnionObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+                "as_type": "#/$defs/AsTypeObjectSet",
+                "base": "#/$defs/BaseObjectSet",
+                "empty": "#/$defs/EmptyObjectSet",
+                "filter": "#/$defs/FilterObjectSet",
+                "interface_base": "#/$defs/InterfaceBaseObjectSet",
+                "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+                "intersect": "#/$defs/IntersectObjectSet",
+                "linked": "#/$defs/LinkedObjectSet",
+                "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+                "reachable": "#/$defs/ReachableObjectSet",
+                "reference": "#/$defs/ReferenceObjectSet",
+                "static": "#/$defs/StaticObjectSet",
+                "subtract": "#/$defs/SubtractObjectSet",
+                "traverse": "#/$defs/TraverseObjectSet",
+                "union": "#/$defs/UnionObjectSet",
+                "with_properties": "#/$defs/WithPropertiesObjectSet"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/BaseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/EmptyObjectSet"
+              },
+              {
+                "$ref": "#/$defs/LinkedObjectSet"
+              },
+              {
+                "$ref": "#/$defs/ReachableObjectSet"
+              },
+              {
+                "$ref": "#/$defs/InterfaceBaseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/StaticObjectSet"
+              },
+              {
+                "$ref": "#/$defs/ReferenceObjectSet"
+              },
+              {
+                "$ref": "#/$defs/FilterObjectSet"
+              },
+              {
+                "$ref": "#/$defs/TraverseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/InterfaceTraverseObjectSet"
+              },
+              {
+                "$ref": "#/$defs/UnionObjectSet"
+              },
+              {
+                "$ref": "#/$defs/IntersectObjectSet"
+              },
+              {
+                "$ref": "#/$defs/SubtractObjectSet"
+              },
+              {
+                "$ref": "#/$defs/NearestNeighborsObjectSet"
+              },
+              {
+                "$ref": "#/$defs/WithPropertiesObjectSet"
+              },
+              {
+                "$ref": "#/$defs/AsTypeObjectSet"
+              },
+              {
+                "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+              }
+            ]
+          },
+          "maxItems": 20,
+          "minItems": 2,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "kind": {
+          "const": "union",
+          "enum": [
+            "union"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "inputs"
+      ],
+      "title": "UnionObjectSet",
+      "type": "object"
+    },
+    "VectorNearestQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "vector",
+          "enum": [
+            "vector"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2048,
+          "minItems": 1,
+          "title": "Value",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "VectorNearestQuery",
+      "type": "object"
+    },
+    "WithPropertiesObjectSet": {
+      "additionalProperties": false,
+      "properties": {
+        "definitions": {
+          "additionalProperties": {
+            "discriminator": {
+              "mapping": {
+                "aggregation": "#/$defs/DerivedAggregation",
+                "selection": "#/$defs/DerivedSelection"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DerivedSelection"
+              },
+              {
+                "$ref": "#/$defs/DerivedAggregation"
+              }
+            ]
+          },
+          "maxProperties": 50,
+          "minProperties": 1,
+          "title": "Definitions",
+          "type": "object"
+        },
+        "input": {
+          "discriminator": {
+            "mapping": {
+              "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+              "as_type": "#/$defs/AsTypeObjectSet",
+              "base": "#/$defs/BaseObjectSet",
+              "empty": "#/$defs/EmptyObjectSet",
+              "filter": "#/$defs/FilterObjectSet",
+              "interface_base": "#/$defs/InterfaceBaseObjectSet",
+              "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+              "intersect": "#/$defs/IntersectObjectSet",
+              "linked": "#/$defs/LinkedObjectSet",
+              "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+              "reachable": "#/$defs/ReachableObjectSet",
+              "reference": "#/$defs/ReferenceObjectSet",
+              "static": "#/$defs/StaticObjectSet",
+              "subtract": "#/$defs/SubtractObjectSet",
+              "traverse": "#/$defs/TraverseObjectSet",
+              "union": "#/$defs/UnionObjectSet",
+              "with_properties": "#/$defs/WithPropertiesObjectSet"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/EmptyObjectSet"
+            },
+            {
+              "$ref": "#/$defs/LinkedObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReachableObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceBaseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/StaticObjectSet"
+            },
+            {
+              "$ref": "#/$defs/ReferenceObjectSet"
+            },
+            {
+              "$ref": "#/$defs/FilterObjectSet"
+            },
+            {
+              "$ref": "#/$defs/TraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/InterfaceTraverseObjectSet"
+            },
+            {
+              "$ref": "#/$defs/UnionObjectSet"
+            },
+            {
+              "$ref": "#/$defs/IntersectObjectSet"
+            },
+            {
+              "$ref": "#/$defs/SubtractObjectSet"
+            },
+            {
+              "$ref": "#/$defs/NearestNeighborsObjectSet"
+            },
+            {
+              "$ref": "#/$defs/WithPropertiesObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsTypeObjectSet"
+            },
+            {
+              "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+            }
+          ],
+          "title": "Input"
+        },
+        "kind": {
+          "const": "with_properties",
+          "enum": [
+            "with_properties"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "input",
+        "definitions"
+      ],
+      "title": "WithPropertiesObjectSet",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "context": {
+      "$ref": "#/$defs/ExecutionContext"
+    },
+    "contract_version": {
+      "const": "contract_v2",
+      "default": "contract_v2",
+      "enum": [
+        "contract_v2"
+      ],
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "expression": {
+      "discriminator": {
+        "mapping": {
+          "as_base_object_types": "#/$defs/AsBaseObjectTypesObjectSet",
+          "as_type": "#/$defs/AsTypeObjectSet",
+          "base": "#/$defs/BaseObjectSet",
+          "empty": "#/$defs/EmptyObjectSet",
+          "filter": "#/$defs/FilterObjectSet",
+          "interface_base": "#/$defs/InterfaceBaseObjectSet",
+          "interface_traverse": "#/$defs/InterfaceTraverseObjectSet",
+          "intersect": "#/$defs/IntersectObjectSet",
+          "linked": "#/$defs/LinkedObjectSet",
+          "nearest_neighbors": "#/$defs/NearestNeighborsObjectSet",
+          "reachable": "#/$defs/ReachableObjectSet",
+          "reference": "#/$defs/ReferenceObjectSet",
+          "static": "#/$defs/StaticObjectSet",
+          "subtract": "#/$defs/SubtractObjectSet",
+          "traverse": "#/$defs/TraverseObjectSet",
+          "union": "#/$defs/UnionObjectSet",
+          "with_properties": "#/$defs/WithPropertiesObjectSet"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/BaseObjectSet"
+        },
+        {
+          "$ref": "#/$defs/EmptyObjectSet"
+        },
+        {
+          "$ref": "#/$defs/LinkedObjectSet"
+        },
+        {
+          "$ref": "#/$defs/ReachableObjectSet"
+        },
+        {
+          "$ref": "#/$defs/InterfaceBaseObjectSet"
+        },
+        {
+          "$ref": "#/$defs/StaticObjectSet"
+        },
+        {
+          "$ref": "#/$defs/ReferenceObjectSet"
+        },
+        {
+          "$ref": "#/$defs/FilterObjectSet"
+        },
+        {
+          "$ref": "#/$defs/TraverseObjectSet"
+        },
+        {
+          "$ref": "#/$defs/InterfaceTraverseObjectSet"
+        },
+        {
+          "$ref": "#/$defs/UnionObjectSet"
+        },
+        {
+          "$ref": "#/$defs/IntersectObjectSet"
+        },
+        {
+          "$ref": "#/$defs/SubtractObjectSet"
+        },
+        {
+          "$ref": "#/$defs/NearestNeighborsObjectSet"
+        },
+        {
+          "$ref": "#/$defs/WithPropertiesObjectSet"
+        },
+        {
+          "$ref": "#/$defs/AsTypeObjectSet"
+        },
+        {
+          "$ref": "#/$defs/AsBaseObjectTypesObjectSet"
+        }
+      ],
+      "title": "Expression"
+    },
+    "parameter_schema": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ParameterSpec"
+      },
+      "maxProperties": 100,
+      "title": "Parameter Schema",
+      "type": "object"
+    },
+    "parameters": {
+      "maxProperties": 100,
+      "title": "Parameters",
+      "type": "object"
+    },
+    "read": {
+      "$ref": "#/$defs/ReadOptions"
+    },
+    "terminal": {
+      "const": "load",
+      "default": "load",
+      "enum": [
+        "load"
+      ],
+      "title": "Terminal",
+      "type": "string"
+    }
+  },
+  "required": [
+    "expression",
+    "context"
+  ],
+  "title": "LoadObjectSetRequest",
+  "type": "object"
+}

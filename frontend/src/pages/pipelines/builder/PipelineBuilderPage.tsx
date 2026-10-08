@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect } from 'react'
+import { useCallback, useRef, useState, useEffect, type ComponentType } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ReactFlow, MiniMap, Controls, Background,
@@ -40,7 +40,49 @@ const TOOLS = [
 
 const TYPE_ORDER: Record<string, number> = { connector: 0, storage: 1, transform: 2, output: 3 }
 
-function layoutDefinitionNodes(rawNodes: any[]) {
+interface DefinitionNode {
+  id: string
+  type: string
+  position?: { x: number; y: number }
+  label?: string
+  config?: Record<string, unknown>
+}
+
+interface DefinitionEdge {
+  id: string
+  source: string
+  target: string
+}
+
+interface PipelineNodeData extends Record<string, unknown> {
+  label: string
+  config: Record<string, unknown>
+  status?: string
+}
+
+type PipelineFlowNode = Node<PipelineNodeData>
+
+interface RunStats {
+  curatedIds: string[]
+  curatedId: string
+  nodeStatus: Record<string, string>
+}
+
+function readRunStats(stats: Record<string, unknown> | null | undefined): RunStats {
+  const curatedIds = Array.isArray(stats?.curated_dataset_ids)
+    ? stats.curated_dataset_ids.filter((value): value is string => typeof value === 'string')
+    : []
+  const nodeStatus = typeof stats?.node_status === 'object' && stats.node_status !== null
+    ? stats.node_status as Record<string, string>
+    : {}
+  return {
+    curatedIds,
+    curatedId: typeof stats?.curated_dataset_id === 'string' ? stats.curated_dataset_id : curatedIds[0] || '',
+    nodeStatus,
+  }
+}
+
+function layoutDefinitionNodes(rawNodes: DefinitionNode[]): PipelineFlowNode[] {
   const used = new Set<string>()
   const hasOverlap = rawNodes.some(n => {
     const p = n.position
@@ -56,7 +98,7 @@ function layoutDefinitionNodes(rawNodes: any[]) {
     return {
       id: n.id,
       type: n.type,
-      position: hasOverlap ? { x: 120 + layoutIndex * 240, y: 180 + (index % 2) * 20 } : n.position,
+      position: hasOverlap ? { x: 120 + layoutIndex * 240, y: 180 + (index % 2) * 20 } : n.position || { x: 120, y: 180 },
       data: { label: n.label || '', config: n.config || {} },
     }
   })
@@ -71,9 +113,9 @@ export default function PipelineBuilderPage() {
   const navigate = useNavigate()
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const inspectorRef = useRef<HTMLDivElement>(null)
-  const reactFlowInstanceRef = useRef<any>(null)
+  const reactFlowInstanceRef = useRef<{ screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number } } | null>(null)
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+  const [nodes, setNodes, onNodesChange] = useNodesState<PipelineFlowNode>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selectedNode, setSelectedNode] = useState<SelectedNodeData | null>(null)
   const [pipeline, setPipeline] = useState<Pipeline | null>(null)
@@ -101,39 +143,39 @@ export default function PipelineBuilderPage() {
   }, [])
 
   useEffect(() => {
-    if (!pipelineId) return; setLoading(true)
+    if (!pipelineId) return
+    void Promise.resolve().then(() => setLoading(true))
     Promise.all([pipelinesApi.get(pipelineId), pipelinesApi.runs(pipelineId)])
       .then(([pl, runs]) => {
         setPipeline(pl)
         const lastRun = Array.isArray(runs) && runs.length > 0 ? runs[runs.length - 1] : null
         if (lastRun) {
-          pipelinesApi.getRun(lastRun.id).catch(() => {}).then((detail: any) => {
-            const curatedIds = detail?.stats?.curated_dataset_ids || []
-            const cid = detail?.stats?.curated_dataset_id || curatedIds[0]
-            if (cid) setNodes(nds => nds.map(n => n.type === 'output' ? { ...n, data: { ...n.data, config: { ...(n.data as any).config || {}, curated_dataset_id: cid, curated_dataset_ids: curatedIds } } } : n))
+          pipelinesApi.getRun(lastRun.id).catch(() => null).then(detail => {
+            const { curatedIds, curatedId } = readRunStats(detail?.stats)
+            if (curatedId) setNodes(nds => nds.map(n => n.type === 'output' ? { ...n, data: { ...n.data, config: { ...n.data.config, curated_dataset_id: curatedId, curated_dataset_ids: curatedIds } } } : n))
           })
         }
         const def = pl.definition || { nodes: [], edges: [] }
-        setNodes(layoutDefinitionNodes(def.nodes as any[] || []))
-        setEdges((def.edges as any[] || []).map((e: any) => ({
+        setNodes(layoutDefinitionNodes((def.nodes || []) as DefinitionNode[]))
+        setEdges(((def.edges || []) as DefinitionEdge[]).map(e => ({
           id: e.id, source: e.source, target: e.target, type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed },
         })))
       }).catch(() => navigate('/data/pipelines')).finally(() => setLoading(false))
-  }, [pipelineId])
+  }, [navigate, pipelineId, setEdges, setNodes])
 
   const saveDefinition = useCallback(async () => {
     if (!pipelineId) return; setSaving(true); setSaveStatus('saving')
     try {
       await pipelinesApi.update(pipelineId, { definition: { nodes: nodes.map(n => ({
-        id: n.id, type: n.type, position: n.position, label: (n.data as any).label || '', config: (n.data as any).config || {},
-      })), edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target })) } as any })
+        id: n.id, type: n.type, position: n.position, label: n.data.label || '', config: n.data.config || {},
+      })), edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target })) } })
       setSaveStatus('saved')
     } catch { setSaveStatus('unsaved') }
     finally { setSaving(false) }
   }, [pipelineId, nodes, edges])
 
   useEffect(() => { const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveDefinition() } }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h) }, [saveDefinition])
-  useEffect(() => { if (!loading) setSaveStatus('unsaved') }, [nodes, edges])
+  useEffect(() => { if (!loading) void Promise.resolve().then(() => setSaveStatus('unsaved')) }, [nodes, edges, loading])
 
   const handleRun = async () => {
     if (!pipelineId) return; setRunning(true)
@@ -141,18 +183,16 @@ export default function PipelineBuilderPage() {
     try {
       await saveDefinition()
       const def = (await pipelinesApi.get(pipelineId)).definition || { nodes: [], edges: [] }
-      for (const nid of (def.nodes as any[] || []).map((n: any) => n.id)) {
+      for (const nid of ((def.nodes || []) as DefinitionNode[]).map(n => n.id)) {
         setNodes(nds => nds.map(n => n.id === nid ? { ...n, data: { ...n.data, status: 'running' } } : n))
         await new Promise(r => setTimeout(r, 300))
       }
       const result = await pipelinesApi.runSync(pipelineId)
-      const nodeStatus = (result as any).stats?.node_status || {}
-      const runSucceeded = (result as any).status === 'success'
-      const curatedIds = (result as any).stats?.curated_dataset_ids || []
-      const curatedId = (result as any).stats?.curated_dataset_id || curatedIds[0] || ''
+      const { nodeStatus, curatedIds, curatedId } = readRunStats(result.stats)
+      const runSucceeded = result.status === 'success'
       setNodes(nds => nds.map(n => {
-        const base: any = { ...n.data, status: nodeStatus[n.id] || (runSucceeded ? 'success' : 'failed') }
-        if (n.type === 'output' && curatedId) base.config = { ...((base as any).config || {}), curated_dataset_id: curatedId, curated_dataset_ids: curatedIds }
+        const base: PipelineNodeData = { ...n.data, status: nodeStatus[n.id] || (runSucceeded ? 'success' : 'failed') }
+        if (n.type === 'output' && curatedId) base.config = { ...base.config, curated_dataset_id: curatedId, curated_dataset_ids: curatedIds }
         return { ...n, data: base }
       }))
       setSelectedNode(prev => {
@@ -165,7 +205,7 @@ export default function PipelineBuilderPage() {
   }
 
   const handleValidate = async () => { if (!pipelineId) return; try { setValidation(await pipelinesApi.validate(pipelineId)) } catch { setValidation({ valid: false, errors: [], warnings: [{ node_id: '', severity: 'error', message: '校验失败' }] }) } }
-  const handlePublish = async () => { if (!pipelineId) return; try { const r = await pipelinesApi.publish(pipelineId); setPipeline(await pipelinesApi.get(pipelineId)); alert(`已发布 v${r.version}`) } catch (e: any) { alert(e?.detail || '发布失败') } }
+  const handlePublish = async () => { if (!pipelineId) return; try { const r = await pipelinesApi.publish(pipelineId); setPipeline(await pipelinesApi.get(pipelineId)); alert(`已发布 v${r.version}`) } catch (error: unknown) { alert(typeof error === 'object' && error !== null && 'detail' in error && typeof error.detail === 'string' ? error.detail : '发布失败') } }
 
   const onDragStart = useCallback((event: React.DragEvent, nodeType: string) => { event.dataTransfer.setData('application/reactflow', nodeType); event.dataTransfer.effectAllowed = 'move' }, [])
   const onDrop = useCallback((event: React.DragEvent) => {
@@ -177,11 +217,11 @@ export default function PipelineBuilderPage() {
   }, [nodes, setNodes])
   const onDragOver = useCallback((event: React.DragEvent) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }, [])
   const onConnect = useCallback((conn: Connection) => { setEdges(eds => addEdge({ ...conn, id: `edge_${Date.now()}`, type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed } }, eds)) }, [setEdges])
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => { setSelectedNode({ id: node.id, type: node.type || '', label: (node.data as any).label || '', config: (node.data as any).config || {} }) }, [])
+  const onNodeClick = useCallback((_: React.MouseEvent, node: PipelineFlowNode) => { setSelectedNode({ id: node.id, type: node.type || '', label: node.data.label || '', config: node.data.config || {} }) }, [])
   const onPaneClick = useCallback(() => { setSelectedNode(null); setValidation(null) }, [])
-  const updateNodeData = useCallback((nodeId: string, data: Record<string, unknown>) => {
-    setNodes(nds => nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data as any, ...data } } : n))
-    setSelectedNode(prev => prev && prev.id === nodeId ? { ...prev, ...data } as any : prev)
+  const updateNodeData = useCallback((nodeId: string, data: Pick<SelectedNodeData, 'config' | 'label'>) => {
+    setNodes(nds => nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n))
+    setSelectedNode(prev => prev && prev.id === nodeId ? { ...prev, ...data } : prev)
   }, [setNodes])
 
   if (loading) return <div className="text-gray-400 text-sm p-8 text-center">加载 Pipeline...</div>
@@ -205,7 +245,7 @@ export default function PipelineBuilderPage() {
           <button onClick={handleRun} disabled={running} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-800 text-white rounded-lg hover:bg-black disabled:opacity-50">{running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}运行</button>
           <button onClick={handlePublish} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-black text-white rounded-lg hover:bg-gray-800">发布</button>
         </div>
-        {validation && !validation.valid && (<div className="bg-red-50 border-b border-red-200 px-4 py-2 shrink-0"><AlertTriangle size={12} className="inline mr-1 text-red-600" /><span className="text-xs text-red-600">校验未通过: {validation.errors.map((e: any) => e.message).join('; ')}</span></div>)}
+        {validation && !validation.valid && (<div className="bg-red-50 border-b border-red-200 px-4 py-2 shrink-0"><AlertTriangle size={12} className="inline mr-1 text-red-600" /><span className="text-xs text-red-600">校验未通过: {validation.errors.map(e => e.message).join('; ')}</span></div>)}
         <div className="flex flex-1 overflow-hidden">
           <div className={`${toolbarCollapsed ? "w-10" : "w-48"} bg-gray-50 border-r p-1 space-y-1 shrink-0 transition-all duration-200 relative`}>
             <button onClick={() => setToolbarCollapsed(!toolbarCollapsed)}
@@ -237,15 +277,17 @@ export default function PipelineBuilderPage() {
 }
 
 /** ── NodeInspector: 编辑/确认/取消 三态 ── */
-function NodeInspector({ nodeData, onUpdate, onClose, pipelineId }: { nodeData: SelectedNodeData; onUpdate: (data: Record<string, unknown>) => void; onClose: () => void; pipelineId?: string }) {
+function NodeInspector({ nodeData, onUpdate, onClose, pipelineId }: { nodeData: SelectedNodeData; onUpdate: (data: Pick<SelectedNodeData, 'config' | 'label'>) => void; onClose: () => void; pipelineId?: string }) {
   const [editing, setEditing] = useState(false)
   const [localConfig, setLocalConfig] = useState<Record<string, unknown>>(nodeData.config || {})
   const [localLabel, setLocalLabel] = useState(nodeData.label)
 
   useEffect(() => {
     if (editing) return
-    setLocalConfig(nodeData.config || {})
-    setLocalLabel(nodeData.label)
+    void Promise.resolve().then(() => {
+      setLocalConfig(nodeData.config || {})
+      setLocalLabel(nodeData.label)
+    })
   }, [nodeData.id, nodeData.config, nodeData.label, editing])
 
   const handleChange = (key: string, value: unknown) => { setLocalConfig(p => ({ ...p, [key]: value })) }
@@ -260,9 +302,12 @@ function NodeInspector({ nodeData, onUpdate, onClose, pipelineId }: { nodeData: 
     setEditing(false)
   }
 
-  const Inspectors: Record<string, any> = {
-    connector: ConnectorInspector, storage: StorageInspector,
-    transform: TransformInspector, output: OutputInspector,
+  type InspectorProps = { config: Record<string, unknown>; onChange: (key: string, value: unknown) => void; readOnly?: boolean; pipelineId?: string }
+  const Inspectors: Record<string, ComponentType<InspectorProps>> = {
+    connector: ConnectorInspector as ComponentType<InspectorProps>,
+    storage: StorageInspector as ComponentType<InspectorProps>,
+    transform: TransformInspector as ComponentType<InspectorProps>,
+    output: OutputInspector as ComponentType<InspectorProps>,
   }
   const InspectorComponent = Inspectors[nodeData.type]
 

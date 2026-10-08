@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from "react-router-dom";
 import cytoscape from "cytoscape";
 import {
@@ -164,44 +165,34 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const [searchParams] = useSearchParams();
-  const [data, setData] = useState<GraphData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const graphQuery = useQuery({ queryKey: ['ontology-graph', ontologyId], queryFn: ({ signal }) => apiClientV2.get<GraphData>(`/ontologies/${ontologyId}/graph`, { params: { view: 'ontology', limit: 1000 }, signal }) });
+  const data = graphQuery.data;
+  const loading = graphQuery.isPending;
+  const error = graphQuery.isError ? '本体关系加载失败' : data?.error || '';
+  const load = () => graphQuery.refetch();
   const [selected, setSelected] = useState<
     | { kind: "node"; value: OntologyNode }
     | { kind: "edge"; value: OntologyEdge }
     | null
   >(null);
   const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
-  const [hitIds, setHitIds] = useState<Set<string>>(new Set());
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const result = await apiClientV2.get<GraphData>(
-        `/ontologies/${ontologyId}/graph`,
-        { params: { view: "ontology", limit: 1000 } },
-      );
-      setData(result);
-      if (result.error) setError(result.error);
-    } catch (err: any) {
-      setData(null);
-      setError(
-        err?.response?.data?.detail ||
-          err?.detail ||
-          err?.message ||
-          "本体关系加载失败",
-      );
-    } finally {
-      setLoading(false);
+  const urlNode = data?.nodes.find(node => node.id === searchParams.get('entity'));
+  const selectedNode = selected?.kind === "node" ? selected.value : selected === null ? urlNode || null : null;
+  const searchRequest = useQuery({
+    queryKey: ['ontology-graph-search', ontologyId, query.trim(), selectedNode?.id],
+    enabled: Boolean(query.trim()),
+    queryFn: ({ signal }) => apiClientV2.get<SearchResult>(`/ontologies/${ontologyId}/search`, { params: { q: query.trim(), entity_id: selectedNode?.id }, signal }),
+  });
+  const searching = searchRequest.isFetching;
+  const searchResult = query.trim() ? searchRequest.data : undefined;
+  const hitIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const item of searchResult?.results || []) {
+      if (item.kind === 'relationship') { ids.add(item.id); if(item.source) ids.add(item.source); if(item.target) ids.add(item.target); }
+      else ids.add(item.entity_id || item.id);
     }
-  }, [ontologyId]);
-  useEffect(() => {
-    load();
-  }, [load]);
-  const selectedNode = selected?.kind === "node" ? selected.value : null;
+    return ids;
+  }, [searchResult]);
   const selectedEdge = selected?.kind === "edge" ? selected.value : null;
   const nodeById = useMemo(
     () => new Map((data?.nodes || []).map((node) => [node.id, node])),
@@ -320,7 +311,7 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
         idealEdgeLength: 160,
         nodeRepulsion: 8500,
         numIter: 1400,
-      } as any,
+      },
     });
     cy.on("tap", "node", (event) =>
       setSelected({
@@ -338,12 +329,6 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
       if (event.target === cy) setSelected(null);
     });
     cyRef.current = cy;
-    const entityFromUrl = searchParams.get("entity");
-    if (entityFromUrl && data.nodes.some((node) => node.id === entityFromUrl))
-      setSelected({
-        kind: "node",
-        value: data.nodes.find((node) => node.id === entityFromUrl)!,
-      });
     return () => {
       cy.destroy();
       cyRef.current = null;
@@ -354,8 +339,8 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
     const cy = cyRef.current;
     if (!cy) return;
     cy.elements().removeClass("active muted search-hit");
-    if (selected?.kind === "node") {
-      const focus = cy.getElementById(selected.value.id);
+    if (selectedNode) {
+      const focus = cy.getElementById(selectedNode.id);
       focus.addClass("active");
       focus.neighborhood().addClass("active");
       cy.elements().not(".active").addClass("muted");
@@ -373,41 +358,7 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
       hits.addClass("search-hit");
       cy.elements().not(hits).addClass("muted");
     }
-  }, [selected, hitIds]);
-  useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed) {
-      setSearchResult(null);
-      setHitIds(new Set());
-      return;
-    }
-    const timer = window.setTimeout(async () => {
-      setSearching(true);
-      try {
-        const result = await apiClientV2.get<SearchResult>(
-          `/ontologies/${ontologyId}/search`,
-          { params: { q: trimmed, entity_id: selectedNode?.id } },
-        );
-        setSearchResult(result);
-        const ids = new Set<string>();
-        for (const item of result.results || []) {
-          if (item.kind === "relationship") {
-            ids.add(item.id);
-            ids.add(item.source || "");
-            ids.add(item.target || "");
-          } else ids.add(item.entity_id || item.id);
-        }
-        ids.delete("");
-        setHitIds(ids);
-      } catch {
-        setSearchResult({ groups: { 搜索: [] }, results: [] });
-        setHitIds(new Set());
-      } finally {
-        setSearching(false);
-      }
-    }, 220);
-    return () => window.clearTimeout(timer);
-  }, [ontologyId, query, selectedNode?.id]);
+  }, [selected, selectedNode, hitIds, data]);
   const locate = (item: SearchItem) => {
     const entityId =
       item.entity_id || (item.kind === "relationship" ? item.source : item.id);
@@ -685,7 +636,8 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
               正在搜索
             </p>
           )}
-          {query && !searching && (
+          {searchRequest.isError && <p role="alert">搜索失败，请重试。<button onClick={() => void searchRequest.refetch()}>重试</button></p>}
+          {query && !searching && !searchRequest.isError && (
             <div className="mt-2 max-h-40 space-y-2 overflow-y-auto">
               {Object.entries(searchResult?.groups || {}).map(
                 ([group, items]) => (

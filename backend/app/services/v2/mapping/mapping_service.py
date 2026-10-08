@@ -135,10 +135,12 @@ class MappingService:
             self._write_falkor_instances(m, concept_id, instances)
 
             pk_col = (m.field_mapping or {}).get("__primary_key__") or self._choose_pk_col(rows)
-            # entity_id_map: 所有实例行指向同一个概念实体 ID
+            # Relations are row/object relations, not relations between schema
+            # concepts. Concepts remain ontology metadata; every source key
+            # resolves to its durable Entity row object.
             entity_id_map = {
-                self._row_identity_value(row, pk_col): concept_id
-                for row in rows
+                instance.row_identity: instance.id
+                for instance in instances
             }
             mapping_meta[m.id] = {
                 "entity_class": m.entity_class,
@@ -224,7 +226,7 @@ class MappingService:
             "concept_entities_created": concept_count,
             "total_instances": sum(r.get("instances_written", 0) for r in entity_results),
             "total_concepts": concept_count,
-            "total_entities": concept_count,
+            "total_entities": sum(r.get("instances_written", 0) for r in entity_results),
             "total_relations": sum(r.get("count", 0) for r in relation_results),
             "total_logic": logic_result.get("total_v2", 0),
             "total_actions": action_result.get("total_v2", 0),
@@ -954,6 +956,7 @@ class MappingService:
     def _rows_to_instances(self, mapping: OntologyMapping, concept_id: str, rows: list[dict]) -> list[dict]:
         """将行数据写入 EntityInstance 表，每条数据对应一个 instance"""
         from app.models.entity_instance import EntityInstance
+        from app.models.entity import Entity
         field_map = mapping.field_mapping or {}
         pk_col = field_map.get("__primary_key__") or self._choose_pk_col(rows)
         property_meta = self._property_metadata_by_column(field_map)
@@ -981,6 +984,20 @@ class MappingService:
                 row_data=row_data,
             )
             self._db.merge(inst)
+            # Relation is still backed by the legacy Entity FK. Publish a
+            # durable row object alongside EntityInstance so inferred links
+            # preserve object identity (the concept row remains the type
+            # definition and is never used as every row's endpoint).
+            self._db.merge(Entity(
+                id=inst.id,
+                ontology_id=mapping.ontology_id,
+                name_cn=names.get("name_cn", id_val),
+                name_en=names.get("name_en", id_val),
+                type=mapping.entity_class,
+                canonical_id=f"instance:{mapping.entity_class}:{id_val}",
+                properties={**row_data, "is_instance": True, "concept_id": concept_id},
+                confidence=mapping.confidence or 0.85,
+            ))
             instances.append(inst)
         self._db.flush()
         return instances

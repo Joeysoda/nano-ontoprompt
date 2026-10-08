@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Database,
   FileSearch,
+  FlaskConical,
   Images,
   LayoutDashboard,
   LogOut,
@@ -31,13 +32,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [dataOpen, setDataOpen] = useState(true)
 
   const navItems: NavItem[] = [
+    { to: '/what-if', icon: FlaskConical, label: 'What-if / Scenarios' },
+    { to: '/scenarios', icon: FlaskConical, label: '通用 Scenario' },
     { to: '/overview', icon: LayoutDashboard, label: '总览' },
     {
       to: '/data', icon: Database, label: '数据构筑',
       subItems: [
         { to: '/data/regular', icon: Table2, label: '常规数据', hint: '表格与数据库' },
         { to: '/data/temporal', icon: Activity, label: '时序数据', hint: '序列与时间轴' },
-        { to: '/data/dynamic', icon: Radio, label: '动态数据构建', hint: '逐事件实时接收' },
+        { to: '/data/dynamic', icon: Radio, label: '动态数据构建（实验）', hint: 'FactoryNet 逐事件演示' },
         { to: '/data/multimodal', icon: Images, label: '多模态数据', hint: '图像、深度与点云' },
       ],
     },

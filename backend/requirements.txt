@@ -22,6 +22,8 @@ openai==1.51.0
 anthropic==0.37.1
 rdflib==7.0.0
 PyYAML==6.0.2
+jsonschema>=4.23,<5
+pint>=0.24,<1
 aiofiles==24.1.0
 python-dotenv==1.0.1
 json-repair>=0.30

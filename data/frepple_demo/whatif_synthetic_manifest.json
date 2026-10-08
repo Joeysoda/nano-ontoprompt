@@ -1,0 +1,20 @@
+{
+  "manifest_version": "supplier-study-v2",
+  "seed": 26092001,
+  "namespace": "synthetic_demo_extension",
+  "source_fixture": {
+    "name": "frepple_demo/manufacturing_demo.json",
+    "source_commit": "73e5be3d1573db043209111325dd921d68cf4b88",
+    "sha256": "d7eb98078882b234c395fd053c5f6fbda33810cb90add2adb4bf7d62f28637ef",
+    "classification": "public synthetic manufacturing fixture; not production data"
+  },
+  "model": {"key": "supplier_resilience_v2", "version": "2.1.0", "config_alias": "bounded_wood_supply", "metric_contract": "supplier-metrics-v1"},
+  "scenario_time": "2021-01-01T00:00:00",
+  "scope": {"kind": "objects_on_graph", "items": ["wooden beam", "wooden panel"]},
+  "profiles": {
+    "baseline": {"supplier": "wood supplier", "lead_days": {"wooden beam": 7, "wooden panel": 1}, "minimum_order": {"wooden beam": 1, "wooden panel": 400}, "order_multiple": {"wooden beam": 50, "wooden panel": 50}, "capacity": {"wooden beam": 1000, "wooden panel": 1000}, "cost_multiplier": 1.0, "provenance": "fixture supplier/leadtime/MOQ/multiple; synthetic capacity/cost multiplier"},
+    "supplier_b": {"supplier": "synthetic-supplier-b", "lead_days": {"wooden beam": 4, "wooden panel": 2}, "minimum_order": {"wooden beam": 25, "wooden panel": 100}, "order_multiple": {"wooden beam": 25, "wooden panel": 25}, "capacity": {"wooden beam": 600, "wooden panel": 600}, "cost_multiplier": 1.08, "provenance": "synthetic; not production observations"},
+    "supplier_c": {"supplier": "synthetic-supplier-c", "lead_days": {"wooden beam": 2, "wooden panel": 1}, "minimum_order": {"wooden beam": 25, "wooden panel": 100}, "order_multiple": {"wooden beam": 25, "wooden panel": 25}, "capacity": {"wooden beam": 1000, "wooden panel": 1000}, "cost_multiplier": 1.2, "provenance": "synthetic; not production observations"}
+  },
+  "policy": "Synthetic profiles are bounded planning assumptions and must not be represented as production observations."
+}

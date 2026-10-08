@@ -18,18 +18,6 @@ async function shot(page, label) {
 
 async function wait(ms) { await new Promise(r => setTimeout(r, ms)) }
 
-async function closeModalIfOpen(page) {
-  const overlay = page.locator('.fixed.inset-0')
-  if (await overlay.isVisible().catch(() => false)) {
-    // click 取消 button inside the modal
-    const cancel = overlay.locator('button:has-text("取消")')
-    if (await cancel.isVisible().catch(() => false)) {
-      await cancel.click()
-    }
-    await wait(400)
-  }
-}
-
 const browser = await chromium.launch({ headless: false, slowMo: 500 })
 const ctx    = await browser.newContext({ viewport: { width: 1280, height: 800 } })
 const page   = await ctx.newPage()

@@ -31,8 +31,7 @@ class Settings(BaseSettings):
     neo4j_password: str = "ontoprompt123"
 
     # Industrial demonstrator graph backend. The platform-side Compose stack
-    # exposes FalkorDB on the host; Dockerized Nano reaches it through
-    # host.docker.internal on macOS/Windows.
+    # Host tests use 127.0.0.1:6381; Docker Compose uses falkordb:6379.
     falkordb_host: str = "host.docker.internal"
     falkordb_port: int = 6379
 

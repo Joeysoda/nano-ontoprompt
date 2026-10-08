@@ -1,0 +1,38 @@
+{
+  "frontend_lint_src": {
+    "command": "npm run lint:src",
+    "exit_code": 0,
+    "errors": 0,
+    "warnings": 0,
+    "previous_errors": 132,
+    "previous_warnings": 12
+  },
+  "frontend_lint_scripts": {
+    "command": "npm run lint:scripts",
+    "exit_code": 0,
+    "errors": 0,
+    "warnings": 0
+  },
+  "frontend_build": {
+    "command": "npm run build",
+    "exit_code": 0,
+    "typescript": "passed",
+    "vite": "passed",
+    "entry_bundle_kb": 349.01
+  },
+  "object_explorer_browser_regression": {
+    "command": "npx playwright test src/test/e2e/object-explorer-contract.spec.ts src/test/e2e/object-explorer-workflow.spec.ts",
+    "passed": 13,
+    "failed": 0
+  },
+  "backend_targeted_regression": {
+    "passed": 44,
+    "skipped": 1,
+    "failed": 0,
+    "skip_reason": "OBJECT_SET_TEST_POSTGRES_URL was unset for the isolated migration test; the separate real PostgreSQL migration run passed"
+  },
+  "git_diff_check": {
+    "command": "git diff --check",
+    "exit_code": 0
+  }
+}

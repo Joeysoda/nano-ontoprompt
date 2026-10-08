@@ -6,17 +6,23 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint:src": "eslint \"src/**/*.{ts,tsx}\" --max-warnings=0",
+    "lint:scripts": "eslint \"**/*.{js,mjs,cjs}\" \"*.ts\" --max-warnings=0",
+    "lint": "npm run lint:src && npm run lint:scripts",
+    "test:e2e:preflight": "node scripts/playwright-preflight.mjs",
+    "test:e2e": "playwright test",
     "preview": "vite preview"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.10",
+    "@tanstack/react-table": "9.2.4",
     "@types/cytoscape": "^3.21.9",
     "@xyflow/react": "^12.11.0",
     "axios": "^1.16.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cytoscape": "^3.33.3",
+    "echarts": "6.1.0",
     "i18next": "^26.2.0",
     "lucide-react": "^1.16.0",
     "react": "^19.2.6",
@@ -24,6 +30,7 @@
     "react-dropzone": "^15.0.0",
     "react-hook-form": "^7.76.0",
     "react-i18next": "^17.0.8",
+    "react-querybuilder": "8.24.3",
     "react-router-dom": "^7.15.1",
     "tailwind-merge": "^3.6.0",
     "zustand": "^5.0.13"

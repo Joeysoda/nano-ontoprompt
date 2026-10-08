@@ -40,6 +40,7 @@ class OntologyActionRun(Base):
     ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False)
     target_object_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     parameters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    execution_context: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     before_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
