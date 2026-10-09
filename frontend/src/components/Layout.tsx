@@ -14,6 +14,7 @@ import {
   Network,
   Radio,
   Settings,
+  Table2,
 } from 'lucide-react'
 import HelpFAQ from '@/components/HelpFAQ'
 import { useAuthStore } from '@/stores/authStore'
@@ -38,9 +39,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     {
       to: '/data', icon: Database, label: '数据工具',
       subItems: [
+        { to: '/data/regular', icon: Table2, label: '常规数据导入', hint: 'CSV · Excel · JSON · 数据库' },
+        { to: '/data/structured', icon: Database, label: '结构化数据集', hint: '查看导入与审核结果' },
+        { to: '/data/pipelines', icon: Network, label: '数据管道与映射', hint: '连接、转换、映射与构建' },
         { to: '/data/temporal', icon: Activity, label: '时序数据', hint: '直接查看本体' },
+        { to: '/data/temporal/build', icon: Activity, label: '时序数据构建', hint: '导入并创建时序本体' },
         { to: DEFAULT_DYNAMIC_RUN_PATH, icon: Radio, label: '动态数据构建', hint: '开始、暂停与逐事件演示' },
         { to: '/data/multimodal', icon: Images, label: '多模态数据', hint: '直接查看本体' },
+        { to: '/data/multimodal/build', icon: Images, label: '多模态构建', hint: '导入样例与证据' },
       ],
     },
     { to: '/ontologies', icon: Network, label: '本体库' },

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { GitBranch, Table2, ArrowRight, CheckCircle, AlertTriangle, Clock, FileEdit, Activity, Images, Radio } from 'lucide-react'
+import { GitBranch, Table2, ArrowRight, CheckCircle, AlertTriangle, Clock, FileEdit, Activity, Images, Radio, Network } from 'lucide-react'
 import pipelinesApi, { type Pipeline } from '@/api/v2/pipelines'
 import { apiClientV2 } from '@/api/client'
 import { DEFAULT_DYNAMIC_RUN_PATH } from '@/config/demoRoutes'
@@ -64,12 +64,16 @@ export default function DataManagementPage() {
 
   return (
     <div className="wb-page max-w-[1320px]">
-      <div className="wb-page-header"><div><p className="wb-eyebrow">数据工具</p><h1 className="wb-page-title mt-2">选择要查看的本体</h1><p className="wb-page-subtitle">时序和多模态数据可直接打开已有本体；动态数据构建用于逐条接收和暂停演示。</p></div></div>
-      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="wb-page-header"><div><p className="wb-eyebrow">数据工具</p><h1 className="wb-page-title mt-2">导入数据并构建本体</h1><p className="wb-page-subtitle">从常规、时序或多模态数据导入开始，也可以直接打开已有本体或运行动态演示。</p></div><button type="button" className="wb-button-primary" onClick={() => navigate('/ontologies/new')}><Network size={15} />创建本体</button></div>
+      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
+          { title: '常规数据导入', detail: 'CSV · Excel · JSON · 数据库表', action: '导入并映射', icon: Table2, path: '/data/regular', tone: 'text-blue-700 bg-blue-50' },
           { title: '时序数据', detail: 'FactoryNet · 时间轴 · 序列语义', action: '打开本体', icon: Activity, path: '/data/temporal', tone: 'text-teal-700 bg-teal-50' },
+          { title: '时序数据构建', detail: '导入序列并构建时序本体', action: '进入构建', icon: Activity, path: '/data/temporal/build', tone: 'text-cyan-700 bg-cyan-50' },
           { title: '动态数据构建', detail: 'FactoryNet · 逐事件实时接收', action: '打开演示', icon: Radio, path: DEFAULT_DYNAMIC_RUN_PATH, tone: 'text-amber-700 bg-amber-50' },
           { title: '多模态数据', detail: 'RGB · 深度 · 掩码 · 点云', action: '打开本体', icon: Images, path: '/data/multimodal', tone: 'text-violet-700 bg-violet-50' },
+          { title: '多模态数据构建', detail: '导入样例并关联视觉证据', action: '进入构建', icon: Images, path: '/data/multimodal/build', tone: 'text-fuchsia-700 bg-fuchsia-50' },
+          { title: '数据管道与映射', detail: '配置连接、转换、映射和批量构建', action: '管理数据管道', icon: GitBranch, path: '/data/pipelines', tone: 'text-indigo-700 bg-indigo-50' },
         ].map(({ title, detail, action, icon: Icon, path, tone }) => <button key={title} type="button" onClick={() => navigate(path)} className="wb-choice-card flex items-start gap-3 text-left hover:border-gray-400"><span className={`flex h-10 w-10 items-center justify-center rounded-lg ${tone}`}><Icon size={18} /></span><span><strong className="text-sm">{title}</strong><span className="mt-1 block text-xs text-gray-500">{detail}</span><span className="mt-3 inline-flex items-center gap-1 text-xs text-gray-500">{action} <ArrowRight size={12} /></span></span></button>)}
       </div>
 
