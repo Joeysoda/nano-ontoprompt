@@ -1,92 +1,117 @@
-# nano-ontoprompt
+# Ontology Decision Workbench
 
-> Current workbench delivery: `factorynet-temporal-workbench`. The local demo uses C-MAPSS FD001, FactoryNet CNC, and I-BADAS with Docker, Celery, LiteLLM, and Ollama. See the [Chinese Docker and backend deployment guide](./DEPLOYMENT_WORKBENCH_ZH.md) for the exact ports and startup commands.
+> Latest integrated delivery: [`codex/merge-impact-chains`](https://github.com/Joeysoda/nano-ontoprompt/tree/codex/merge-impact-chains). This branch combines the FactoryNet temporal workbench and Plan A semantic-governance foundation with Plan B object exploration, governed operations, and scenario workflows.
 
-**[中文文档](./README_zh.md)**
+**[中文原始说明](./README_zh.md)** · **[中文部署指南](./DEPLOYMENT_WORKBENCH_ZH.md)** · **[Plan A / Plan B integration contract](./docs/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md)**
 
-A lightweight, Palantir Foundry-inspired platform for building domain ontologies from raw data. Connect a source, select the fields and samples to process, confirm the ontology mapping, and inspect entity types, real instances, relations, logic rules, and evidence in one local workbench.
+The workbench is an open-source, Palantir Foundry-inspired platform for turning structured, temporal, and multimodal data into a governed ontology that users can query, inspect, operate, and test in what-if scenarios. It preserves the original pipeline and LLM extraction paths while adding a complete operational layer around stable semantic identities, provenance, object sets, actions, functions, and scenarios.
 
-Two build paths are supported:
+## Integrated scope
 
-- **Pipeline Mapping** (v2) — full data-integration chain: `Data Connection → Raw Storage → Transform → Curated Dataset → Ontology Mapping`
-- **Simple LLM Extraction** (v1) — legacy document extraction endpoint retained for compatibility
+The current delivery joins two complementary layers:
 
----
-
-## What is an Ontology?
-
-An ontology is a formal representation of knowledge in a specific domain — a shared vocabulary of concepts and the relationships between them. Think of it as the structured backbone that turns raw data into machine-readable, queryable knowledge.
-
-In nano-ontoprompt, every ontology is made of these building blocks:
-
-| Building Block | What it captures | Example |
+| Layer | Responsibility | Current capabilities |
 |---|---|---|
-| **Entity (Object Type)** | A key concept mapped from a curated dataset, one node per data row | `Supplier`, `PurchaseOrder` |
-| **Relation (Link Type)** | An edge between entities, inferred from foreign keys and cross-dataset value overlap | `PurchaseOrder -[HAS_SUPPLIER]-> Supplier` |
-| **Logic Rule** | The rule layer: mapping / validation / state / inference / automation rules discovered from schema, quality reports and relations | `amount > 0`, state machine on `库存状态` |
-| **Evidence** | The traceable source material behind a type, property, relation, instance, or rule | source table, row, file, or multimodal asset |
+| **Plan A — semantic and data foundation** | Define what ontology resources mean, who may see them, and which data version produced a result | Versioned semantic resources, stable resource IDs, source mappings, authorization projections, execution/result manifests, schema migration planning, snapshot and graph-projection status |
+| **Plan B — operational workbench** | Let users explore objects and turn governed data into decisions | Object Query, Object Sets and saved views; Object Explorer; Action and Function governance; scenario creation, preview, comparison, tracking and merge; temporal and graph analysis |
 
-**Typical use cases:** supply chain modeling, clinical concept extraction, financial compliance, legal document structuring — any domain where you need to turn heterogeneous data into structured knowledge.
+The merge also retains the existing construction platform: connectors, transformations, curated datasets, ontology mapping, quality audit, temporal replay, multimodal evidence, rule reasoning, and decision proposals.
 
----
+## End-to-end workflow
 
-## Features
+```text
+Source data
+   -> connection / upload
+   -> transform and curate
+   -> ontology mapping and semantic review
+   -> immutable revision + source evidence
+   -> live or pinned data view
+   -> Object Query / Object Explorer
+   -> Action, Function, or What-If Scenario
+   -> governed result, audit trail, and optional merge
+```
 
-### Pipelines (v2)
-- **Visual pipeline builder** — connector / storage / transform / output nodes on a canvas, with per-node status and data preview
-- **Three transform routes** — A: structured (CSV/Excel, schema inference + cleansing), B: semi-structured (JSON flatten / XML parse), C: unstructured (document → Markdown → LLM or rule-based structured extraction)
-- **Connectors** — file upload, MySQL/PostgreSQL, MongoDB, REST API (with incremental sync)
-- **Curated datasets** — quality scoring, human review (admin approval), versioning
+Three prepared demonstration domains are included:
 
-### Ontology (v2)
-- **Auto mapping engine** — dataset → entity type, column → property, FK → link type, with cardinality inference
-- **Cross-dataset link inference** — exact FK matching, value normalization (`SUP-001` ↔ `SUP001`), alternate-key matching (e.g. document mentions of company names linking to Supplier entities), optional LLM-assisted semantic linking (`ENABLE_LLM_FK_DETECTION=1`)
-- **Logic rule discovery** — confirmed rules are attached to the ontology revision and shown with their evidence
-- **Ontology relation canvas** — interactive Cytoscape.js view with entity-type relations and a right-side inspector
-- **Search** — search the selected entity's properties or the complete ontology by type, property, relation, rule, or source
+- **C-MAPSS FD001** — regular equipment-degradation data.
+- **FactoryNet CNC** — event-at-a-time temporal construction, replay, snapshots, and dynamic ontology evolution.
+- **I-BADAS** — multimodal evidence installation and inspection.
 
-### Quality Audit (ReAct Agent)
-- **LLM-driven multi-step review** — an AI agent systematically checks ontology quality: isolated entities, broken references, missing relations, low-coverage entity types
-- **Tool-calling architecture** — 8 built-in inspection tools (summary, coverage, ref-check, pattern inference) that the agent can chain together
-- **Findings report** — severity-classified issues with actionable fix suggestions, persisted as audit tasks
+The repository also contains a public frePPLe supply-chain fixture used to demonstrate supplier resilience, Object Sets, actions, and scenario comparison.
 
-### Platform
-- **LLM extraction** — any OpenAI, Anthropic, or OpenAI-compatible model; defense-in-depth against fuzzy relation types
-- **LiteLLM proxy** — optional LiteLLM integration for unified API-key management and cost tracking across multiple LLM providers
-- **Prompt management** — versioned domain prompts with one-click template generation
-- **Data management** — structured data browser with curated dataset detail panel, row-level editing, and review workflow
-- **Export** — JSON, YAML, CSV, Turtle (RDF), HTML
-- **Graceful degradation** — Neo4j / MinIO / ChromaDB / Redis are all optional; the system falls back to SQLite + local file storage + synchronous runs
-- **Multi-language UI** — English / Chinese toggle
-- **User management** — JWT auth, admin/editor roles; curated approval is admin-only
+## Major capabilities
 
----
+### Data construction and ontology modeling
 
-## Tech Stack
+- Visual pipelines for file, SQL, MongoDB, and REST sources.
+- Structured, semi-structured, and document transformation routes.
+- Curated datasets with quality scoring, review, versioning, and provenance.
+- Candidate entity/property/link mappings with human confirmation.
+- Relation discovery through foreign keys, normalized values, alternate keys, and optional LLM assistance.
+- Dynamic ontology editing with immutable revisions, dependency checks, batch validation, and history restore.
 
-| Layer | Technology |
+### Semantic governance and security
+
+- Stable semantic resources for Object Types, Properties, Links, Interfaces, Value Types, and Struct Types.
+- Versioned definitions bound to ontology revisions and metadata digests.
+- `AuthorizationContext -> AuthorizationProjection` contracts for object, relation, and field visibility.
+- Explicit live, pinned, snapshot, scenario, and degraded execution states.
+- Result manifests that carry metadata, permission, source, adapter, and consistency identities.
+- Dry-run and recoverable schema migrations for rename, cast, drop, source replacement, edit movement, and graph-projection rebuilds.
+
+### Object Query and Object Explorer
+
+- Typed filters, nested Boolean expressions, sorting, keyset pagination, aggregation, and comparison.
+- Saved Object Sets, query views, immutable data views, and background query jobs.
+- Object catalog, configurable columns, distributions, pivots, saved explorations, and multi-select operations.
+- Object detail panels with properties, links, graph context, temporal snapshots, and time-series charts.
+- Stable errors for permission, context, capability, and consistency failures instead of ambiguous empty results.
+
+### Actions, Functions, and Logic
+
+- Shared execution contexts for live and scenario operations.
+- Action validation, conflict preview, execution, audit, and revert support.
+- Function input/output contracts and governed binding to Object Sets and objects.
+- Versioned Logic Assets with runtime contract checks.
+- Semantica-backed bounded rule reasoning and explainable decision proposals.
+
+### Scenarios and temporal operations
+
+- What-if scenarios pinned to ontology revision, source/view identity, and execution context.
+- Assumption editing, action preview, graph comparison, merge preview, and tracked scenario runs.
+- FactoryNet replay with single-step, play, pause, resume, cancellation, and configurable event speed.
+- Idempotent pushed events, watermarks, validity intervals, evidence references, and manually published snapshots.
+- Scenario results remain isolated until an explicit governed merge; simulation does not silently mutate the live graph.
+
+### Audit and verification
+
+- ReAct-style ontology quality audit with bounded inspection tools.
+- Unit, contract, migration, integration, browser, restart, and visual evidence suites.
+- Plan B persistence and runtime benchmark scripts.
+- Generated TypeScript semantic contracts checked against the backend Pydantic definitions.
+
+## Architecture
+
+| Concern | Implementation |
 |---|---|
-| Frontend | React 18, TypeScript, Vite, Tailwind CSS, Cytoscape.js |
-| Backend | FastAPI, SQLAlchemy, Alembic |
-| Metadata DB | SQLite (dev) / PostgreSQL (prod) |
-| Object storage | MinIO (optional, local-file fallback) |
-| Graph DB | Neo4j (optional, SQLite fallback) |
-| Vector DB | ChromaDB (optional) |
-| Task queue | Celery + Redis (optional, synchronous fallback) |
-| LLM clients | OpenAI SDK, Anthropic SDK |
-| LLM proxy | LiteLLM (optional) |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, Cytoscape.js, ECharts |
+| API and services | FastAPI, Pydantic, SQLAlchemy, Alembic |
+| Authoritative metadata and fact ledger | PostgreSQL; SQLite is supported for lightweight development and contract tests |
+| Graph projection | FalkorDB; Neo4j remains available for compatibility paths |
+| Object and file storage | MinIO with local development fallback |
+| Analytical processing | DuckDB, pandas, PyArrow |
+| Vector search | ChromaDB |
+| Background work | Celery and Redis |
+| Model gateway | LiteLLM; OpenAI, Anthropic, and compatible providers |
+| Local reasoning model | Ollama, with `qwen3.5:0.8b` used by the current demo setup |
 
----
+PostgreSQL owns revisions, facts, policies, mappings, and execution records. FalkorDB is a rebuildable graph projection used for graph traversal and operational reads. A revision label alone is not treated as a data snapshot; pinned reads also carry their source, view, metadata, and permission identities.
 
-## Architecture Guide
+## Quick start
 
-For a deep dive into the Ontology-as-a-Service architecture — including Object/Link/Function/Governance design patterns, multi-tenant isolation, clinical screening workflows, and production deployment checklists — see **[ONTOLOGY.md](./ONTOLOGY.md)** (2727 lines, in Chinese).
+### Full Docker workbench
 
----
-
-## Quick Start
-
-### Option 1 — Docker Compose (local workbench)
+Prerequisites: Git, Docker with Compose, and Bash. Ollama is optional unless local model audit/reasoning is required.
 
 ```bash
 git clone --branch codex/merge-impact-chains https://github.com/Joeysoda/nano-ontoprompt.git
@@ -94,138 +119,119 @@ cd nano-ontoprompt
 ./scripts/bootstrap_deployment.sh --seed-demo
 ```
 
-The bootstrap script generates `.env` and random secrets on the target machine, creates the database/graph volumes, starts PostgreSQL, Redis, Neo4j, MinIO, ChromaDB, Celery worker/beat, LiteLLM, backend, and frontend, and imports the public frePPLe demo fixture. `.env`, API keys, and live database volumes are never committed. Install Ollama and pull `qwen3.5:0.8b` on the host for local quality audits. See [DEPLOYMENT_WORKBENCH_ZH.md](./DEPLOYMENT_WORKBENCH_ZH.md) for complete setup and recovery commands.
+The bootstrap script creates a local `.env` with generated secrets, prepares the external PostgreSQL and FalkorDB volumes, builds the service stack, applies migrations, and imports the public frePPLe demo fixture. It is designed to be rerunnable and does not commit credentials or live data.
 
-Open [http://127.0.0.1:15173/overview](http://127.0.0.1:15173/overview). Local mode does not show a login page; the backend is available at `http://127.0.0.1:18080`.
+Open:
 
-### Option 2 — Manual setup (minimal, no external services)
+- Workbench: [http://127.0.0.1:15173/overview](http://127.0.0.1:15173/overview)
+- Backend health: [http://127.0.0.1:18080/health](http://127.0.0.1:18080/health)
+- API documentation: [http://127.0.0.1:18080/docs](http://127.0.0.1:18080/docs)
 
-**Prerequisites:** Python 3.11+, Node.js 18+
+The local compose overlay uses `local_single_user` mode, so it opens without a login screen. Do not expose that mode to a shared or public network. See [DEPLOYMENT_WORKBENCH_ZH.md](./DEPLOYMENT_WORKBENCH_ZH.md) for ports, model setup, data recovery, and server operations.
+
+### Manual development
+
+Prerequisites: Python 3.12 and Node.js 22.
 
 ```bash
 # Backend
 cd backend
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m venv .venv
+# Linux/macOS: source .venv/bin/activate
+# Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-alembic upgrade head                                  # or rely on auto create_all in dev
+pip install -r requirements-reasoning.txt
+alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 
-# Frontend (separate terminal)
+# Frontend, in another terminal
 cd frontend
 npm install
 npm run dev
 ```
 
-Neo4j / MinIO / ChromaDB / Redis are optional — without them the app uses SQLite graph fallback, local file storage and synchronous pipeline runs.
+Manual development can use SQLite and synchronous execution for smaller tasks, but snapshot, projection, recovery, and deployment acceptance require the PostgreSQL/FalkorDB stack.
 
----
+## Demo path
 
-## Usage (Pipeline Mapping path)
+For a short leadership demo:
 
-1. **Choose a data class** — *Data construction* offers regular C-MAPSS FD001, temporal FactoryNet CNC, and multimodal I-BADAS.
-2. **Select the source and scope** — choose a prepared case or import a file/connection, then select tables, columns, time range, samples, and modalities.
-3. **Configure processing** — choose `standard` or `private`, review the fields and samples that may be sent to the model, and start mapping.
-4. **Confirm the mapping** — review entity types, properties, relations, and logic rules returned by the mapping task.
-5. **Build and inspect** — open the ontology relation canvas, select an entity type for its inspector, browse real instances and rules, and review the local audit trace.
+1. Open **Data Construction** and show one prepared regular, temporal, or multimodal source.
+2. Open an ontology and show its semantic resources, source evidence, and revision history.
+3. Use **Object Query** to filter, aggregate, compare, or save an Object Set.
+4. Open an object to show its details, links, graph neighborhood, and temporal/time-series context.
+5. Preview and run a governed Action, or create a What-If Scenario and compare it with the live baseline.
+6. Show the result manifest, action/scenario audit trail, and explicit merge boundary.
 
-Legacy extraction and pipeline endpoints remain available for compatibility, but the current local demo is centered on the five-step ontology construction flow above.
+FactoryNet's **Dynamic Evolution** page can additionally demonstrate event-at-a-time updates, replay controls, watermarks, historical validity, and manual snapshot publication.
 
----
+## Repository layout
 
-## Project Structure
-
-```
+```text
 nano-ontoprompt/
 ├── backend/
-│   ├── alembic/               # DB migrations (0001_full_baseline covers all tables)
+│   ├── alembic/                 # Versioned database migrations
 │   ├── app/
-│   │   ├── routers/           # v1 + v2 REST API endpoints
-│   │   ├── models/            # SQLAlchemy ORM models (v1 + v2)
-│   │   ├── services/
-│   │   │   ├── connection/    # File / SQL / Mongo / REST connectors
-│   │   │   └── v2/
-│   │   │       ├── pipeline/  # Transform engine, routes A/B/C, steps
-│   │   │       ├── mapping/   # Auto mapper, FK & alternate-key link inference
-│   │   │       ├── graph/     # Neo4j service, Cypher validation, analytics
-│   │   │       ├── curated/   # Quality scoring, review workflow
-│   │   │       └── vector/    # ChromaDB service
-│   │   └── tasks/             # Celery tasks (pipeline run, sync, extraction)
-│   ├── scripts/               # Maintenance scripts (orphan data cleanup, migration)
-│   └── tests/                 # 300+ pytest cases
+│   │   ├── models/v2/           # Semantic, security, query, scenario, and temporal records
+│   │   ├── routers/v2/          # Current REST API surface
+│   │   ├── schemas/v2/          # Shared request/response contracts
+│   │   ├── services/v2/         # Construction, governance, query, graph, action, and scenario logic
+│   │   └── tasks/v2/            # Celery jobs
+│   ├── scripts/                 # Contract export, verification, and benchmarks
+│   └── tests/                   # Unit, contract, integration, and migration tests
 ├── frontend/
-│   ├── scripts/                # One-off debug / demo / test scripts
 │   └── src/
-│       ├── pages/pipelines/    # Pipeline list + canvas builder
-│       ├── pages/ontologies/   # Ontology relation canvas / entities / logic rules / audit
-│       ├── pages/data-management/  # Regular / temporal / multimodal five-step builders
-│       └── api/                # Axios clients (v1 + v2)
-├── scripts/
-│   └── data/                   # Data import & entity-linking scripts (SNOMED, supply chain)
-├── docker-compose.yml          # Base service definitions
-├── docker-compose.local.yml    # Local ports, single-user mode, Celery and LiteLLM
-├── litellm_config.yaml         # LiteLLM proxy configuration
-├── ONTOLOGY.md                 # Comprehensive architecture guide
-└── test_data/                  # Sample datasets and E2E acceptance scripts
+│       ├── pages/data-management/
+│       ├── pages/ontologies/
+│       ├── pages/what-if/
+│       └── test/e2e/            # Browser acceptance workflows
+├── data/frepple_demo/           # Public supply-chain demonstration fixture
+├── docs/                        # ADRs, integration contracts, plans, and acceptance guidance
+├── scripts/                     # Bootstrap, imports, and deployment verification
+├── docker-compose.yml           # Base service topology
+├── docker-compose.local.yml     # Local ports and single-user demo mode
+└── DEPLOYMENT_WORKBENCH_ZH.md   # Complete Chinese deployment guide
 ```
 
----
+## Verification
 
-## Environment Variables
-
-See `.env.example` for the full list. Key settings:
-
-```env
-ENVIRONMENT=development        # "production" enforces non-default secrets at startup
-DATABASE_URL=sqlite:///./ontoprompt.db
-SECRET_KEY=<generated locally by the bootstrap script>
-ENCRYPTION_KEY=                # Fernet key for encrypting stored API keys
-FIRST_ADMIN_USER=admin
-FIRST_ADMIN_PASSWORD=<generated locally by the bootstrap script>
-
-# Optional services (graceful fallback when absent)
-REDIS_URL=redis://localhost:6379/0
-NEO4J_URI=bolt://localhost:7687
-MINIO_ENDPOINT=localhost:9000
-CHROMA_HOST=localhost
-
-# Upload limits
-MAX_UPLOAD_MB=200
-ALLOWED_UPLOAD_EXTENSIONS=csv,xlsx,xls,json,xml,pdf,docx,doc,pptx,ppt,md,txt
-
-# Optional: LLM-assisted semantic FK detection (needs a configured model)
-ENABLE_LLM_FK_DETECTION=0
-```
-
----
-
-## Troubleshooting
-
-**Login fails with `AggregateError [ECONNREFUSED]` in the frontend container.**
-Pull the latest code — the Vite proxy now targets `http://backend:8000` inside Docker via `VITE_API_PROXY_TARGET`. Then rebuild: `docker compose up -d --build frontend`.
-
-**Login fails on an existing JWT deployment.**
-Do not use a fixed password from documentation. Reset it to a new password entered only on the target machine:
+Run checks appropriate to the area changed:
 
 ```bash
-# Docker
-docker compose exec backend python scripts/reset_admin_password.py
+# Backend tests
+cd backend
+pytest
 
-# Manual setup
-cd backend && python scripts/reset_admin_password.py
+# Generated Plan A contract freshness
+python scripts/export_plan_a_contract.py --check
+
+# Frontend static checks and build
+cd ../frontend
+npm run lint:src
+npm run build
+
+# Browser workflows, with the stack running
+npx playwright test
 ```
 
-Options: `--user <username>` (default `admin`), `--password <new_pwd>`. Never put the new password in a script, screenshot, or Git.
+The repository also provides focused scripts for branch wiring, persistence across restart, supply-chain fixtures, Object Query/FalkorDB integration, and Plan B runtime benchmarks.
 
-**LLM extraction OOM-killed (macOS / low-memory environments).**
-Parallel extraction with multiple LLM calls can exhaust memory on machines with limited RAM. The code now defaults to serial extraction (`max_workers=1`). If you still hit issues, extract one domain at a time, or reduce the number of uploaded files per ontology.
+## Current boundaries
 
----
+- The Docker configuration is a demonstration/development delivery. A shared production deployment must enable JWT, HTTPS, strong external secret management, network restrictions, backups, and monitoring.
+- Plan A's core contracts and SQLite test coverage are present. Real PostgreSQL/FalkorDB migration recovery, projection reconciliation, and performance percentiles still require environment-specific acceptance evidence.
+- Some legacy and Plan B endpoints still need full migration to the unified Plan A authorization projection and stable semantic resource IDs; consult the unchecked items in the [integration contract](./docs/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md).
+- Rule-based scenarios demonstrate bounded logical consequences. They do not by themselves establish causal effects or maintenance-outcome predictions.
+- Running database volumes, uploaded files, `.env`, and API credentials are intentionally excluded from Git.
+- The independent `codex/next-stage-ontology-modules` branch is not part of this integrated delivery unless it is merged separately.
 
-## Star History
+## Security and data handling
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Joeysoda/nano-ontoprompt&type=Date)](https://star-history.com/#Joeysoda/nano-ontoprompt&Date)
-
----
+- Never commit `.env`, API keys, passwords, database volumes, uploads, or copied production data.
+- Use `AUTH_MODE=jwt` outside an isolated local demo.
+- Treat Object Set or Scenario sharing as resource access only; it must not expand access to underlying objects or fields.
+- Keep masked values out of traces, logs, errors, and model prompts.
+- Do not run `docker compose down -v` against an environment whose data volumes must be retained.
 
 ## License
 
