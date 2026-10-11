@@ -18,7 +18,6 @@ const DatasetsTab = React.lazy(() => import("@/pages/pipelines/datasets/Datasets
 const TransformsTab = React.lazy(() => import("@/pages/pipelines/transforms/TransformsTab"));
 const CuratedTab = React.lazy(() => import("@/pages/pipelines/curated/CuratedTab"));
 const DataManagementPage = React.lazy(() => import("@/pages/data-management/DataManagementPage"));
-const DatasetOntologyEntryPage = React.lazy(() => import("@/pages/data-management/DatasetOntologyEntryPage"));
 const RegularDataPage = React.lazy(() => import("@/pages/data-management/regular/RegularDataPage"));
 const StructuredDataPage = React.lazy(() => import("@/pages/data-management/structured/StructuredDataPage"));
 const MultimodalDataPage = React.lazy(() => import("@/pages/data-management/multimodal/MultimodalDataPage"));
@@ -116,7 +115,7 @@ export default function App() {
               path="/data/temporal"
               element={
                 <ProtectedRoute>
-                  <DatasetOntologyEntryPage dataClass="temporal" />
+                  <TemporalConstructionWizard />
                 </ProtectedRoute>
               }
             />
@@ -164,7 +163,7 @@ export default function App() {
               path="/data/multimodal"
               element={
                 <ProtectedRoute>
-                  <DatasetOntologyEntryPage dataClass="multimodal" />
+                  <MultimodalDataPage />
                 </ProtectedRoute>
               }
             />

@@ -16,24 +16,36 @@ test('ontology creation route opens the ontology builder', async ({ page }) => {
   await expect(page.getByText('数据管道映射')).toBeVisible()
 })
 
-test('data workspace exposes import, mapping, construction, and demo entries', async ({ page }) => {
+test('data workspace shows only the three requested tools', async ({ page }) => {
   await page.goto('/data')
 
-  for (const title of [
-    '常规数据导入',
-    '时序数据构建',
-    '动态数据构建',
-    '多模态数据构建',
-    '数据管道与映射',
-  ]) {
+  const cards = page.locator('main .wb-choice-card')
+  await expect(cards).toHaveCount(3)
+  for (const title of ['时序数据构建', '多模态数据构建', '动态数据构建']) {
     await expect(page.getByRole('button', { name: new RegExp(title) })).toBeVisible()
   }
+  await expect(page.getByText('常规数据导入', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('结构化数据集', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('数据管道与映射', { exact: true })).toHaveCount(0)
 })
 
-test('regular data route opens the import and mapping wizard', async ({ page }) => {
-  await page.goto('/data/regular')
+test('temporal entry starts at the raw-data construction wizard', async ({ page }) => {
+  await page.goto('/data/temporal')
 
-  await expect(page.getByRole('heading', { name: '常规数据构建' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '导入文件' })).toBeVisible()
-  await expect(page.getByText('本体映射')).toBeAttached()
+  await expect(page.getByRole('heading', { name: '时序数据构建' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '导入本地时序文件' })).toBeVisible()
+})
+
+test('multimodal entry starts at the raw-data construction wizard', async ({ page }) => {
+  await page.goto('/data/multimodal')
+
+  await expect(page.getByRole('heading', { name: '多模态数据构建' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '导入 ZIP' })).toBeVisible()
+})
+
+test('dynamic entry opens the event-stream demo', async ({ page }) => {
+  await page.goto('/data/dynamic?new=1')
+
+  await expect(page.getByRole('heading', { name: 'FactoryNet 实时演示' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '创建演示' })).toBeVisible()
 })
