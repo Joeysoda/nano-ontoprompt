@@ -1,0 +1,57 @@
+{
+  "dataset_id": 851,
+  "title": "Steel Industry Energy Consumption",
+  "source_url": "https://archive.ics.uci.edu/static/public/851/steel%2Bindustry%2Benergy%2Bconsumption.zip",
+  "repository_page": "https://archive.ics.uci.edu/dataset/851/smart%2B",
+  "doi": "10.24432/C52G8C",
+  "citation": "V E, S., Shin, C., & Cho, Y. (2021). Steel Industry Energy Consumption. UCI Machine Learning Repository.",
+  "license": "CC BY 4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "retrieved_on": "2026-10-11",
+  "source_zip_sha256": "d82d28b33780ff1582507fcf08ae764ff648af459d58234370c551e62aadeaef",
+  "csv_file": "Steel_industry_data.csv",
+  "csv_bytes": 2731389,
+  "csv_sha256": "9b1cee6f9cb9cd9df2b95814ca90a9a2ff15b7f5f1fba0fae3c643e82072eacc",
+  "rows": 35040,
+  "columns": [
+    "date",
+    "Usage_kWh",
+    "Lagging_Current_Reactive.Power_kVarh",
+    "Leading_Current_Reactive_Power_kVarh",
+    "CO2(tCO2)",
+    "Lagging_Current_Power_Factor",
+    "Leading_Current_Power_Factor",
+    "NSM",
+    "WeekStatus",
+    "Day_of_week",
+    "Load_Type"
+  ],
+  "raw_missing_cells": 0,
+  "timestamp_interval_minutes": 15,
+  "sorted_timestamp_start": "2018-01-01T00:00:00",
+  "sorted_timestamp_end": "2018-12-31T23:45:00",
+  "record_order": "The CSV rows are not chronological; validation sorts timestamps before checking full-year 15-minute coverage.",
+  "records_by_load_type": {
+    "Light_Load": 18072,
+    "Medium_Load": 9696,
+    "Maximum_Load": 7272
+  },
+  "usage_kwh_by_load_type": {
+    "Light_Load": "155892.81",
+    "Medium_Load": "372766.54",
+    "Maximum_Load": "430977.36"
+  },
+  "total_usage_kwh": "959636.71",
+  "scenario_validation": {
+    "description": "Illustrative tariff sensitivity: increase Maximum_Load price by 25%; measured kWh must remain unchanged.",
+    "rates_per_kwh": {
+      "Light_Load": "0.10",
+      "Medium_Load": "0.15",
+      "Maximum_Load": "0.22"
+    },
+    "baseline_cost": "166319.2812",
+    "candidate_cost": "190023.0360",
+    "cost_delta": "23703.7548",
+    "rates_are_dataset_measurements": false
+  }
+}
