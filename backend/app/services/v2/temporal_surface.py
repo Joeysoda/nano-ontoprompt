@@ -19,18 +19,28 @@ def timestamp(value, path):
     return parsed.astimezone(timezone.utc).isoformat()
 
 
+def _measurement(value, path):
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not isfinite(value):
+        raise ObjectQueryError('invalid_measurement', path, 'Time series value must be a finite number')
+    return value
+
+
 def prepare_events(ontology_id, metadata, source, events, spec):
-    event_type = metadata.resolve_type('object', spec.event_type, 'temporal_surface.event_type')
     root_type = metadata.resolve_type('object', spec.subject_type, 'temporal_surface.subject_type')
-    for prop in ('start_timestamp', 'end_timestamp', 'event_key'):
-        if prop not in event_type.properties:
-            raise ObjectQueryError('metadata_mismatch', 'temporal_surface.event_type', f'Event type requires {prop}')
-    for prop in ('start_timestamp', 'end_timestamp'):
-        if event_type.properties[prop].data_type not in {'datetime', 'timestamp'}:
-            raise ObjectQueryError('metadata_mismatch', 'temporal_surface.event_type', f'{prop} must be a timestamp')
-    _, event_target = metadata.resolve_link(spec.event_type, spec.event_link, 'out', 'temporal_surface.event_link')
-    if event_target != spec.subject_type:
-        raise ObjectQueryError('metadata_mismatch', 'temporal_surface.event_link', 'Event link must target the declared subject type')
+    if spec.materialize_events:
+        event_type = metadata.resolve_type('object', spec.event_type, 'temporal_surface.event_type')
+        for prop in ('start_timestamp', 'end_timestamp', 'event_key'):
+            if prop not in event_type.properties:
+                raise ObjectQueryError('metadata_mismatch', 'temporal_surface.event_type', f'Event type requires {prop}')
+        for prop in ('start_timestamp', 'end_timestamp'):
+            if event_type.properties[prop].data_type not in {'datetime', 'timestamp'}:
+                raise ObjectQueryError('metadata_mismatch', 'temporal_surface.event_type', f'{prop} must be a timestamp')
+        _, event_target = metadata.resolve_link(spec.event_type, spec.event_link, 'out', 'temporal_surface.event_link')
+        if event_target != spec.subject_type:
+            raise ObjectQueryError('metadata_mismatch', 'temporal_surface.event_link', 'Event link must target the declared subject type')
+    for channel in spec.channels:
+        if channel.tsp_property not in root_type.properties or root_type.properties[channel.tsp_property].data_type != 'string':
+            raise ObjectQueryError('metadata_mismatch', 'temporal_surface.channels', f'Root TSP property {channel.tsp_property} must be a string series ID')
     if spec.sensor_type:
         sensor_type = metadata.resolve_type('object', spec.sensor_type, 'temporal_surface.sensor_type')
         _, sensor_target = metadata.resolve_link(spec.sensor_type, spec.sensor_link, 'out', 'temporal_surface.sensor_link')
@@ -44,22 +54,31 @@ def prepare_events(ontology_id, metadata, source, events, spec):
     nodes, links, grouped = [], [], defaultdict(list)
     seen = set()
     for event in events:
-        if event.status != 'committed':
+        if event.status not in ('committed', 'late'):  # late = accepted inside the lateness window
             continue
         payload = event.payload or {}
         start = timestamp(payload.get(spec.start_field), f'event.{event.event_key}.{spec.start_field}')
-        end = timestamp(payload.get(spec.end_field), f'event.{event.event_key}.{spec.end_field}')
-        if end < start:
-            raise ObjectQueryError('invalid_event_time', 'temporal_surface', 'Event ends before it starts')
         subject = payload.get(spec.subject_field)
         if not isinstance(subject, str) or (spec.subject_type, subject) not in source.objects:
             raise ObjectQueryError('invalid_event_subject', 'temporal_surface.subject_field', 'Event subject is absent from the published snapshot')
-        key = f'event:{sha256(f"{ontology_id}:{event.event_key}".encode()).hexdigest()[:40]}'
-        if key in seen or (spec.event_type, key) in source.objects:
-            raise ObjectQueryError('duplicate_event', 'temporal_surface', 'Event Object identity is ambiguous')
-        seen.add(key)
-        nodes.append({'id': key, 'entity_type': spec.event_type, 'properties': {'start_timestamp': start, 'end_timestamp': end, 'event_key': event.event_key, 'source_event_id': event.id}})
-        links.append({'source': key, 'target': subject, 'type': spec.event_link})
+        if spec.materialize_events:
+            end = timestamp(payload.get(spec.end_field), f'event.{event.event_key}.{spec.end_field}')
+            if end < start:
+                raise ObjectQueryError('invalid_event_time', 'temporal_surface', 'Event ends before it starts')
+            key = f'event:{sha256(f"{ontology_id}:{event.event_key}".encode()).hexdigest()[:40]}'
+            if key in seen or (spec.event_type, key) in source.objects:
+                raise ObjectQueryError('duplicate_event', 'temporal_surface', 'Event Object identity is ambiguous')
+            seen.add(key)
+            nodes.append({'id': key, 'entity_type': spec.event_type, 'properties': {'start_timestamp': start, 'end_timestamp': end, 'event_key': event.event_key, 'source_event_id': event.id}})
+            links.append({'source': key, 'target': subject, 'type': spec.event_link})
+        for channel in spec.channels:
+            value = payload.get(channel.value_field)
+            if value is None:
+                continue  # a reading may omit a channel; absence is not a zero
+            value = _measurement(value, f'event.{event.event_key}.{channel.value_field}')
+            series_id = f'series:{sha256(f"{ontology_id}:{spec.subject_type}:{subject}:{channel.tsp_property}".encode()).hexdigest()[:40]}'
+            grouped[(spec.subject_type, subject, 'TimeSeriesChannel', f'{subject}:{channel.tsp_property}', series_id, channel)].append(
+                {'timestamp': start, 'value': value, 'source_event_id': event.id})
         if spec.sensor_type:
             sensor = payload.get(spec.sensor_field)
             if not isinstance(sensor, str) or (spec.sensor_type, sensor) not in source.objects:
@@ -69,19 +88,26 @@ def prepare_events(ontology_id, metadata, source, events, spec):
             sensor_properties = source.objects[(spec.sensor_type, sensor)]
             if sensor_properties.get('unit') != spec.unit or sensor_properties.get('interpolation') != spec.interpolation:
                 raise ObjectQueryError('metadata_mismatch', 'temporal_surface.sensor_type', 'Sensor unit or interpolation differs from the declared mapping')
-            value = payload.get(spec.value_field)
-            if not isinstance(value, (int, float)) or isinstance(value, bool) or not isfinite(value):
-                raise ObjectQueryError('invalid_measurement', 'temporal_surface.value_field', 'Time series value must be a finite number')
+            value = _measurement(payload.get(spec.value_field), 'temporal_surface.value_field')
             series_id = f'series:{sha256(f"{ontology_id}:{spec.subject_type}:{subject}:{spec.sensor_type}:{sensor}:{spec.tsp_property}".encode()).hexdigest()[:40]}'
-            grouped[(spec.subject_type, subject, spec.sensor_type, sensor, series_id)].append({'timestamp': start, 'value': value, 'source_event_id': event.id})
+            grouped[(spec.subject_type, subject, spec.sensor_type, sensor, series_id, None)].append({'timestamp': start, 'value': value, 'source_event_id': event.id})
     syncs = []
-    for (root_type, root_id, sensor_type, sensor_id, series_id), points in grouped.items():
+    for (root_type, root_id, sensor_type, sensor_id, series_id, channel), points in grouped.items():
         points.sort(key=lambda item: (item['timestamp'], item['source_event_id']))
-        if len(points) > 10000:
+        unique = []
+        for point in points:
+            if unique and unique[-1]['timestamp'] == point['timestamp']:
+                if unique[-1]['value'] != point['value']:
+                    raise ObjectQueryError('conflicting_measurement', 'temporal_surface', 'Two different values share one timestamp',
+                                           series_id=series_id, timestamp=point['timestamp'])
+                continue  # identical reading delivered twice under different event keys
+            unique.append(point)
+        if len(unique) > 10000:
             raise ObjectQueryError('query_too_complex', 'temporal_surface', 'Time series exceeds 10,000 points')
         syncs.append({'root_type': root_type, 'root_id': root_id, 'sensor_type': sensor_type, 'sensor_id': sensor_id,
-                      'series_id': series_id, 'property_api_name': spec.tsp_property, 'unit': spec.unit,
-                      'interpolation': spec.interpolation, 'points': points})
+                      'series_id': series_id, 'property_api_name': channel.tsp_property if channel else spec.tsp_property,
+                      'unit': channel.unit if channel else spec.unit,
+                      'interpolation': channel.interpolation if channel else spec.interpolation, 'points': unique})
     return nodes, links, syncs
 
 

@@ -440,13 +440,24 @@ class CompareResult(StrictModel):
     candidate_execution_hash: str
 
 
+class MeasurementChannel(StrictModel):
+    """One numeric payload field projected to a Time Series Property of the subject."""
+    value_field: str = Field(min_length=1, max_length=200)
+    tsp_property: str = Field(min_length=1, max_length=200)
+    unit: str = Field(min_length=1, max_length=100)
+    interpolation: Literal['none', 'step', 'linear']
+
+
 class TemporalSurfaceSpec(StrictModel):
-    event_type: str = Field(min_length=1, max_length=200)
+    # False: ingestion events are measurements only (TSP points), not Event Objects.
+    materialize_events: bool = True
+    event_type: str | None = Field(default=None, min_length=1, max_length=200)
     start_field: str = Field(min_length=1, max_length=200)
-    end_field: str = Field(min_length=1, max_length=200)
+    end_field: str | None = Field(default=None, min_length=1, max_length=200)
     subject_type: str = Field(min_length=1, max_length=200)
     subject_field: str = Field(min_length=1, max_length=200)
-    event_link: str = Field(min_length=1, max_length=200)
+    event_link: str | None = Field(default=None, min_length=1, max_length=200)
+    channels: list[MeasurementChannel] = Field(default_factory=list, max_length=20)
     sensor_type: str | None = None
     sensor_field: str | None = None
     sensor_link: str | None = None
@@ -460,6 +471,14 @@ class TemporalSurfaceSpec(StrictModel):
         parts = (self.sensor_type, self.sensor_field, self.sensor_link, self.tsp_property, self.value_field, self.unit, self.interpolation)
         if any(parts) and not all(parts):
             raise ValueError('Time series mapping requires sensor type/id/link, TSP property, value field, unit and interpolation')
+        if self.materialize_events and not (self.event_type and self.end_field and self.event_link):
+            raise ValueError('Event Objects require event_type, end_field and event_link')
+        if self.channels and any(parts):
+            raise ValueError('Use either sensor-linked mapping or sensorless channels, not both')
+        if not self.materialize_events and not (self.channels or any(parts)):
+            raise ValueError('Measurement-only surfaces must map at least one channel')
+        if len({c.tsp_property for c in self.channels}) != len(self.channels):
+            raise ValueError('Each channel must target a distinct Time Series Property')
         return self
 
 

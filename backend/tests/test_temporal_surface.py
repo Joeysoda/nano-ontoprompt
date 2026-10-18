@@ -59,3 +59,61 @@ def test_subject_and_sensor_must_exist_in_published_graph():
     with pytest.raises(ObjectQueryError) as caught:
         prepare_events('ont', catalog(), source(), [bad], spec())
     assert caught.value.code == 'invalid_sensor'
+
+
+def channel_catalog():
+    return OntologyMetadata([TypeMetadata('Machine', properties={
+        'volt_series': PropertyMetadata('volt_series'), 'vibration_series': PropertyMetadata('vibration_series'),
+        'age': PropertyMetadata('age', 'integer')})], [])
+
+
+def channel_spec(**kw):
+    return TemporalSurfaceSpec(materialize_events=False, start_field='at', subject_type='Machine', subject_field='machine',
+                               channels=[{'value_field': 'volt', 'tsp_property': 'volt_series', 'unit': 'V', 'interpolation': 'linear'},
+                                         {'value_field': 'vibration', 'tsp_property': 'vibration_series', 'unit': 'mm/s', 'interpolation': 'linear'}], **kw)
+
+
+def reading(key, at, **values):
+    return SimpleNamespace(id=f'stored-{key}', event_key=key, status='committed', payload={'at': at, 'machine': 'm1', **values})
+
+
+def test_measurement_only_surface_creates_no_event_objects_and_one_series_per_channel():
+    events = [reading('r2', '2015-01-01T07:00:00Z', volt=170.0, vibration=40.0),
+              reading('r1', '2015-01-01T06:00:00Z', volt=176.2, vibration=45.1),
+              reading('r3', '2015-01-01T08:00:00Z', volt=171.0)]  # vibration omitted, not zero
+    nodes, links, syncs = prepare_events('ont', channel_catalog(), SimpleNamespace(objects={('Machine', 'm1'): {}}, edges=[]), events, channel_spec())
+    assert nodes == [] and links == []
+    by_property = {s['property_api_name']: s for s in syncs}
+    assert [p['value'] for p in by_property['volt_series']['points']] == [176.2, 170.0, 171.0]
+    assert [p['value'] for p in by_property['vibration_series']['points']] == [45.1, 40.0]
+    assert by_property['vibration_series']['unit'] == 'mm/s' and by_property['volt_series']['series_id'] != by_property['vibration_series']['series_id']
+
+
+def test_duplicate_reading_collapses_but_conflicting_reading_fails():
+    source = SimpleNamespace(objects={('Machine', 'm1'): {}}, edges=[])
+    same = [reading('a', '2015-01-01T06:00:00Z', volt=1.0), reading('b', '2015-01-01T06:00:00+00:00', volt=1.0)]
+    assert len(prepare_events('ont', channel_catalog(), source, same, channel_spec())[2][0]['points']) == 1
+    clash = [reading('a', '2015-01-01T06:00:00Z', volt=1.0), reading('b', '2015-01-01T06:00:00Z', volt=2.0)]
+    with pytest.raises(ObjectQueryError) as caught:
+        prepare_events('ont', channel_catalog(), source, clash, channel_spec())
+    assert caught.value.code == 'conflicting_measurement'
+
+
+@pytest.mark.parametrize('kwargs', [
+    {'materialize_events': True, 'start_field': 'at', 'subject_type': 'Machine', 'subject_field': 'machine'},  # events need type/end/link
+    {'materialize_events': False, 'start_field': 'at', 'subject_type': 'Machine', 'subject_field': 'machine'},  # nothing to project
+    {'materialize_events': False, 'start_field': 'at', 'subject_type': 'Machine', 'subject_field': 'machine',
+     'channels': [{'value_field': 'a', 'tsp_property': 'x', 'unit': 'V', 'interpolation': 'none'},
+                  {'value_field': 'b', 'tsp_property': 'x', 'unit': 'V', 'interpolation': 'none'}]},  # duplicate TSP
+])
+def test_surface_spec_rejects_ambiguous_mappings(kwargs):
+    with pytest.raises(ValueError):
+        TemporalSurfaceSpec(**kwargs)
+
+
+def test_channel_must_target_a_string_tsp_property():
+    spec = TemporalSurfaceSpec(materialize_events=False, start_field='at', subject_type='Machine', subject_field='machine',
+                               channels=[{'value_field': 'volt', 'tsp_property': 'age', 'unit': 'V', 'interpolation': 'none'}])
+    with pytest.raises(ObjectQueryError) as caught:
+        prepare_events('ont', channel_catalog(), SimpleNamespace(objects={('Machine', 'm1'): {}}, edges=[]), [], spec)
+    assert caught.value.code == 'metadata_mismatch'

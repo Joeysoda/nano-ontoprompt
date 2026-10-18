@@ -525,10 +525,17 @@ def create_stream_run(
         entities = (revision.snapshot_json or {}).get("entities") or []
         if not any(mapping["entity_type"] in {entity.get("id"), entity.get("name_en"), entity.get("name_cn"), entity.get("canonical_id")} for entity in entities if isinstance(entity, dict)):
             raise StreamError("mapping.entity_type 不属于固定 schema revision", "INVALID_SOURCE_MAPPING")
-        if (config or {}).get("late_event_policy", "reject") != "reject":
-            raise StreamError("当前仅支持拒绝迟到事件", "UNSUPPORTED_LATE_EVENT_POLICY")
+        policy = (config or {}).get("late_event_policy", "reject")
+        if policy not in {"reject", "allowed_lateness"}:
+            raise StreamError("late_event_policy 必须是 reject 或 allowed_lateness", "UNSUPPORTED_LATE_EVENT_POLICY")
         if (config or {}).get("time_kind", "ordinal") not in {"ordinal", "event_time"}:
             raise StreamError("time_kind 必须是 ordinal 或 event_time", "INVALID_TIME_KIND")
+        if policy == "allowed_lateness":
+            lateness = (config or {}).get("allowed_lateness_seconds")
+            if (config or {}).get("time_kind") != "event_time":
+                raise StreamError("允许迟到窗口只适用于 event_time", "UNSUPPORTED_LATE_EVENT_POLICY")
+            if not isinstance(lateness, int) or isinstance(lateness, bool) or not 1 <= lateness <= 7 * 86400:
+                raise StreamError("allowed_lateness_seconds 必须是 1 到 604800 之间的整数", "INVALID_ALLOWED_LATENESS")
     speed = _finite_number(speed, "speed")
     if speed <= 0 or speed > MAX_SPEED:
         raise StreamError(f"speed 必须在 0 和 {MAX_SPEED} 之间", "INVALID_SPEED")
@@ -1348,16 +1355,28 @@ def ingest_push_event(db: Session, replay: TemporalReplay, body: dict[str, Any])
             return existing, True
         raise StreamError("相同 event_id 的载荷不同", "EVENT_PAYLOAD_CONFLICT", event_id=event_id)
     watermark = _float_or_none(replay.watermark_ordinal)
-    if watermark is not None and (ordinal, source_sequence) <= (watermark, int(replay.watermark_sequence or -1)):
+    late = watermark is not None and (ordinal, source_sequence) <= (watermark, int(replay.watermark_sequence or -1))
+    config = replay.config or {}
+    if late and config.get("late_event_policy") != "allowed_lateness":
         raise StreamError("事件早于或等于当前水位，不能在本版本重算", "LATE_EVENT_NOT_SUPPORTED", watermark_ordinal=watermark, watermark_sequence=replay.watermark_sequence)
+    if late and ordinal < watermark - int(config["allowed_lateness_seconds"]):
+        raise StreamError("事件超出允许迟到窗口", "LATE_EVENT_BEYOND_ALLOWED_LATENESS", watermark_ordinal=watermark,
+                          allowed_lateness_seconds=config["allowed_lateness_seconds"])
     event = TemporalStreamEvent(
         id=str(uuid.uuid4()), replay_id=replay.id, event_key=event_id,
         episode_id=str(body["episode_id"]), entity_key=str(body["entity_key"]),
         ordinal=Decimal(str(ordinal)), source_sequence=source_sequence,
         source_row_id=str((body.get("source_ref") or {}).get("source_row_id") or event_id),
-        payload=payload, source_ref={**(body.get("source_ref") or {}), **({"event_time": event_time.isoformat(), "time_zone": str(event_time.tzinfo)} if replay.time_kind == "event_time" else {})}, payload_hash=payload_hash, status="queued",
+        payload=payload, source_ref={**(body.get("source_ref") or {}), **({"event_time": event_time.isoformat(), "time_zone": str(event_time.tzinfo)} if replay.time_kind == "event_time" else {})}, payload_hash=payload_hash, status="late" if late else "queued",
     )
     db.add(event)
+    if late:
+        # Accepted inside the lateness window: kept as evidence and included in
+        # order-insensitive surfaces (Event Objects, TSP points) at publish, but
+        # never replayed into state facts already projected past the watermark.
+        replay.metrics = {**(replay.metrics or {}), "late_events": int((replay.metrics or {}).get("late_events", 0)) + 1}
+        db.commit(); db.refresh(event)
+        return event, False
     replay.total_events = int(replay.total_events or 0) + 1
     replay.selected_rows = int(replay.selected_rows or 0) + 1
     replay.total_batches = replay.total_events
@@ -1587,10 +1606,10 @@ def _validate_publish(db: Session, replay: TemporalReplay) -> list[str]:
     """Run deterministic gates before an immutable snapshot is published."""
     problems: list[str] = []
     event_query = db.query(TemporalStreamEvent).filter(TemporalStreamEvent.replay_id == replay.id)
-    total_events = event_query.count()
+    total_events = event_query.filter(TemporalStreamEvent.status != "late").count()  # late events sit outside the run total
     if total_events != int(replay.total_events or 0):
         problems.append(f"事件索引数量 {total_events} 与运行总数 {replay.total_events or 0} 不一致")
-    pending = event_query.filter(TemporalStreamEvent.status != "committed").count()
+    pending = event_query.filter(TemporalStreamEvent.status.notin_(("committed", "late"))).count()
     if pending:
         problems.append(f"仍有 {pending} 条事件未提交")
 
