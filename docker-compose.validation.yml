@@ -1,0 +1,29 @@
+services:
+  db:
+    ports: !override ["127.0.0.1:25432:5432"]
+  redis:
+    ports: !override ["127.0.0.1:26379:6379"]
+  falkordb:
+    ports: !override ["127.0.0.1:26381:6379"]
+  backend:
+    ports: !override ["127.0.0.1:28080:8000"]
+  frontend:
+    ports: !override ["127.0.0.1:25173:5173"]
+  litellm:
+    ports: !override ["127.0.0.1:24000:4000"]
+  neo4j:
+    ports: !override ["127.0.0.1:27474:7474", "127.0.0.1:27687:7687"]
+  minio:
+    ports: !override ["127.0.0.1:29000:9000", "127.0.0.1:29001:9001"]
+  chromadb:
+    ports: !override ["127.0.0.1:28001:8000"]
+volumes:
+  pg_data:
+    name: scenario-validation-pg_data
+    external: false
+  falkordb_data:
+    name: scenario-validation-falkordb_data
+    external: false
+  minio_data:
+    name: scenario-validation-minio_data
+    external: false
