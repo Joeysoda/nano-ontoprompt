@@ -60,7 +60,7 @@ def validate_domain(schema, value, *, metadata=None, snapshot=None, ontology_id=
             if (value['object_type'], value['object_id']) not in snapshot.objects:
                 fail('domain', 'Object reference is not visible in this execution context')
         elif kind == 'object_set':
-            if not isinstance(value, dict) or value.get('completeness') != 'complete' or value.get('consistency') != 'snapshot' or not value.get('data_view_id'):
+            if not isinstance(value, dict) or value.get('kind') != 'set_handle' or value.get('completeness') != 'complete' or value.get('consistency') != 'snapshot' or not value.get('data_view_id'):
                 fail('domain', 'Object Set arguments require a complete pinned SetHandle')
             if not isinstance(value.get('objects'), list) or len(value['objects']) > 10000:
                 fail('domain', 'Invalid or oversized SetHandle')
@@ -77,6 +77,33 @@ def validate_domain(schema, value, *, metadata=None, snapshot=None, ontology_id=
     if isinstance(value, list):
         for item in value:
             validate_domain(schema.get('items', {}), item, metadata=metadata, snapshot=snapshot, ontology_id=ontology_id)
+
+
+class SolverOutcome(Exception):
+    """An edit Function's solver finished without a usable plan; no edits exist."""
+
+    def __init__(self, manifest):
+        self.manifest = manifest
+        super().__init__(f"Solver finished with status {manifest.get('status')}: {manifest.get('message', '')}")
+
+
+def hydrate_domain(schema, value, *, snapshot, ontology_id):
+    """Replace caller-supplied Object Set member data with the execution snapshot.
+
+    SetHandle validation only proves membership; property values used for
+    computation must come from the same pinned context, never from the caller.
+    """
+    annotation = schema.get('x-ontology') or {}
+    if annotation.get('kind') == 'object_set' and isinstance(value, dict):
+        objects = [{'object_type': item['object_type'], 'object_id': item['object_id'],
+                    'properties': dict(snapshot.objects[(item['object_type'], item['object_id'])])} for item in value['objects']]
+        return {**value, 'objects': objects, 'ontology_id': ontology_id}
+    if isinstance(value, dict):
+        return {key: hydrate_domain(schema.get('properties', {}).get(key, {}), child, snapshot=snapshot, ontology_id=ontology_id)
+                for key, child in value.items()}
+    if isinstance(value, list):
+        return [hydrate_domain(schema.get('items', {}), item, snapshot=snapshot, ontology_id=ontology_id) for item in value]
+    return value
 
 
 def execution_class(asset):

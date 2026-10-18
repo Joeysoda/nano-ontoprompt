@@ -408,6 +408,14 @@ def _uci_steel_energy_tariff(inputs):
 EXECUTORS={"release_gate_v1":_release,"cycle_time_v1":_cycle,"uci_steel_energy_tariff_v1":_uci_steel_energy_tariff,"observation_summary_v1":_stats,"tool_wear_risk_v1":_ml,"resource_assignment_v1":_assignment,"priority_plan_v1":_plan,"supplier_disruption_impact_v1":_supplier_impact,"capacity_replan_v1":_capacity_replan,"supply_chain_reasoning_v1":_supply_chain_reasoning,"lot_recall_trace_v1":_lot_recall}
 
 
+def _operator_assignment(inputs):
+    from .solver_functions import operator_assignment
+    return operator_assignment(inputs)
+
+
+EXECUTORS["operator_assignment_v1"] = _operator_assignment
+
+
 def _supplier_resilience(inputs):
     from types import SimpleNamespace
     from .supplier_resilience import calculate
@@ -418,7 +426,7 @@ def _supplier_resilience(inputs):
 EXECUTORS["supplier_resilience_v2"] = _supplier_resilience
 
 def execute(asset: dict, inputs: dict, *, metadata=None, snapshot=None, ontology_id=None, through_action=False) -> dict:
-    from .function_contracts import execution_class, validate_domain, validate_edits, fail
+    from .function_contracts import SolverOutcome, execution_class, hydrate_domain, validate_domain, validate_edits, fail
     from .object_query.logic_binding import reject_page_binding
     reject_page_binding(asset, inputs)
     asset = normalize_contract(asset)
@@ -430,8 +438,13 @@ def execute(asset: dict, inputs: dict, *, metadata=None, snapshot=None, ontology
     normalized, unit_trace = normalize_units(asset["input_schema"], inputs)
     validate_payload(asset["input_schema"], normalized, "input")
     validate_domain(asset['input_schema'], normalized, metadata=metadata, snapshot=snapshot, ontology_id=ontology_id)
+    if snapshot is not None:
+        normalized = hydrate_domain(asset['input_schema'], normalized, snapshot=snapshot, ontology_id=ontology_id)
     output=EXECUTORS[impl](normalized)
     validate_payload(asset["output_schema"], output, "output")
+    solver = output.get('solver') if isinstance(output, dict) else None
+    if kind == 'edit' and isinstance(solver, dict) and solver.get('status') not in ('optimal', 'feasible'):
+        raise SolverOutcome(solver)
     validate_domain(asset['output_schema'], output, metadata=metadata, snapshot=snapshot, ontology_id=ontology_id)
     if kind == 'edit':
         validate_edits(asset, output, ontology_id)

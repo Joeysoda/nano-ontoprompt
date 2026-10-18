@@ -1,6 +1,6 @@
 """Adapt Function-produced edits into the existing Action compiler rules."""
 from app.models.v2.logic_asset import LogicAsset
-from app.services.v2.function_contracts import resolve_version, execution_class, validate_edits
+from app.services.v2.function_contracts import SolverOutcome, resolve_version, execution_class, validate_edits
 from app.services.v2.logic_assets import execute
 from app.services.v2.logic_contracts import ContractValidationError
 from app.services.v2.object_query.metadata import load_sql_metadata
@@ -52,7 +52,12 @@ def function_resolver(db, ontology_id):
                 elif edit.op in {'add_link', 'remove_link'}:
                     rule.update(source_parameter=ref('source', edit.link.source), target_parameter=ref('target', edit.link.target), relation_type=edit.link.relation_type)
                 rules.append(rule)
-            return definitions, values, rules, ids, {'asset_key': key, 'version': asset.version, 'asset_id': asset.id}
+            manifest = {'asset_key': key, 'version': asset.version, 'asset_id': asset.id}
+            if isinstance(result['output'].get('solver'), dict):
+                manifest['solver'] = result['output']['solver']
+            return definitions, values, rules, ids, manifest
+        except SolverOutcome as exc:
+            raise ScenarioError(f"solver_{exc.manifest.get('status', 'error')}", str(exc), 422, 'function') from exc
         except ContractValidationError as exc:
             raise ScenarioError('function_contract_failed', str(exc), 422, exc.stage) from exc
     return resolve

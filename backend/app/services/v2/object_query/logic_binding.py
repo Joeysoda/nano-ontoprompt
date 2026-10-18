@@ -12,7 +12,10 @@ def reject_page_binding(asset, inputs):
                 'This Logic runtime requires a complete snapshot SetHandle')
     def walk(value):
         if isinstance(value, dict):
-            if ('objects' in value and ('page' in value or 'completeness' in value)):
+            complete_handle = value.get('kind') == 'set_handle' and value.get('completeness') == 'complete' and value.get('consistency') == 'snapshot'
+            # A complete snapshot SetHandle is executable: Function execution
+            # re-hydrates its members from the pinned context. Query pages are not.
+            if 'objects' in value and ('page' in value or 'completeness' in value) and not complete_handle:
                 raise ObjectQueryError('complete_set_unavailable', 'inputs', 'Query pages are not complete Logic inputs')
             if value.get('kind') == 'set_handle' and not (value.get('completeness') == 'complete' and value.get('consistency') == 'snapshot'):
                 raise ObjectQueryError('complete_set_unavailable', 'inputs', 'SetHandle is not a complete snapshot')
