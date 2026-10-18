@@ -177,6 +177,26 @@ def evaluate(ontology_id: str, rule_id: str, body: EvaluateRuleRequest, db: Sess
         raise http_error(exc) from exc
 
 
+@router.post("/{ontology_id}/rules/{rule_id}/evaluate:latest")
+def evaluate_latest(ontology_id: str, rule_id: str, db: Session = Depends(get_db), user=Depends(require_editor),
+                    reader=Depends(get_graph_reader)):
+    """Commit an evaluation on the caller's newest ready view (the UI's "evaluate now")."""
+    from datetime import datetime, timezone
+    from app.schemas.v2.object_query import ExecutionContext
+    from app.services.v2.rule_scheduler import latest_view
+    service = svc(ontology_id, db, user)
+    try:
+        view = latest_view(db, ontology_id, user, datetime.now(timezone.utc))
+        if view is None:
+            raise ObjectQueryError("no_ready_view", "data_view", "No ready data view; pin current data in the Object Explorer first")
+        policy = build_query_policy(db, ontology_id, str(user.id), user.role, preloaded_policies=policies_from_projection(service.access))
+        request = EvaluateRuleRequest(context=ExecutionContext(ontology_id=ontology_id, consistency="snapshot", data_view_id=view.id), mode="commit")
+        return service.evaluate(rule_id, request, QueryCore(service.metadata, reader(view), policy), series_loader(db, view))
+    except ObjectQueryError as exc:
+        db.rollback()
+        raise http_error(exc) from exc
+
+
 @router.get("/{ontology_id}/rules/{rule_id}/evaluations")
 def list_evaluations(ontology_id: str, rule_id: str, limit: int = 50, db: Session = Depends(get_db), user=Depends(get_current_user)):
     try:

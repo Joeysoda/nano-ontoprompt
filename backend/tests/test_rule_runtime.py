@@ -427,3 +427,13 @@ def test_alert_evidence_is_redacted_for_the_viewer(client, auth_headers, db, adm
     assert "peak" not in alert["evidence"] and "series_id" not in alert["evidence"]  # derived from a masked TSP
     detail = client.get(f"{base_url(ontology)}/alerts/{alert['id']}", headers=viewer).json()["alert"]
     assert detail["evidence"]["evidence"] == {"line": None}
+
+
+def test_evaluate_latest_uses_the_newest_ready_view(client, auth_headers, db, admin_user, ontology):
+    rule_id = create_and_approve(client, auth_headers, ontology, filter_logic(), "down")
+    none = client.post(f"{base_url(ontology)}/rules/{rule_id}/evaluate:latest", headers=auth_headers)
+    assert none.status_code == 422 and none.json()["detail"]["code"] == "no_ready_view"
+    make_view(db, ontology, admin_user, {"m1": {"status": "down"}})
+    newest = make_view(db, ontology, admin_user, {"m1": {"status": "down"}, "m2": {"status": "down"}})
+    result = client.post(f"{base_url(ontology)}/rules/{rule_id}/evaluate:latest", headers=auth_headers).json()
+    assert result["data_view_id"] == newest.id and result["triggered_count"] == 2
