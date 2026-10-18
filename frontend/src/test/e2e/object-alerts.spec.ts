@@ -75,3 +75,38 @@ test('alert permission errors are explicit and retry recovers', async ({ page })
   await section.getByRole('button', { name: '重试' }).click();
   await expect(section.getByText('暂无未解决的告警。')).toBeVisible();
 });
+
+test('pinned Object Panel lists linked Event Objects newest first via reverse traversal', async ({ page }) => {
+  const eventCatalog = { metadata_digest: 'metadata-1', types: [
+    { kind: 'object', api_name: 'Machine', properties: [{ api_name: 'model', data_type: 'string', searchable: true, aggregatable: true }] },
+    { kind: 'object', api_name: 'FailureEvent', properties: [{ api_name: 'start_timestamp', data_type: 'datetime' }, { api_name: 'end_timestamp', data_type: 'datetime' }, { api_name: 'code', data_type: 'string' }] },
+    { kind: 'object', api_name: 'MaintenanceEvent', properties: [{ api_name: 'start_timestamp', data_type: 'datetime' }, { api_name: 'end_timestamp', data_type: 'datetime' }, { api_name: 'code', data_type: 'string' }] },
+  ], links: [{ api_name: 'FAILURE_OF', source_type: 'FailureEvent', target_type: 'Machine' }, { api_name: 'MAINTENANCE_OF', source_type: 'MaintenanceEvent', target_type: 'Machine' }] };
+  const traversals: Array<{ link: { api_name: string; direction: string }; context: { data_view_id: string } }> = [];
+  await page.route('**/object-query/catalog', route => route.fulfill({ json: eventCatalog }));
+  await page.route('**/object-sets/resources', route => route.fulfill({ json: { resources: [] } }));
+  await page.route('**/object-query/aggregate', route => route.fulfill({ json: { groups: [], exact: true, completeness: 'complete' } }));
+  await page.route('**/object-views/*', route => route.fulfill({ json: { configured: null, configured_version: null } }));
+  await page.route('**/ontologies/repair/alerts?*', route => route.fulfill({ json: { alerts: [], total: 0 } }));
+  await page.route('**/object-query/load', route => {
+    const body = route.request().postDataJSON();
+    if (body.expression.kind === 'traverse') {
+      traversals.push({ link: body.expression.link, context: body.context });
+      const failure = body.expression.link.api_name === 'FAILURE_OF';
+      return route.fulfill({ json: { objects: failure
+        ? [{ object_type: 'FailureEvent', object_id: 'f1', properties: { start_timestamp: '2015-03-06T06:00:00+00:00', code: 'comp1' } }]
+        : [{ object_type: 'MaintenanceEvent', object_id: 'm1', properties: { start_timestamp: '2015-06-01T06:00:00+00:00', code: 'comp2' } }],
+        completeness: 'complete', status: 'ok', page: { returned: 1, has_more: false } } });
+    }
+    return route.fulfill({ json: { objects: [{ object_type: 'Machine', object_id: 'machine-001', properties: { model: 'model3' } }], completeness: 'complete', status: 'ok', page: { returned: 1, has_more: false } } });
+  });
+  await page.goto('/login?view=results&dataView=view-1');
+  await page.addScriptTag({ type: 'module', content: `import {mount} from '/src/test/whatifHarness.tsx'; import Component from '/src/pages/ontologies/detail/tabs/ObjectQueryTab.tsx'; mount(Component);` });
+  const ui = page.locator('#repair-test');
+  await ui.getByRole('button', { name: 'machine-001' }).click();
+  const section = ui.getByRole('region', { name: '关联事件' });
+  await expect(section.getByTestId('linked-event')).toHaveCount(2);
+  await expect(section.getByTestId('linked-event').first()).toContainText('MaintenanceEvent');
+  await expect(section.getByTestId('linked-event').last()).toContainText('comp1');
+  expect(traversals.map(t => [t.link.api_name, t.link.direction, t.context.data_view_id]).sort()).toEqual([['FAILURE_OF', 'in', 'view-1'], ['MAINTENANCE_OF', 'in', 'view-1']]);
+});

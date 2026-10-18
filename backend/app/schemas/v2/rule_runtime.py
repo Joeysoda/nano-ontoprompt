@@ -50,6 +50,8 @@ class RuleOutput(StrictModel):
 class ActionBinding(StrictModel):
     """Suggested follow-up Action. Rules never apply it; users preview/submit."""
     action_id: str = Field(min_length=1, max_length=200)
+    # Object-typed Action parameter that receives the alert subject reference.
+    object_parameter: str | None = Field(default=None, max_length=100)
     parameters: dict[str, Any] = Field(default_factory=dict, max_length=50)
 
 
@@ -97,3 +99,5 @@ class EvaluateRuleRequest(StrictModel):
 
 class AlertTransitionRequest(StrictModel):
     note: str = Field(default="", max_length=2000)
+    # Resolve only: the completed Action run that handled the alert (trace link).
+    action_run_id: str | None = Field(default=None, max_length=200)

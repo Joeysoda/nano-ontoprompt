@@ -106,6 +106,7 @@ def upgrade() -> None:
         sa.Column("resolved_by", sa.String(), sa.ForeignKey("users.id"), nullable=True),
         _ts("resolved_at", nullable=True),
         sa.Column("resolution_note", sa.Text(), nullable=False),
+        sa.Column("resolution_action_run_id", sa.String(), sa.ForeignKey("v2_ontology_action_runs.id"), nullable=True),
         _ts("created_at"), _ts("updated_at"),
         sa.UniqueConstraint("rule_id", "dedupe_key", name="uq_v2_rule_alert_dedupe"),
         sa.CheckConstraint("status IN ('open','acknowledged','resolved')", name="ck_v2_rule_alert_status"),

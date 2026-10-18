@@ -50,7 +50,6 @@ export default function ObjectAlerts({ ontologyId, object }: { ontologyId: strin
 
   useEffect(() => {
     const controller = new AbortController();
-    setAlerts(null);
     void load(controller.signal);
     return () => controller.abort();
   }, [load]);

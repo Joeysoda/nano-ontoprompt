@@ -128,6 +128,7 @@ class RuleAlert(Base):
     resolved_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolution_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    resolution_action_run_id: Mapped[str | None] = mapped_column(String, ForeignKey("v2_ontology_action_runs.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 

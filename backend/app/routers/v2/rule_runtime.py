@@ -193,7 +193,7 @@ def get_alert(ontology_id: str, alert_id: str, db: Session = Depends(get_db), us
 @router.post("/{ontology_id}/alerts/{alert_id}:acknowledge")
 def acknowledge(ontology_id: str, alert_id: str, body: AlertTransitionRequest, db: Session = Depends(get_db), user=Depends(require_editor)):
     try:
-        return alert_summary(svc(ontology_id, db, user).transition(alert_id, "acknowledged", body.note))
+        return alert_summary(svc(ontology_id, db, user).transition(alert_id, "acknowledged", body.note, body.action_run_id))
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
 
@@ -201,6 +201,6 @@ def acknowledge(ontology_id: str, alert_id: str, body: AlertTransitionRequest, d
 @router.post("/{ontology_id}/alerts/{alert_id}:resolve")
 def resolve(ontology_id: str, alert_id: str, body: AlertTransitionRequest, db: Session = Depends(get_db), user=Depends(require_editor)):
     try:
-        return alert_summary(svc(ontology_id, db, user).transition(alert_id, "resolved", body.note))
+        return alert_summary(svc(ontology_id, db, user).transition(alert_id, "resolved", body.note, body.action_run_id))
     except ObjectQueryError as exc:
         raise http_error(exc) from exc

@@ -331,3 +331,24 @@ def test_failed_evaluation_is_recorded_and_retryable(client, auth_headers, db, a
     sync.points = [{"timestamp": stamp(0), "value": 9}, {"timestamp": stamp(1), "value": 9}]
     db.commit()
     assert evaluate(client, auth_headers, ontology, rule_id, view).json()["triggered_count"] == 1
+
+
+def test_resolution_links_only_a_completed_action_run_on_the_same_subject(client, auth_headers, db, admin_user, ontology):
+    from app.models.v2.action import OntologyActionRun
+    rule_id = create_and_approve(client, auth_headers, ontology, filter_logic(), "down")
+    evaluate(client, auth_headers, ontology, rule_id, make_view(db, ontology, admin_user, {"m1": {"status": "down"}}))
+    alert = client.get(f"{base_url(ontology)}/alerts", headers=auth_headers).json()["alerts"][0]
+    url = f"{base_url(ontology)}/alerts/{alert['id']}"
+    runs = {name: OntologyActionRun(ontology_id=ontology.id, target_object_id=target, status=status)
+            for name, (target, status) in {"other": ("m2", "completed"), "failed": ("m1", "failed"), "ok": ("m1", "completed")}.items()}
+    db.add_all(runs.values()); db.commit()
+    assert client.post(f"{url}:resolve", headers=auth_headers, json={"action_run_id": "missing"}).status_code == 404
+    for name in ("other", "failed"):
+        r = client.post(f"{url}:resolve", headers=auth_headers, json={"action_run_id": runs[name].id})
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "action_run_mismatch"
+    r = client.post(f"{url}:acknowledge", headers=auth_headers, json={"action_run_id": runs["ok"].id})
+    assert r.status_code == 409
+    r = client.post(f"{url}:resolve", headers=auth_headers, json={"action_run_id": runs["ok"].id, "note": "fixed"})
+    assert r.json()["resolution_action_run_id"] == runs["ok"].id
+    events = client.get(url, headers=auth_headers).json()["events"]
+    assert events[-1]["kind"] == "resolved" and events[-1]["detail"]["action_run_id"] == runs["ok"].id

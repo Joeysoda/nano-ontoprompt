@@ -38,7 +38,7 @@ STATUS = {
     "not_found": 404, "forbidden": 403, "stale_proposal": 409, "proposal_closed": 409,
     "duplicate_rule": 409, "rule_retired": 409, "scenario_commit_forbidden": 422,
     "graph_unavailable": 503, "view_expired": 410, "view_unavailable": 409,
-    "invalid_transition": 409, "self_review_forbidden": 403,
+    "invalid_transition": 409, "self_review_forbidden": 403, "action_run_mismatch": 409,
 }
 
 
@@ -210,6 +210,7 @@ def alert_summary(a: RuleAlert) -> dict:
             "suggested_action": a.suggested_action, "occurrence_count": a.occurrence_count,
             "recovered_at": stamp(a.recovered_at), "acknowledged_by": a.acknowledged_by, "acknowledged_at": stamp(a.acknowledged_at),
             "resolved_by": a.resolved_by, "resolved_at": stamp(a.resolved_at), "resolution_note": a.resolution_note,
+            "resolution_action_run_id": a.resolution_action_run_id,
             "created_at": stamp(a.created_at)}
 
 
@@ -246,6 +247,11 @@ class RuleService:
             action = self.db.get(OntologyActionType, logic.action.action_id)
             if action is None or action.ontology_id != self.ontology_id:
                 fail("unknown_action", "logic.action.action_id", "Bound Action type does not exist in this ontology")
+            name = logic.action.object_parameter
+            if name and not any(isinstance(p, dict) and p.get("name") == name and p.get("type") == "object"
+                                and p.get("object_type") in (None, type_name) for p in (action.parameters or [])):
+                fail("metadata_mismatch", "logic.action.object_parameter",
+                     f"Action has no object parameter '{name}' accepting {type_name}")
         return type_name
 
     def create(self, request) -> tuple[RuleResource, RuleProposal]:
@@ -429,8 +435,11 @@ class RuleService:
     def _suggested(logic: RuleLogic, row: dict) -> dict | None:
         if not logic.action:
             return None
+        parameters = dict(logic.action.parameters)
+        if logic.action.object_parameter:
+            parameters[logic.action.object_parameter] = {"object_type": row["subject_type"], "object_id": row["subject_id"]}
         return {"action_id": logic.action.action_id,
-                "request": {"target_object_id": row["subject_id"], "parameters": dict(logic.action.parameters)}}
+                "request": {"target_object_id": row["subject_id"], "parameters": parameters}}
 
     @staticmethod
     def _evaluation_summary(e: RuleEvaluation) -> dict:
@@ -445,16 +454,26 @@ class RuleService:
             fail("not_found", "alert_id", "Alert not found")
         return alert
 
-    def transition(self, alert_id: str, target: str, note: str) -> RuleAlert:
+    def transition(self, alert_id: str, target: str, note: str, action_run_id: str | None = None) -> RuleAlert:
         alert = self.alert(alert_id)
         allowed = {"acknowledged": {"open"}, "resolved": {"open", "acknowledged"}}[target]
         if alert.status not in allowed:
             fail("invalid_transition", "status", f"Cannot move alert from {alert.status} to {target}")
+        if action_run_id is not None:
+            from app.models.v2.action import OntologyActionRun
+            run = self.db.get(OntologyActionRun, action_run_id)
+            if target != "resolved":
+                fail("invalid_transition", "action_run_id", "Only resolution can reference an Action run")
+            if run is None or run.ontology_id != self.ontology_id:
+                fail("not_found", "action_run_id", "Action run not found")
+            if run.status != "completed" or run.target_object_id != alert.subject_id:
+                fail("action_run_mismatch", "action_run_id", "Action run must be completed and target the alert subject")
+            alert.resolution_action_run_id = run.id
         alert.status, alert.updated_at = target, now()
         if target == "acknowledged":
             alert.acknowledged_by, alert.acknowledged_at = self.user.id, now()
         else:
             alert.resolved_by, alert.resolved_at, alert.resolution_note = self.user.id, now(), note
-        self._event(alert.rule_id, target, alert_id=alert.id, note=note)
+        self._event(alert.rule_id, target, alert_id=alert.id, note=note, action_run_id=action_run_id)
         self.db.commit()
         return alert
