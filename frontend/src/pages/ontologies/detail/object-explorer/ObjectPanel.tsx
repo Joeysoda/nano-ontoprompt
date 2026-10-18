@@ -10,6 +10,7 @@ export type ObjectPanelRecord = {
 
 const TimeSeriesChart = lazy(() => import('./TimeSeriesChart'));
 const ObjectActionRunner = lazy(() => import('./ObjectActionRunner'));
+const ObjectAlerts = lazy(() => import('./ObjectAlerts'));
 type ViewSection = { id: string; title: string; properties: string[]; layout: 'list' | 'grid'; show_in_panel: boolean; visible_when?: { property: string; equals: unknown } | null };
 type ViewConfig = { tabs: ViewSection[] };
 type ViewResponse = { configured: ViewConfig | null; configured_version: number | null };
@@ -91,6 +92,7 @@ export default function ObjectPanel({
       {useConfigured && panelTabs.length ? panelTabs.map(tab => <div key={tab.id}><p className="px-3 pt-3 text-xs font-medium text-slate-500">{tab.title}</p><Properties object={object} names={tab.properties} grid={tab.layout === 'grid'} onSeries={ontologyId && dataViewId ? setSeriesId : undefined} /></div>) : <Properties object={object} names={Object.keys(object.properties)} onSeries={ontologyId && dataViewId ? setSeriesId : undefined} />}
       {showEmptyState && !Object.keys(object.properties).length && <p className="oe-empty-copy">该对象没有可显示的授权属性。</p>}
       {children}
+      {ontologyId && <Suspense fallback={<p role="status">正在加载告警…</p>}><ObjectAlerts ontologyId={ontologyId} object={object} /></Suspense>}
       {seriesId && ontologyId && dataViewId && <Suspense fallback={<p role="status">正在加载曲线…</p>}><TimeSeriesChart ontologyId={ontologyId} dataViewId={dataViewId} seriesId={seriesId} /></Suspense>}
       {showActions && ontologyId && <Suspense fallback={<p role="status">正在加载操作…</p>}><ObjectActionRunner ontologyId={ontologyId} object={object} onClose={() => setShowActions(false)} onCommitted={onActionCommitted} /></Suspense>}
       <dialog ref={dialog} className="m-auto max-h-[90vh] w-[min(900px,95vw)] overflow-auto rounded border p-6" aria-label={`${object.object_id} 完整对象视图`}>

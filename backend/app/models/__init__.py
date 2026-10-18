@@ -14,6 +14,7 @@ from app.models.entity_instance import EntityInstance
 from app.models.ontology_revision import OntologyRevision
 from app.models.v2.dynamic_ontology import OntologyChange, WhatIfRun, WhatIfScenario
 from app.models.v2.scenario_study import CaseDefinition, RunPlan, StudyDefinition, StudyVersion
+from app.models.v2.rule_runtime import RuleAlert, RuleAlertEvent, RuleEvaluation, RuleProposal, RuleResource, RuleVersion
 from app.models.v2.temporal_replay import (
     DataModelSnapshot,
     TemporalFact,

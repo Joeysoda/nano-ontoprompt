@@ -14,6 +14,7 @@ from app.models.v2.semantic_core import (
 from app.models.v2.security import OntologySecurityPolicy
 from app.models.v2.schema_migration import SchemaDependency, SchemaMigrationInstruction, SchemaMigrationPlan, SchemaMigrationRun
 from app.models.v2.scenario_study import CaseDefinition, RunPlan, StudyDefinition, StudyVersion
+from app.models.v2.rule_runtime import RuleAlert, RuleAlertEvent, RuleEvaluation, RuleProposal, RuleResource, RuleVersion
 
 __all__ = [
     "OntologyChange",
@@ -36,4 +37,10 @@ __all__ = [
     "StudyVersion",
     "CaseDefinition",
     "RunPlan",
+    "RuleResource",
+    "RuleVersion",
+    "RuleProposal",
+    "RuleEvaluation",
+    "RuleAlert",
+    "RuleAlertEvent",
 ]

@@ -128,6 +128,17 @@ def test_all_v2_tables_registered():
         "v2_schema_migration_instructions",
         "v2_schema_migration_runs",
         "v2_schema_dependencies",
+        "v2_time_series_syncs",
+        "v2_study_definitions",
+        "v2_study_versions",
+        "v2_case_definitions",
+        "v2_scenario_run_plans",
+        "v2_rules",
+        "v2_rule_versions",
+        "v2_rule_proposals",
+        "v2_rule_evaluations",
+        "v2_rule_alerts",
+        "v2_rule_alert_events",
     }
 
 
