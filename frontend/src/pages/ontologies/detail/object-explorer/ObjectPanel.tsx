@@ -23,7 +23,19 @@ function visibleTabs(config: ViewConfig | null, object: ObjectPanelRecord, panel
 
 function Properties({ object, names, grid = false, onSeries }: { object: ObjectPanelRecord; names: string[]; grid?: boolean; onSeries?: (id: string) => void }) {
   return <dl className={`oe-property-list ${grid ? 'grid grid-cols-2 gap-x-4' : ''}`}>
-    {names.filter(name => name in object.properties).map(name => <div key={name}><dt>{name}</dt><dd>{displayValue(object.properties[name])}{onSeries && typeof object.properties[name] === 'string' && object.properties[name].startsWith('series:') && <button className="ml-2 text-blue-700" onClick={() => onSeries(object.properties[name] as string)}>查看曲线</button>}</dd></div>)}
+    {names.filter(name => name in object.properties).map(name => <div key={name}><dt>{name}</dt><dd>{isEmpty(object.properties[name]) ? <span className="oe-no-value">无值</span> : displayValue(object.properties[name])}{onSeries && typeof object.properties[name] === 'string' && object.properties[name].startsWith('series:') && <button className="ml-2 text-blue-700" onClick={() => onSeries(object.properties[name] as string)}>查看曲线</button>}</dd></div>)}
+  </dl>;
+}
+
+const isEmpty = (value: unknown) => value === null || value === undefined || value === '';
+const isSeries = (value: unknown) => typeof value === 'string' && value.startsWith('series:');
+
+/** Prominent summary (Palantir standard Object View): first few scalar properties as large values. */
+function Summary({ object, names }: { object: ObjectPanelRecord; names: string[] }) {
+  if (!names.length) return null;
+  return <dl className="oe-object-summary" aria-label="关键属性">
+    {names.map(name => <div key={name}><dt>{name}</dt><dd className={isEmpty(object.properties[name]) ? 'oe-no-value' : undefined}>
+      {isEmpty(object.properties[name]) ? '无值' : displayValue(object.properties[name])}</dd></div>)}
   </dl>;
 }
 
@@ -76,12 +88,18 @@ export default function ObjectPanel({
   const panelTabs = visibleTabs(configured, object, true);
   const fullTabs = visibleTabs(configured, object, false);
   const selectedTab = fullTabs.find(tab => tab.id === activeTab) || fullTabs[0];
+  const allNames = Object.keys(object.properties);
+  const summaryNames = allNames.filter(name => !isSeries(object.properties[name])).slice(0, 4);
+  const detailNames = allNames.filter(name => !summaryNames.includes(name));
   return (
     <aside className={`oe-object-panel ${className}`.trim()} aria-label={`${object.object_id} 对象预览`} data-testid={testId}>
       <div className="oe-object-panel__header">
-        <div className="min-w-0">
-          <p className="oe-kicker">{object.object_type}</p>
-          <h3 className="truncate">{object.object_id}</h3>
+        <div className="oe-object-panel__identity">
+          <span className="oe-object-icon" aria-hidden="true">{object.object_type.slice(0, 1).toUpperCase()}</span>
+          <div className="min-w-0">
+            <p className="oe-kicker">{object.object_type}</p>
+            <h3 className="truncate">{object.object_id}</h3>
+          </div>
         </div>
         <button type="button" onClick={onClose} aria-label="关闭对象预览"><X size={16} /></button>
       </div>
@@ -90,7 +108,7 @@ export default function ObjectPanel({
         {onOpenGraph && <button type="button" onClick={onOpenGraph}>Open in Graph</button>}
         <button type="button" onClick={() => dialog.current?.showModal()}>完整对象视图</button>
       </div>
-      {useConfigured && panelTabs.length ? panelTabs.map(tab => <div key={tab.id}><p className="px-3 pt-3 text-xs font-medium text-slate-500">{tab.title}</p><Properties object={object} names={tab.properties} grid={tab.layout === 'grid'} onSeries={ontologyId && dataViewId ? setSeriesId : undefined} /></div>) : <Properties object={object} names={Object.keys(object.properties)} onSeries={ontologyId && dataViewId ? setSeriesId : undefined} />}
+      {useConfigured && panelTabs.length ? panelTabs.map(tab => <div key={tab.id}><p className="px-3 pt-3 text-xs font-medium text-slate-500">{tab.title}</p><Properties object={object} names={tab.properties} grid={tab.layout === 'grid'} onSeries={ontologyId && dataViewId ? setSeriesId : undefined} /></div>) : <><Summary object={object} names={summaryNames} /><Properties object={object} names={detailNames} onSeries={ontologyId && dataViewId ? setSeriesId : undefined} /></>}
       {showEmptyState && !Object.keys(object.properties).length && <p className="oe-empty-copy">该对象没有可显示的授权属性。</p>}
       {children}
       {ontologyId && <Suspense fallback={<p role="status">正在加载告警…</p>}><ObjectAlerts key={`${object.object_type}:${object.object_id}`} ontologyId={ontologyId} object={object} /></Suspense>}

@@ -41,6 +41,8 @@ const orders = [
 
 async function mount(page: Page, url = '/login?view=results') {
   await page.setViewportSize({ width: 1600, height: 1000 });
+  // ObjectPanel lists rule alerts; evidence captures show the empty state, not a proxy error.
+  await page.route('**/alerts?*', route => route.fulfill({ json: { alerts: [], total: 0 } }));
   await page.route('**/object-query/catalog', route => route.fulfill({ json: catalog }));
   await page.route('**/object-sets/resources', route => route.fulfill({ json: { resources: [] } }));
   await page.route('**/object-query/aggregate', route => route.fulfill({

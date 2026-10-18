@@ -261,3 +261,44 @@ test('narrow layout contains horizontal overflow and tabs work from the keyboard
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test('Results columns freeze, reorder by header drag, resize from the edge; panel shows a prominent summary', async ({ page }) => {
+  await page.route('**/ontologies/repair/alerts?*', route => route.fulfill({ json: { alerts: [], total: 0 } }));
+  await page.route('**/object-views/*', route => route.fulfill({ json: { configured: null, configured_version: null } }));
+  await page.route('**/object-query/load', route => route.fulfill({ json: {
+    objects: [{ object_type: 'Order', object_id: 'order-1', properties: { status: 'open', owner: null } }],
+    completeness: 'complete', status: 'ok', page: { returned: 1, has_more: false } } }));
+  await page.route('**/object-query/catalog', route => route.fulfill({ json: { ...catalog, types: [{ kind: 'object', api_name: 'Order', properties: [
+    { api_name: 'status', data_type: 'string', searchable: true, aggregatable: true }, { api_name: 'owner', data_type: 'string', searchable: true, aggregatable: true }] }] } }));
+  await page.route('**/object-sets/resources', route => route.fulfill({ json: { resources: [] } }));
+  await page.route('**/object-query/aggregate', route => route.fulfill({ json: { groups: [], exact: true, completeness: 'complete' } }));
+  await page.goto('/login?view=results');
+  await page.addScriptTag({ type: 'module', content: `import {mount} from '/src/test/whatifHarness.tsx'; import Component from '/src/pages/ontologies/detail/tabs/ObjectQueryTab.tsx'; mount(Component);` });
+  const ui = page.locator('#repair-test');
+  const headers = () => ui.locator('.oe-results-table thead th').allTextContents();
+  await expect.poll(async () => (await headers()).map(h => h.trim().toLowerCase())).toEqual(['', 'object', 'status', 'owner']);
+
+  await ui.locator('th[data-column="owner"]').dragTo(ui.locator('th[data-column="status"]'));
+  await expect.poll(async () => (await headers()).map(h => h.trim().toLowerCase())).toEqual(['', 'object', 'owner', 'status']);
+
+  await ui.getByRole('button', { name: '字段' }).click();
+  await ui.getByRole('button', { name: '冻结 status' }).click();
+  await expect.poll(async () => (await headers()).map(h => h.trim().toLowerCase())).toEqual(['', 'object', 'status', 'owner']);
+  const frozen = ui.locator('td[class*="oe-frozen"]').filter({ hasText: 'open' });
+  await expect(frozen).toHaveCSS('position', 'sticky');
+  await expect(frozen).toHaveClass(/oe-frozen-edge/);
+  await ui.getByRole('button', { name: '关闭列配置' }).click();
+
+  const owner = ui.locator('th[data-column="owner"]');
+  const before = (await owner.boundingBox())!.width;
+  const handle = (await ui.getByRole('separator', { name: '调整 owner 列宽' }).boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + 80, handle.y + handle.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await owner.boundingBox())!.width).toBeGreaterThan(before + 40);
+
+  await ui.getByRole('button', { name: 'order-1' }).click();
+  await expect(ui.locator('dl[aria-label="关键属性"]')).toContainText('open');
+  await expect(ui.locator('dl[aria-label="关键属性"] .oe-no-value')).toHaveText('无值');
+});

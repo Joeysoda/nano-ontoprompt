@@ -1,5 +1,5 @@
 import { explorerError } from '../object-explorer/runtime';
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-table';
 import { QueryBuilder, type Field, type RuleGroupType } from 'react-querybuilder';
@@ -16,6 +16,7 @@ import {
   List,
   Maximize2,
   Minimize2,
+  Pin,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -58,6 +59,17 @@ type LoadResult = {
 type SortState = { property: string; direction: 'asc' | 'desc' } | null;
 
 const tableFeatureSet = tableFeatures({});
+// Compact token labels (Palantir nested-filter treatment); semantics unchanged.
+const QUERY_LABELS = {
+  addRule: { label: '+ 条件', title: '添加条件' },
+  addGroup: { label: '+ 条件组', title: '添加嵌套条件组' },
+  removeRule: { label: '×', title: '删除条件' },
+  removeGroup: { label: '×', title: '删除条件组' },
+  notToggle: { label: '非', title: '对整组取反（NOT）' },
+};
+const SELECT_WIDTH = 36;
+const OBJECT_WIDTH = 160;
+const DEFAULT_WIDTH = 180;
 const columnHelper = createColumnHelper<typeof tableFeatureSet, ObjectPanelRecord>();
 const EMPTY_OBJECTS: ObjectPanelRecord[] = [];
 
@@ -143,6 +155,8 @@ function ExplorerWorkspace({ ontologyId }: { ontologyId: string }) {
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [columnOrder, setColumnOrder] = useState<string[] | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const [frozenColumns, setFrozenColumns] = useState<string[]>([]);
+  const [dragColumn, setDragColumn] = useState<string | null>(null);
   const [sort, setSort] = useState<SortState>(null);
   const [chartProperties, setChartProperties] = useState<string[] | null>(null);
   const [chartWidths, setChartWidths] = useState<Record<string, 'half' | 'full'>>({});
@@ -194,7 +208,19 @@ function ExplorerWorkspace({ ontologyId }: { ontologyId: string }) {
     if (!columnOrder) return availablePropertyNames;
     return [...columnOrder.filter(name => availablePropertyNames.includes(name)), ...availablePropertyNames.filter(name => !columnOrder.includes(name))];
   }, [availablePropertyNames, columnOrder]);
-  const visiblePropertyNames = orderedPropertyNames.filter(name => !hiddenColumns.includes(name)).slice(0, 8);
+  // Frozen property columns lead, then the rest in user order.
+  const visiblePropertyNames = [...orderedPropertyNames.filter(name => frozenColumns.includes(name)),
+    ...orderedPropertyNames.filter(name => !frozenColumns.includes(name))].filter(name => !hiddenColumns.includes(name)).slice(0, 8);
+  const columnWidth = (id: string) => columnWidths[id] || (id === 'select' ? SELECT_WIDTH : id === 'object_id' ? OBJECT_WIDTH : DEFAULT_WIDTH);
+  const frozenIds = ['select', 'object_id', ...visiblePropertyNames.filter(name => frozenColumns.includes(name))];
+  const stickyLeft: Record<string, number> = {};
+  frozenIds.reduce((left, id) => { stickyLeft[id] = left; return left + columnWidth(id); }, 0);
+  const cellProps = (id: string) => {
+    const width = columnWidth(id);
+    const frozen = id in stickyLeft;
+    return { className: frozen ? `oe-frozen${id === frozenIds[frozenIds.length - 1] ? ' oe-frozen-edge' : ''}` : undefined,
+             style: { width, minWidth: width, maxWidth: width, ...(frozen ? { left: stickyLeft[id] } : {}) } };
+  };
   const activeCharts = chartProperties ?? availablePropertyNames.slice(0, 4);
   const selectedObjects = objects.filter(object => selectedIds.includes(object.object_id));
   const preview = objects.find(object => object.object_id === previewId) || selectedObjects[0] || null;
@@ -289,6 +315,19 @@ function ExplorerWorkspace({ ontologyId }: { ontologyId: string }) {
     setChartRedo(items => items.slice(1));
     setChartProperties(next);
   };
+  const moveColumnTo = (name: string, target: string) => {
+    if (name === target) return;
+    const order = orderedPropertyNames.filter(item => item !== name);
+    order.splice(order.indexOf(target), 0, name);
+    setColumnOrder(order);
+  };
+  const startResize = (id: string, event: ReactPointerEvent) => {
+    event.preventDefault(); event.stopPropagation();
+    const startX = event.clientX, startWidth = columnWidth(id);
+    const move = (moveEvent: PointerEvent) => setColumnWidths(widths => ({ ...widths, [id]: Math.min(480, Math.max(80, startWidth + moveEvent.clientX - startX)) }));
+    const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop);
+  };
   const moveColumn = (name: string, delta: number) => {
     const order = [...orderedPropertyNames];
     const index = order.indexOf(name);
@@ -323,7 +362,7 @@ function ExplorerWorkspace({ ontologyId }: { ontologyId: string }) {
 
     {showFilters && <section className="oe-filter-popover" aria-label="筛选器">
       <aside className="oe-filter-catalog"><label><Search size={13} /><input aria-label="搜索筛选字段" placeholder="搜索字段" /></label><h3>Properties</h3>{properties.map(property => <button type="button" key={property.apiName} onClick={() => setDraftQuery(query => ({ ...query, rules: [...query.rules, { field: property.apiName, operator: '=', value: '' }] }))}><span>{property.label}</span><small>{property.dataType}</small></button>)}<h3>Linked object types</h3>{linkedTypes.map(item => <div className="oe-linked-option" key={`${item.relation}:${item.target}`}><span>{item.target}</span><small>{item.relation}</small></div>)}</aside>
-      <div className="oe-filter-editor"><div className="oe-filter-title"><Filter size={15} /><div><strong>Filter current set</strong><span>支持嵌套 AND / OR / NOT</span></div></div>{fields.length ? <div className="oe-query-builder"><QueryBuilder fields={fields} query={draftQuery} onQueryChange={setDraftQuery} showCombinatorsBetweenRules showNotToggle /></div> : <p className="oe-empty-copy">该 Object Type 没有已发布的 property metadata。</p>}<div className="oe-filter-footer"><div>{draftIssues.length ? <span role="alert" className="text-red-600">{draftIssues[0]}</span> : <span>筛选在 Apply 后执行并写入可恢复 URL。</span>}</div><button type="button" onClick={apply} disabled={draftIssues.length > 0}>Apply filters</button></div></div>
+      <div className="oe-filter-editor"><div className="oe-filter-title"><Filter size={15} /><div><strong>Filter current set</strong><span>支持嵌套 AND / OR / NOT</span></div></div>{fields.length ? <div className="oe-query-builder"><QueryBuilder fields={fields} query={draftQuery} onQueryChange={setDraftQuery} showCombinatorsBetweenRules showNotToggle translations={QUERY_LABELS} /></div> : <p className="oe-empty-copy">该 Object Type 没有已发布的 property metadata。</p>}<div className="oe-filter-footer"><div>{draftIssues.length ? <span role="alert" className="text-red-600">{draftIssues[0]}</span> : <span>筛选在 Apply 后执行并写入可恢复 URL。</span>}</div><button type="button" onClick={apply} disabled={draftIssues.length > 0}>Apply filters</button></div></div>
     </section>}
 
     {entities.data && <ExplorerOperations ontologyId={ontologyId} expression={expression} objectType={selected} selectedIds={selectedIds} context={context} catalog={entities.data} onExpression={changeExpression} onView={id => { const next = new URLSearchParams(searchParams); if (id) next.set('dataView', id); else next.delete('dataView'); setSearchParams(next); }} />}
@@ -337,7 +376,7 @@ function ExplorerWorkspace({ ontologyId }: { ontologyId: string }) {
     <div className="oe-workspace-actions"><button type="button" aria-label="对所选对象执行操作" disabled={!selectedIds.length} onClick={() => setPreviewId(selectedIds[0])}>操作</button><button type="button" onClick={() => setShowGraph(value => !value)}>{showGraph ? '关闭关系图' : '打开关系图'}</button>{mode === 'results' && <button type="button" aria-expanded={showColumns} onClick={() => setShowColumns(value => !value)}><Columns3 size={14} />字段</button>}<button type="button" className="oe-refresh" disabled={result.isFetching} onClick={() => void result.refetch()} aria-label={result.isFetching ? '正在刷新对象集合' : '刷新对象集合'}><RefreshCw size={14} /></button></div>
     </div>
 
-    {showColumns && <section className="oe-column-panel" aria-label="配置结果列"><header><div><Settings2 size={15} /><strong>配置结果列</strong></div><button type="button" aria-label="关闭列配置" onClick={() => setShowColumns(false)}><X size={15} /></button></header>{orderedPropertyNames.map((name, index) => <div className="oe-column-option" key={name}><GripVertical size={13} /><label><input type="checkbox" checked={!hiddenColumns.includes(name)} onChange={() => setHiddenColumns(items => items.includes(name) ? items.filter(item => item !== name) : [...items, name])} />{name}</label><button type="button" aria-label={`上移 ${name}`} disabled={index === 0} onClick={() => moveColumn(name, -1)}><ChevronUp size={13} /></button><button type="button" aria-label={`下移 ${name}`} disabled={index === orderedPropertyNames.length - 1} onClick={() => moveColumn(name, 1)}><ChevronDown size={13} /></button><label className="oe-width-control">宽度<input type="range" min="100" max="320" value={columnWidths[name] || 180} onChange={event => setColumnWidths(widths => ({ ...widths, [name]: Number(event.target.value) }))} /></label></div>)}</section>}
+    {showColumns && <section className="oe-column-panel" aria-label="配置结果列"><header><div><Settings2 size={15} /><strong>配置结果列</strong></div><button type="button" aria-label="关闭列配置" onClick={() => setShowColumns(false)}><X size={15} /></button></header>{orderedPropertyNames.map((name, index) => <div className="oe-column-option" key={name}><GripVertical size={13} /><label><input type="checkbox" checked={!hiddenColumns.includes(name)} onChange={() => setHiddenColumns(items => items.includes(name) ? items.filter(item => item !== name) : [...items, name])} />{name}</label><button type="button" aria-label={`上移 ${name}`} disabled={index === 0} onClick={() => moveColumn(name, -1)}><ChevronUp size={13} /></button><button type="button" aria-label={`下移 ${name}`} disabled={index === orderedPropertyNames.length - 1} onClick={() => moveColumn(name, 1)}><ChevronDown size={13} /></button><button type="button" className="oe-freeze-toggle" aria-pressed={frozenColumns.includes(name)} aria-label={`冻结 ${name}`} title="冻结到左侧" onClick={() => setFrozenColumns(items => items.includes(name) ? items.filter(item => item !== name) : [...items, name])}><Pin size={13} /></button><label className="oe-width-control">宽度<input type="range" min="80" max="480" value={columnWidths[name] || DEFAULT_WIDTH} onChange={event => setColumnWidths(widths => ({ ...widths, [name]: Number(event.target.value) }))} /></label></div>)}</section>}
 
     {showGraph && <Suspense fallback={<p role="status">正在加载关系图…</p>}><ObjectGraph ontologyId={ontologyId} expression={expression} context={context} /></Suspense>}
     {result.isLoading && <div role="status" className="oe-state">正在读取对象集合…</div>}
@@ -354,7 +393,13 @@ function ExplorerWorkspace({ ontologyId }: { ontologyId: string }) {
             <Suspense fallback={<div className="oe-chart-empty">正在加载图表渲染器…</div>}><ObjectDistributionChart objects={objects} property={property} /></Suspense><p className="oe-chart-note">当前返回页 · 完整统计使用 pinned data view</p>
           </article>)}<label className="oe-add-chart"><Plus size={20} /><strong>Add chart</strong><select aria-label="添加图表属性" value="" onChange={event => { if (event.target.value) commitCharts([...activeCharts, event.target.value]); }}><option value="">选择 property</option>{availablePropertyNames.filter(name => !activeCharts.includes(name)).map(name => <option key={name}>{name}</option>)}</select></label></div>
           <aside className="oe-results-rail"><header><strong>Results</strong><span>{objects.length}</span></header>{objects.slice(0, 12).map(object => <button type="button" key={object.object_id} onClick={() => setPreviewId(object.object_id)}><span className="oe-result-icon">{object.object_type.slice(0, 1)}</span><span><strong>{object.object_id}</strong><small>{visiblePropertyNames.slice(0, 2).map(name => valueLabel(object.properties[name])).join(' · ')}</small></span></button>)}</aside>
-        </div> : <div className="oe-table-wrap"><table className="oe-results-table"><thead>{table.getHeaderGroups().map(group => <tr key={group.id}>{group.headers.map(header => <th key={header.id} style={header.id in columnWidths ? { width: columnWidths[header.id], minWidth: columnWidths[header.id] } : undefined}>{header.isPlaceholder ? null : <table.FlexRender header={header} />}</th>)}</tr>)}</thead><tbody>{table.getRowModel().rows.map(row => <tr key={row.id} className={selectedIds.includes(row.original.object_id) ? 'selected' : ''}>{row.getAllCells().map(cell => <td key={cell.id}><table.FlexRender cell={cell} /></td>)}</tr>)}</tbody></table>{!objects.length && <div className="oe-state">当前条件没有对象。</div>}</div>}
+        </div> : <div className="oe-table-wrap"><table className="oe-results-table"><thead>{table.getHeaderGroups().map(group => <tr key={group.id}>{group.headers.map(header => { const property = header.id !== 'select' && header.id !== 'object_id'; const props = cellProps(header.id); return <th key={header.id} {...props}
+          className={[props.className, dragColumn && dragColumn !== header.id && property ? 'oe-drop-target' : ''].filter(Boolean).join(' ') || undefined}
+          draggable={property} onDragStart={property ? event => { setDragColumn(header.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', header.id); } : undefined}
+          onDragOver={property ? event => event.preventDefault() : undefined} onDragEnd={() => setDragColumn(null)}
+          onDrop={property ? event => { event.preventDefault(); const name = event.dataTransfer.getData('text/plain') || dragColumn; if (name) moveColumnTo(name, header.id); setDragColumn(null); } : undefined}
+          data-column={header.id}>{property && <GripVertical size={11} className="oe-drag-handle" aria-hidden="true" />}{header.isPlaceholder ? null : <table.FlexRender header={header} />}
+          {header.id !== 'select' && <span className="oe-col-resizer" role="separator" aria-orientation="vertical" aria-label={`调整 ${header.id} 列宽`} onPointerDown={event => startResize(header.id, event)} />}</th>; })}</tr>)}</thead><tbody>{table.getRowModel().rows.map(row => <tr key={row.id} className={selectedIds.includes(row.original.object_id) ? 'selected' : ''}>{row.getAllCells().map(cell => <td key={cell.id} {...cellProps(cell.column.id)}><table.FlexRender cell={cell} /></td>)}</tr>)}</tbody></table>{!objects.length && <div className="oe-state">当前条件没有对象。</div>}</div>}
         <footer className="oe-pagination"><span>{selectedIds.length} selected · 状态 {result.data.status} · {result.data.page.stability || 'live'}</span><div><button type="button" disabled={currentPage === 0} onClick={() => { setPageTokens(tokens => tokens.slice(0, -1)); setPreviewId(null); }}><ChevronLeft size={14} />上一页</button><span>第 {currentPage + 1} 页</span><button type="button" disabled={!result.data.page.has_more || !result.data.page.next_page_token} onClick={() => { setPageTokens(tokens => [...tokens, result.data.page.next_page_token || null]); setPreviewId(null); }}>下一页<ChevronRight size={14} /></button></div></footer>
       </main>
       {preview && <aside className="oe-selection-preview" aria-label="Selection Preview">{selectedObjects.length > 0 && <div className="oe-selection-cards"><header><strong>Selection Preview</strong><span>{selectedObjects.length}</span></header><div>{selectedObjects.slice(0, 20).map(object => <button type="button" key={object.object_id} className={preview.object_id === object.object_id ? 'active' : ''} onClick={() => setPreviewId(object.object_id)}><span>{object.object_type.slice(0, 1)}</span><strong>{object.object_id}</strong></button>)}</div></div>}<ObjectPanel object={preview} onClose={() => { setPreviewId(null); setSelectedIds([]); }} onOpenGraph={() => setShowGraph(true)} ontologyId={ontologyId} dataViewId={context.data_view_id} onActionCommitted={message => { void result.refetch(); notify(message); }} /></aside>}
