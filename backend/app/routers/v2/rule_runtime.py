@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user, get_db, require_editor
@@ -217,7 +218,9 @@ def list_alerts(ontology_id: str, status: str | None = None, subject_type: str |
     for column, value in (("status", status), ("subject_type", subject_type), ("subject_id", subject_id), ("rule_id", rule_id)):
         if value is not None:
             query = query.filter(getattr(RuleAlert, column) == value)
-    rows = query.order_by(RuleAlert.created_at.desc(), RuleAlert.id).all()
+    # Most severe first, then the most recent episode; created_at ties when one evaluation opens many alerts.
+    severity_rank = case({"critical": 0, "high": 1, "medium": 2, "low": 3}, value=RuleAlert.severity, else_=4)
+    rows = query.order_by(severity_rank, RuleAlert.window_end.desc().nulls_last(), RuleAlert.created_at.desc(), RuleAlert.id).all()
     series = _series_properties(db, rows)
     visible = [item for item in (visible_alert(access, a, series[a.rule_version_id]) for a in rows) if item is not None]
     start = max(0, offset)

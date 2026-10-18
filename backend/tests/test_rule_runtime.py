@@ -437,3 +437,14 @@ def test_evaluate_latest_uses_the_newest_ready_view(client, auth_headers, db, ad
     newest = make_view(db, ontology, admin_user, {"m1": {"status": "down"}, "m2": {"status": "down"}})
     result = client.post(f"{base_url(ontology)}/rules/{rule_id}/evaluate:latest", headers=auth_headers).json()
     assert result["data_view_id"] == newest.id and result["triggered_count"] == 2
+
+
+def test_alerts_list_most_severe_and_most_recent_first(client, auth_headers, db, admin_user, ontology):
+    low = create_and_approve(client, auth_headers, ontology, {**filter_logic(), "output": {"severity": "low", "evidence_properties": ["status"]}}, "low_rule")
+    hot = create_and_approve(client, auth_headers, ontology, series_logic(), "hot_rule")
+    view = make_view(db, ontology, admin_user, {"m1": {"status": "down", "temp_series": "s1"}}, {"s1": [9, 9, 1, 1, 9, 9, 1]})
+    for rule_id in (low, hot):
+        evaluate(client, auth_headers, ontology, rule_id, view)
+    alerts = client.get(f"{base_url(ontology)}/alerts", headers=auth_headers).json()["alerts"]
+    assert [a["severity"] for a in alerts] == ["high", "high", "low"]
+    assert alerts[0]["window_end"] > alerts[1]["window_end"]  # later episode first within a severity

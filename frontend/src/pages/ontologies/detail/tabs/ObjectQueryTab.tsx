@@ -202,7 +202,8 @@ function ExplorerWorkspace({ ontologyId }: { ontologyId: string }) {
   const availablePropertyNames = useMemo(() => {
     const metadataNames = properties.map(property => property.apiName);
     const observed = objects.flatMap(object => Object.keys(object.properties));
-    return [...new Set([...metadataNames, ...observed])].slice(0, 12);
+    // System fields (_instance_id, _type, ...) are identity plumbing, not columns people read.
+    return [...new Set([...metadataNames, ...observed])].filter(name => !name.startsWith('_')).slice(0, 12);
   }, [objects, properties]);
   const orderedPropertyNames = useMemo(() => {
     if (!columnOrder) return availablePropertyNames;
