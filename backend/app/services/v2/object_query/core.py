@@ -82,27 +82,66 @@ class FalkorReadAdapter:
     def read(self, ontology_id):
         graph_ontology_id = self.graph_ontology_id or ontology_id
         try:
-            result = self.graph.ro_query(
-                'MATCH (n:Instance) WHERE n._ontology_id = $ontology RETURN n LIMIT $limit',
-                params={'ontology': graph_ontology_id, 'limit': self.max_objects + 1}, timeout=10000)
-            if len(result.result_set) > self.max_objects:
+            # FalkorDB defaults RESULTSET_SIZE to 10,000. A single query with a
+            # larger LIMIT silently returns only that many rows, which can make
+            # a partial graph look complete. Count first, then page in stable
+            # key order so the adapter's explicit budgets remain authoritative.
+            object_count = self.graph.ro_query(
+                'MATCH (n:Instance) WHERE n._ontology_id = $ontology RETURN count(n)',
+                params={'ontology': graph_ontology_id}, timeout=10000,
+            ).result_set[0][0]
+            if object_count > self.max_objects:
                 raise ObjectQueryError('query_too_complex', 'execution', 'Object scan budget exceeded')
             objects = {}
-            for row in result.result_set:
-                props = dict(row[0].properties)
-                if not props.get('_instance_id') or not props.get('_type'):
-                    raise ObjectQueryError('invalid_projection_record', 'execution', 'Object identity missing')
-                identity = (props['_type'], props['_instance_id'])
-                if identity in objects:
-                    raise ObjectQueryError('invalid_projection_record', 'execution', 'Duplicate object identity')
-                objects[identity] = props
-            result = self.graph.ro_query(
-                'MATCH (a:Instance)-[r]->(b:Instance) WHERE a._ontology_id = $ontology AND b._ontology_id = $ontology '
-                'RETURN a._type, a._instance_id, type(r), b._type, b._instance_id LIMIT $limit',
-                params={'ontology': graph_ontology_id, 'limit': self.max_edges + 1}, timeout=10000)
-            if len(result.result_set) > self.max_edges:
+            after_instance_id = None
+            while len(objects) < object_count:
+                where_after = ' AND n._instance_id > $after' if after_instance_id is not None else ''
+                params = {'ontology': graph_ontology_id, 'limit': 10000}
+                if after_instance_id is not None:
+                    params['after'] = after_instance_id
+                result = self.graph.ro_query(
+                    'MATCH (n:Instance) WHERE n._ontology_id = $ontology' + where_after +
+                    ' RETURN n ORDER BY n._instance_id LIMIT $limit',
+                    params=params, timeout=10000,
+                )
+                if not result.result_set:
+                    raise ObjectQueryError('invalid_projection_record', 'execution', 'Object scan ended before its count')
+                for row in result.result_set:
+                    props = dict(row[0].properties)
+                    if not props.get('_instance_id') or not props.get('_type'):
+                        raise ObjectQueryError('invalid_projection_record', 'execution', 'Object identity missing')
+                    identity = (props['_type'], props['_instance_id'])
+                    if identity in objects:
+                        raise ObjectQueryError('invalid_projection_record', 'execution', 'Duplicate object identity')
+                    objects[identity] = props
+                after_instance_id = result.result_set[-1][0].properties.get('_instance_id')
+
+            edge_count = self.graph.ro_query(
+                'MATCH (a:Instance)-[r]->(b:Instance) WHERE a._ontology_id = $ontology AND b._ontology_id = $ontology RETURN count(r)',
+                params={'ontology': graph_ontology_id}, timeout=10000,
+            ).result_set[0][0]
+            if edge_count > self.max_edges:
                 raise ObjectQueryError('query_too_complex', 'execution', 'Edge scan budget exceeded')
-            return GraphData(objects, [((a, b), r, (c, d)) for a, b, r, c, d in result.result_set])
+            edges = []
+            after_relationship_id = None
+            while len(edges) < edge_count:
+                where_after = ' AND id(r) > $after' if after_relationship_id is not None else ''
+                params = {'ontology': graph_ontology_id, 'limit': 10000}
+                if after_relationship_id is not None:
+                    params['after'] = after_relationship_id
+                result = self.graph.ro_query(
+                    'MATCH (a:Instance)-[r]->(b:Instance) '
+                    'WHERE a._ontology_id = $ontology AND b._ontology_id = $ontology' + where_after +
+                    ' RETURN id(r), a._type, a._instance_id, type(r), b._type, b._instance_id '
+                    'ORDER BY id(r) LIMIT $limit',
+                    params=params, timeout=10000,
+                )
+                if not result.result_set:
+                    raise ObjectQueryError('invalid_projection_record', 'execution', 'Relationship scan ended before its count')
+                for relationship_id, source_type, source_id, relation, target_type, target_id in result.result_set:
+                    edges.append(((source_type, source_id), relation, (target_type, target_id)))
+                after_relationship_id = result.result_set[-1][0]
+            return GraphData(objects, edges)
         except ObjectQueryError:
             raise
         except Exception as exc:

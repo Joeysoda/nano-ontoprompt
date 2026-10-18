@@ -49,10 +49,15 @@ def stable(value):
 
 
 def adapt(raw: bytes, verify=True):
-    digest = hashlib.sha256(raw).hexdigest()
+    # Git can materialize the reviewed JSON with CRLF on Windows.  The source
+    # fixture is text, so identity is based on its LF-normalized bytes while we
+    # still expose the checkout's raw digest for provenance.
+    raw_digest = hashlib.sha256(raw).hexdigest()
+    canonical_raw = raw.replace(b'\r\n', b'\n')
+    digest = hashlib.sha256(canonical_raw).hexdigest()
     if verify and digest != SHA256:
         raise ValueError('Source checksum differs from the reviewed official fixture')
-    rows = json.loads(raw)
+    rows = json.loads(canonical_raw)
     if not isinstance(rows, list):
         raise ValueError('Expected a fixture array')
     oid = 'frepple-' + digest[:24]
@@ -93,7 +98,8 @@ def adapt(raw: bytes, verify=True):
     counts = dict(Counter(n['entity_type'] for n in nodes))
     statuses = dict(Counter(n['properties'].get('status', 'unknown') for n in nodes if n['kind'] == 'demand'))
     baseline_date = next((r['fields'].get('value') for r in rows if r['model'] == 'common.parameter' and r['fields'].get('name') == 'currentdate'), None)
-    return {'ontology_id': oid, 'source_url': SOURCE, 'sha256': digest, 'source_revision': REVISION,
+    return {'ontology_id': oid, 'source_url': SOURCE, 'sha256': digest,
+        'raw_sha256': raw_digest, 'source_revision': REVISION,
         'baseline_date': baseline_date,
         'source_records': len(rows), 'nodes': nodes, 'edges': edges, 'excluded_records': ignored,
         'counts': counts, 'demand_statuses': statuses, 'field_semantics': FIELDS, 'type_labels': LABELS,

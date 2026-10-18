@@ -45,6 +45,16 @@ class ManufacturingFixtureTests(unittest.TestCase):
     def test_deterministic(self):
         self.assertEqual(self.report, adapt(self.raw))
 
+    def test_line_endings_do_not_change_fixture_identity(self):
+        lf = self.raw.replace(b'\r\n', b'\n')
+        crlf = lf.replace(b'\n', b'\r\n')
+        lf_report = adapt(lf)
+        crlf_report = adapt(crlf)
+        self.assertEqual(lf_report['sha256'], SHA256)
+        self.assertEqual(crlf_report['sha256'], SHA256)
+        self.assertEqual(lf_report['ontology_id'], crlf_report['ontology_id'])
+        self.assertNotEqual(lf_report['raw_sha256'], crlf_report['raw_sha256'])
+
     def test_bad_checksum(self):
         with self.assertRaisesRegex(ValueError, 'checksum'):
             adapt(self.raw + b' ')

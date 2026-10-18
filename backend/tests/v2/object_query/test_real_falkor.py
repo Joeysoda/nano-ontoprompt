@@ -46,6 +46,24 @@ def test_real_falkor_algebra_links_parameters_and_budget(real_graph):
     assert error.value.code=='query_too_complex'
 
 
+def test_real_falkor_read_pages_past_server_result_limit(real_graph):
+    oid, graph = real_graph
+    service = FalkorDBService()
+    count = 10002
+    service.upsert_instances(oid, [
+        {'id': f'page-{index:05d}', 'entity_type': 'T'} for index in range(count)
+    ])
+    service.upsert_relations(oid, [
+        {'source': f'page-{index:05d}', 'target': f'page-{index + 1:05d}', 'type': 'next'}
+        for index in range(count - 1)
+    ])
+
+    data = FalkorReadAdapter(graph, max_objects=count + 3, max_edges=count + 1).read(oid)
+
+    assert len(data.objects) == count + 3
+    assert len(data.edges) == count + 1
+
+
 def test_real_falkor_saved_resource(db,admin_user,real_graph):
     from app.models.ontology import OntologyProject
     from app.schemas.v2.object_set import CreateObjectSet
@@ -83,15 +101,44 @@ def test_real_data_view_is_immutable_manifest_and_exact_aggregate(db, admin_user
         'n': PropertyMetadata('n', 'integer'),
         'tags': PropertyMetadata('tags', 'array', is_array=True),
     })], [LinkMetadata('next', 'T', 'T')])
-    view = build_live_view(db, service, metadata, oid, admin_user.id, stable_hash({'source': oid}), 3600)
+    view = None
+    try:
+        view = build_live_view(db, service, metadata, oid, admin_user.id, stable_hash({'source': oid}), 3600)
+        assert view.status == 'ready'
+        assert view.object_count == 3 and view.edge_count == 2
+        assert require_ready(db, view.id, oid).content_digest == view.content_digest
+        view_graph = service._graph(view.graph_key)
+        core = QueryCore(metadata, FalkorReadAdapter(view_graph, graph_ontology_id=view.graph_key), QueryPolicy(admin_user.id))
+        result = core.aggregate(AggregateObjectSetRequest(
+            expression={'kind': 'base', 'type_ref': {'api_name': 'T'}},
+            aggregations=[{'op': 'count'}, {'op': 'sum', 'property': {'api_name': 'n'}, 'alias': 'total'}],
+            context={'ontology_id': oid, 'data_view_id': view.id, 'consistency': 'snapshot'},
+        ))
+        assert result.exact is True and result.groups == [{'value': 3, 'total': 6}]
+    finally:
+        if view is not None:
+            service.delete_graph(oid, view.graph_key)
+
+
+def test_real_data_view_accepts_an_uninitialized_empty_ontology(db, admin_user):
+    from app.models.ontology import OntologyProject
+    from app.services.v2.object_query.data_views import build_live_view
+    from app.services.v2.object_query.metadata import OntologyMetadata
+    from app.services.v2.object_query.normalize import stable_hash
+
+    oid = 'empty-ontology-' + uuid4().hex
+    service = FalkorDBService()
+    if not service.available:
+        pytest.fail('Real FalkorDB is required for empty-snapshot acceptance')
+    assert not service.graph_exists(oid)
+    db.add(OntologyProject(id=oid, name='empty ontology', domain='test', created_by=admin_user.id))
+    db.commit()
+
+    view = build_live_view(
+        db, service, OntologyMetadata([], []), oid, admin_user.id,
+        stable_hash({'source': oid}), 3600,
+    )
+
     assert view.status == 'ready'
-    assert view.object_count == 3 and view.edge_count == 2
-    assert require_ready(db, view.id, oid).content_digest == view.content_digest
-    view_graph = service._graph(view.graph_key)
-    core = QueryCore(metadata, FalkorReadAdapter(view_graph, graph_ontology_id=view.graph_key), QueryPolicy(admin_user.id))
-    result = core.aggregate(AggregateObjectSetRequest(
-        expression={'kind': 'base', 'type_ref': {'api_name': 'T'}},
-        aggregations=[{'op': 'count'}, {'op': 'sum', 'property': {'api_name': 'n'}, 'alias': 'total'}],
-        context={'ontology_id': oid, 'data_view_id': view.id, 'consistency': 'snapshot'},
-    ))
-    assert result.exact is True and result.groups == [{'value': 3, 'total': 6}]
+    assert view.object_count == 0 and view.edge_count == 0
+    assert not service.graph_exists(oid)

@@ -2,9 +2,16 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from app.models.v2.query_view import QueryDataView
-from .core import FalkorReadAdapter, metadata_digest
+from .core import FalkorReadAdapter, GraphData, metadata_digest
 from .errors import ObjectQueryError
 from .normalize import stable_hash
+
+SNAPSHOT_WRITE_BATCH_SIZE = 1000
+
+
+def _batches(items, size=SNAPSHOT_WRITE_BATCH_SIZE):
+    for start in range(0, len(items), size):
+        yield items[start:start + size]
 
 
 def now():
@@ -55,8 +62,15 @@ def require_ready(db, view_id, ontology_id, *, principal_id=None, is_admin=False
 def build_live_view(db, graph_service, metadata, ontology_id, principal_id, source_manifest_digest, retention_seconds, *, source_graph_key=None, source_snapshot_id=None):
     """Copy a bounded live graph into an isolated immutable graph and publish atomically."""
     source_key = source_graph_key or ontology_id
-    source = graph_service._graph(source_key)
-    source_data = FalkorReadAdapter(source, max_objects=100000, max_edges=500000).read(ontology_id)
+    # FalkorDB creates graphs lazily on the first write. A newly-created
+    # ontology therefore has no source graph yet; represent that as a valid
+    # empty snapshot without issuing GRAPH.RO_QUERY against a missing key.
+    source_exists = graph_service.graph_exists(ontology_id, source_graph_key)
+    source = graph_service._graph(source_key) if source_exists else None
+    source_data = (
+        FalkorReadAdapter(source, max_objects=100000, max_edges=500000).read(ontology_id)
+        if source is not None else GraphData(objects={}, edges=[])
+    )
     view = QueryDataView(
         ontology_id=ontology_id,
         source_manifest_digest=source_manifest_digest,
@@ -76,14 +90,48 @@ def build_live_view(db, graph_service, metadata, ontology_id, principal_id, sour
                  for source_id, relation, target_id in source_data.edges]
     try:
         view.status = "validating"
-        graph_service.upsert_instances(view.graph_key, instances)
-        graph_service.upsert_relations(view.graph_key, relations)
+        written_instances = sum(
+            graph_service.upsert_instances(view.graph_key, batch)
+            for batch in _batches(instances)
+        )
+        written_relations = sum(
+            graph_service.upsert_relations(view.graph_key, batch)
+            for batch in _batches(relations)
+        )
+        if written_instances != len(instances) or written_relations != len(relations):
+            raise ObjectQueryError(
+                "snapshot_write_incomplete", "data_view",
+                "Data view graph did not accept every source record",
+                expected_objects=len(instances), written_objects=written_instances,
+                expected_edges=len(relations), written_edges=written_relations,
+            )
+        copied_exists = graph_service.graph_exists(ontology_id, view.graph_key)
+        copied = (
+            FalkorReadAdapter(
+                graph_service._graph(view.graph_key),
+                max_objects=max(len(instances), 1),
+                max_edges=max(len(relations), 1),
+                graph_ontology_id=view.graph_key,
+            ).read(ontology_id)
+            if copied_exists else GraphData(objects={}, edges=[])
+        )
+        if len(copied.objects) != len(instances) or len(copied.edges) != len(relations):
+            raise ObjectQueryError(
+                "snapshot_write_incomplete", "data_view",
+                "Data view graph failed post-write verification",
+                expected_objects=len(instances), copied_objects=len(copied.objects),
+                expected_edges=len(relations), copied_edges=len(copied.edges),
+            )
         # A live graph has no MVCC snapshot API.  Read it again after the copy
         # and refuse publication if the source changed during capture.  This
         # prevents a mixed object/relation cut from being advertised as a
         # strict snapshot; a future coordinated source adapter can replace
         # this bounded consistency check.
-        source_after = FalkorReadAdapter(source, max_objects=100000, max_edges=500000).read(ontology_id)
+        source_still_exists = graph_service.graph_exists(ontology_id, source_graph_key)
+        source_after = (
+            FalkorReadAdapter(graph_service._graph(source_key), max_objects=100000, max_edges=500000).read(ontology_id)
+            if source_still_exists else GraphData(objects={}, edges=[])
+        )
         after_digest = stable_hash({"objects": sorted(source_after.objects.items()), "edges": sorted(source_after.edges)})
         before_digest = stable_hash({"objects": sorted(source_data.objects.items()), "edges": sorted(source_data.edges)})
         if before_digest != after_digest:
