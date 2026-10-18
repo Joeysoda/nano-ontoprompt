@@ -52,7 +52,9 @@ def function_resolver(db, ontology_id):
                 elif edit.op in {'add_link', 'remove_link'}:
                     rule.update(source_parameter=ref('source', edit.link.source), target_parameter=ref('target', edit.link.target), relation_type=edit.link.relation_type)
                 rules.append(rule)
-            manifest = {'asset_key': key, 'version': asset.version, 'asset_id': asset.id}
+            # Original inputs let a Scenario duplicate re-execute the same release
+            # against the same immutable base instead of replaying derived edits.
+            manifest = {'asset_key': key, 'version': asset.version, 'asset_id': asset.id, 'inputs': invocation['parameters']}
             if isinstance(result['output'].get('solver'), dict):
                 manifest['solver'] = result['output']['solver']
             return definitions, values, rules, ids, manifest

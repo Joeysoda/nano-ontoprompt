@@ -80,8 +80,10 @@ def duplicate(ontology_id: str, scenario_id: str, request: CreateScenarioRequest
                 from app.services.v2.scenario_actions import compile_actions
                 from app.services.v2.object_query.core import FalkorReadAdapter
                 from app.models.v2.query_view import QueryDataView
+                # Function-backed Actions re-run from their recorded inputs.
                 actions = [{"action_type_id": item["action_key"],
-                            "parameters": item.get("parameters", {}).get("values", {})}
+                            "parameters": (item.get("parameters", {}).get("function") or {}).get("inputs",
+                                          item.get("parameters", {}).get("values", {}))}
                            for item in changeset.ordered_edits if item.get("op") == "invoke_action"
                            and item.get("action_key") != "scenario_reset"]
                 action_ids = {item["action_type_id"] for item in actions}
@@ -90,7 +92,9 @@ def duplicate(ontology_id: str, scenario_id: str, request: CreateScenarioRequest
                 base_view = svc.db.get(QueryDataView, source.base_view_id)
                 base = FalkorReadAdapter(svc.graph._graph(base_view.graph_key),
                     graph_ontology_id=base_view.graph_key).read(ontology_id)
-                edits = compile_actions(ontology_id, created.id, actions, types, base)
+                from app.services.v2.function_binding import function_resolver
+                edits = compile_actions(ontology_id, created.id, actions, types, base,
+                                        actor=svc.user, function_resolver=function_resolver(svc.db, ontology_id))
                 if not edits:
                     edits = [Edit(sequence=0, op="invoke_action", action_key="scenario_reset",
                                   parameters={}, source_action="scenario_reset")]

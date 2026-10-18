@@ -96,3 +96,54 @@ def test_infeasible_plan_fails_with_stable_code_and_no_write(client, auth_header
     assert all(row.row_data.get("assigned_operator") is None for row in db.query(EntityInstance).filter_by(ontology_id=ontology.id).all())
     failed = db.query(OntologyActionRun).filter_by(ontology_id=ontology.id).one()
     assert failed.status == "failed" and "infeasible" in failed.error
+
+
+def test_solver_action_runs_inside_scenario_duplicates_and_previews_merge(client, auth_headers, db, plant):
+    ontology, _, snapshot = plant
+    api = f"/api/v2/ontologies/{ontology.id}"
+    view = client.post(f"{api}/object-query/data-views", headers=auth_headers,
+                       json={"source_ontology_id": ontology.id, "source_manifest_digest": "frepple-demo"})
+    assert view.status_code == 201, view.text
+    base_view = view.json()["view_id"]
+    kind = client.post(f"{api}/scenario-action-types", headers=auth_headers,
+                       json={"name": "Assign operators (scenario)", "backed_by_function": f"{CONTRACT['asset_key']}@{CONTRACT['version']}"}).json()
+    assert client.post(f"{api}/scenario-action-types/{kind['id']}:publish", headers=auth_headers).json()["status"] == "published"
+    mixed = client.post(f"{api}/scenario-action-types", headers=auth_headers, json={
+        "name": "mixed", "backed_by_function": "operator_assignment@1.0.0",
+        "rules": [{"op": "set_property", "target_parameter": "t", "property": "x", "static_value": 1}]})
+    assert mixed.status_code == 422
+    scenario = client.post(f"{api}/scenarios", headers=auth_headers, json={"name": "operator plan", "base_view_id": base_view}).json()
+    parameters = {"demands": {**handle(snapshot, "Demand"), "data_view_id": base_view},
+                  "operators": {**handle(snapshot, "Operator"), "data_view_id": base_view}}
+    command = {"expected_etag": scenario["etag"], "client_request_id": "plan-1", "actions": [{"action_type_id": kind["id"], "parameters": parameters}]}
+    preview = client.post(f"{api}/scenarios/{scenario['id']}/actions:preview", headers=auth_headers, json=command)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["edit_count"] == 16 and preview.json()["edits"][0]["parameters"]["function"]["solver"]["objective"] == 80.0
+    submitted = client.put(f"{api}/scenarios/{scenario['id']}/actions", headers=auth_headers, json=command)
+    assert submitted.status_code == 200, submitted.text
+
+    def assignments(view_id):
+        body = client.post(f"{api}/object-query/load", headers=auth_headers, json={
+            "expression": {"kind": "base", "type_ref": {"api_name": "Demand"}},
+            "context": {"ontology_id": ontology.id, "consistency": "snapshot", "data_view_id": view_id}, "read": {"page_size": 50}}).json()
+        return {o["object_id"]: o["properties"].get("assigned_operator") for o in body["objects"]}
+    scenario_plan = assignments(submitted.json()["result_view_id"])
+    assert len(scenario_plan) == 16 and all(scenario_plan.values())
+    assert set(assignments(base_view).values()) == {None}  # the base view and live data stay untouched
+    db.expire_all()
+    assert all(row.row_data.get("assigned_operator") is None for row in db.query(EntityInstance).filter_by(ontology_id=ontology.id).all())
+
+    infeasible = {**command, "client_request_id": "plan-2", "expected_etag": client.get(f"{api}/scenarios/{scenario['id']}", headers=auth_headers).json()["etag"],
+                  "actions": [{"action_type_id": kind["id"], "parameters": {**parameters, "operators": {
+                      **handle(snapshot, "Operator", exclude=("Antonio",)), "data_view_id": base_view}}}]}
+    r = client.put(f"{api}/scenarios/{scenario['id']}/actions", headers=auth_headers, json=infeasible)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "solver_infeasible"
+    assert client.get(f"{api}/scenarios/{scenario['id']}", headers=auth_headers).json()["head_revision"] == 1
+
+    copy = client.post(f"{api}/scenarios/{scenario['id']}:duplicate", headers=auth_headers, json={"name": "copy", "base_view_id": base_view})
+    assert copy.status_code == 201, copy.text
+    revision = client.get(f"{api}/scenarios/{copy.json()['id']}/revisions/1", headers=auth_headers)
+    assert revision.status_code == 200, revision.text
+    assert assignments(revision.json()["result_view_id"]) == scenario_plan  # same release + same base -> same plan
+    merge = client.post(f"{api}/scenarios/{scenario['id']}:merge-preview", headers=auth_headers).json()
+    assert merge["can_merge"] is True and merge["applied_edits"] == 16

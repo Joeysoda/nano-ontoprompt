@@ -49,7 +49,17 @@ class ActionDefinition(StrictBody):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
     parameters: list[dict] = Field(default_factory=list)
-    rules: list[dict] = Field(min_length=1, max_length=30)
+    rules: list[dict] = Field(default_factory=list, max_length=30)
+    # Exactly one of rules or a pinned edit Function (asset_key@major.minor.patch).
+    backed_by_function: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]+@\d+\.\d+\.\d+$")
+
+
+def _validate_action(parameters, rules, backed_by_function):
+    if backed_by_function:
+        if rules:
+            raise ScenarioError("mutually_exclusive_rules", "Function and ontology rules cannot be mixed", 422)
+        return
+    validate_definition(parameters, rules)
 
 
 class ActionInvocation(StrictBody):
@@ -80,7 +90,7 @@ def _http(exc):
 def _action_dict(row):
     return {"id": row.id, "name": row.name, "description": row.description or "",
             "parameters": row.parameters or [], "rules": row.effects or [], "version": row.version,
-            "status": row.status, "enabled": row.enabled}
+            "status": row.status, "enabled": row.enabled, "backed_by_function": row.backed_by_function}
 
 
 def _snapshot(service, view_id):
@@ -168,11 +178,11 @@ def list_action_types(ontology_id: str, db=Depends(get_db), user=Depends(get_cur
 def create_action_type(ontology_id: str, body: ActionDefinition, db=Depends(get_db), user=Depends(get_current_user)):
     try:
         _service(ontology_id, db, user)
-        validate_definition(body.parameters, body.rules)
+        _validate_action(body.parameters, body.rules, body.backed_by_function)
         row = OntologyActionType(ontology_id=ontology_id, name=body.name.strip(),
                                  description=body.description, action_category="scenario",
                                  parameters=body.parameters, effects=body.rules, created_by=user.id,
-                                 status="draft", version=1)
+                                 backed_by_function=body.backed_by_function, status="draft", version=1)
         db.add(row); db.commit(); db.refresh(row)
         return _action_dict(row)
     except ScenarioError as exc:
@@ -190,9 +200,9 @@ def update_action_type(ontology_id: str, action_type_id: str, body: ActionDefini
             raise ScenarioError("action_type_not_found", "Action type not found", 404)
         if user.role != "admin" and row.created_by != user.id:
             raise ScenarioError("forbidden", "Only the Action type author may edit it", 403)
-        validate_definition(body.parameters, body.rules)
+        _validate_action(body.parameters, body.rules, body.backed_by_function)
         row.name, row.description = body.name.strip(), body.description
-        row.parameters, row.effects = body.parameters, body.rules
+        row.parameters, row.effects, row.backed_by_function = body.parameters, body.rules, body.backed_by_function
         row.version += 1
         row.status = "draft"
         row.updated_at = datetime.now(timezone.utc)
@@ -213,7 +223,7 @@ def publish_action_type(ontology_id: str, action_type_id: str,
             raise ScenarioError("action_type_not_found", "Action type not found", 404)
         if user.role != "admin" and row.created_by != user.id:
             raise ScenarioError("forbidden", "Only the Action type author may publish it", 403)
-        validate_definition(row.parameters, row.effects)
+        _validate_action(row.parameters, row.effects, row.backed_by_function)
         row.status = "published"
         row.updated_at = datetime.now(timezone.utc)
         db.commit()
