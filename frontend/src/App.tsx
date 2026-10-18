@@ -29,6 +29,7 @@ const WhatIfWorkbenchPage = React.lazy(() => import("@/pages/what-if/SupplierStu
 const WhatIfDemoLandingPage = React.lazy(() => import("@/pages/what-if/SupplierStudyPage").then(module => ({ default: module.WhatIfDemoLandingPage })));
 const GenericScenarioWorkbenchPage = React.lazy(() => import("@/pages/what-if/GenericScenarioWorkbenchPage"));
 const ScenarioCatalogPage = React.lazy(() => import("@/pages/what-if/GenericScenarioWorkbenchPage").then(module => ({ default: module.ScenarioCatalogPage })));
+const ScenarioStudiesPage = React.lazy(() => import("@/pages/what-if/ScenarioStudiesPage"));
 const ComponentSpikesPage = React.lazy(() => import("@/pages/component-spikes/ComponentSpikesPage"));
 const OntologyDetailPage = React.lazy(() => import("@/pages/ontologies/detail/OntologyDetailPage"));
 
@@ -262,6 +263,14 @@ export default function App() {
             <Route
               path="/ontologies/:id/scenarios"
               element={<ProtectedRoute><GenericScenarioWorkbenchPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/ontologies/:id/scenario-studies"
+              element={<ProtectedRoute><ScenarioStudiesPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/scenario-studies"
+              element={<ProtectedRoute><ScenarioStudiesPage /></ProtectedRoute>}
             />
             <Route
               path="/ontologies/:id/what-if"

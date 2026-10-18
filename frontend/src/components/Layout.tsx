@@ -35,6 +35,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/overview', icon: LayoutDashboard, label: '总览' },
     { to: '/what-if', icon: FlaskConical, label: '情景推演' },
     { to: '/scenarios', icon: FlaskConical, label: '通用情景' },
+    { to: '/scenario-studies', icon: FlaskConical, label: '自定义研究' },
     {
       to: '/data', icon: Database, label: '数据工具',
       subItems: [

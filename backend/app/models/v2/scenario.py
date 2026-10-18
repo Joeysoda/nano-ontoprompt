@@ -86,6 +86,7 @@ class ScenarioRun(Base):
     celery_task_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     study_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     case_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    run_plan_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("v2_scenario_run_plans.id", ondelete="RESTRICT"), nullable=True, index=True)
     client_request_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     case_definition_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retry_of_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)

@@ -1,0 +1,24 @@
+.study-vertex {
+  --workbench-border: #d8dee5;
+  --workbench-border-strong: #c7cfd8;
+  --workbench-ink: #263340;
+  --workbench-muted: #667587;
+  --workbench-subtle: #758394;
+  color: #263340;
+  background: #f5f7f9;
+}
+.study-vertex .wb-surface { border-radius: 3px; box-shadow: none; }
+.study-vertex .wb-button-primary { border-radius: 3px; background: #2d72d2; box-shadow: none; white-space: nowrap; }
+.study-vertex .wb-button-primary:hover { background: #215db0; }
+.study-vertex .wb-button-secondary { border-radius: 3px; white-space: nowrap; }
+.study-vertex .wb-button-secondary:hover { color: #215db0; border-color: #8fb5e7; background: #f0f6ff; }
+.study-vertex .wb-input { border-radius: 3px; min-width: 0; }
+.study-vertex .wb-input:focus { border-color: #2d72d2; box-shadow: 0 0 0 2px #2d72d220; }
+.study-vertex [role="tab"][aria-selected="true"] { color: #215db0; border-color: #2d72d2; }
+.study-vertex .react-flow__node.selected > div { border-color: #2d72d2; box-shadow: 0 0 0 1px #2d72d2; }
+.study-vertex .react-flow__handle { width: 9px; height: 9px; border: 2px solid white; background: #6485ad; }
+.study-vertex .react-flow__handle:hover { background: #2d72d2; }
+.study-vertex .text-blue-700 { color: #215db0; }
+.study-vertex .bg-blue-50 { background: #edf4ff; }
+.study-vertex .bg-blue-600 { background: #2d72d2; }
+.study-vertex summary { color: #536273; }

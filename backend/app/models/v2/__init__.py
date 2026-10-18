@@ -13,6 +13,7 @@ from app.models.v2.semantic_core import (
 )
 from app.models.v2.security import OntologySecurityPolicy
 from app.models.v2.schema_migration import SchemaDependency, SchemaMigrationInstruction, SchemaMigrationPlan, SchemaMigrationRun
+from app.models.v2.scenario_study import CaseDefinition, RunPlan, StudyDefinition, StudyVersion
 
 __all__ = [
     "OntologyChange",
@@ -31,4 +32,8 @@ __all__ = [
     "SchemaMigrationInstruction",
     "SchemaMigrationRun",
     "SchemaDependency",
+    "StudyDefinition",
+    "StudyVersion",
+    "CaseDefinition",
+    "RunPlan",
 ]
