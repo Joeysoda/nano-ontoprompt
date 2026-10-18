@@ -13,6 +13,7 @@ celery_app = Celery("ontoprompt",
                         "app.tasks.v2.object_query",
                         "app.tasks.v2.scenario",
                         "app.tasks.v2.scenario_tracking",
+                        "app.tasks.v2.rule_schedule",
                         "app.tasks.v2.temporal_replay",
                         "app.tasks.v2.temporal_stream",
                     ])
@@ -22,4 +23,6 @@ celery_app.conf.task_publish_retry = False
 celery_app.conf.broker_connection_timeout = 3
 celery_app.conf.beat_schedule = {
     'tracking-scenarios-every-ten-minutes': {'task': 'scenario_tracking.rebase_due', 'schedule': 600.0},
+    # Rules carry their own 5-1440 minute interval; the tick only selects due rules.
+    'rules-due-every-minute': {'task': 'rule_runtime.evaluate_due', 'schedule': 60.0},
 }

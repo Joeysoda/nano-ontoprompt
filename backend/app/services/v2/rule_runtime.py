@@ -26,6 +26,8 @@ from statistics import median
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.v2.query_view import QueryDataView
+from app.models.v2.time_series import TimeSeriesSync
 from app.models.v2.rule_runtime import RuleAlert, RuleAlertEvent, RuleEvaluation, RuleProposal, RuleResource, RuleVersion
 from app.schemas.v2.object_query import LoadObjectSetRequest, ReadOptions
 from app.schemas.v2.object_set import ObjectSetDefinition
@@ -187,12 +189,32 @@ def evaluate_logic(core, logic: RuleLogic, context, series_loader) -> Evaluation
     return EvaluationResult(rows, len(records), quality)
 
 
+def series_loader(db: Session, view: QueryDataView):
+    """Resolve series in the view or the base views a scenario view derives from."""
+    chain, seen, current = [], set(), view
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        chain.append(current.id)
+        current = db.get(QueryDataView, current.base_view_id) if current.base_view_id else None
+
+    def load(series_id: str):
+        for view_id in chain:
+            row = db.query(TimeSeriesSync).filter_by(data_view_id=view_id, series_id=series_id).first()
+            if row is not None:
+                return row.points
+        return None
+    return load
+
+
 # ── Persistence and governance ───────────────────────────────────
 
 
 def rule_summary(rule: RuleResource) -> dict:
     return {"id": rule.id, "api_name": rule.api_name, "display_name": rule.display_name, "description": rule.description,
             "status": rule.status, "current_version": rule.current_version, "owner_id": rule.owner_id,
+            "schedule": {"interval_minutes": rule.schedule_minutes, "source": rule.schedule_source,
+                         "last_scheduled_at": rule.last_scheduled_at.isoformat() if rule.last_scheduled_at else None,
+                         "error": rule.schedule_error},
             "created_at": rule.created_at.isoformat() if rule.created_at else None}
 
 
@@ -329,6 +351,17 @@ class RuleService:
             fail("rule_retired", "rule_id", "Retired rules cannot change")
         previous, rule.status, rule.updated_at = rule.status, status, now()
         self._event(rule.id, "status_changed", previous=previous, status=status)
+        self.db.commit()
+        return rule
+
+    def set_schedule(self, rule_id: str, interval_minutes: int | None, source: str) -> RuleResource:
+        rule = self.rule(rule_id)
+        if rule.status == "retired":
+            fail("rule_retired", "rule_id", "Retired rules cannot change")
+        rule.schedule_minutes = interval_minutes
+        rule.schedule_source = source if interval_minutes else None
+        rule.schedule_error, rule.updated_at = None, now()
+        self._event(rule.id, "status_changed", schedule_minutes=interval_minutes, schedule_source=rule.schedule_source)
         self.db.commit()
         return rule
 

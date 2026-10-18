@@ -15,13 +15,14 @@ from app.schemas.v2.rule_runtime import (
     EvaluateRuleRequest,
     ProposeRuleChangeRequest,
     ReviewProposalRequest,
+    RuleScheduleRequest,
     RuleStatusRequest,
 )
 from app.services.v2.object_query.core import FalkorReadAdapter, QueryCore, QueryPolicy
 from app.services.v2.object_query.data_views import require_ready
 from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.object_query.metadata import load_sql_metadata
-from app.services.v2.rule_runtime import STATUS, RuleService, alert_summary, proposal_summary, rule_summary
+from app.services.v2.rule_runtime import STATUS, RuleService, alert_summary, proposal_summary, rule_summary, series_loader
 from app.services.v2.scenarios import ScenarioError, resolve_scenario_context
 
 router = APIRouter()
@@ -47,23 +48,6 @@ def get_graph_reader():
             raise ObjectQueryError("graph_unavailable", "execution", "FalkorDB is unavailable")
         return FalkorReadAdapter(service._graph(view.graph_key), graph_ontology_id=view.graph_key)
     return reader
-
-
-def series_loader(db: Session, view: QueryDataView):
-    """Resolve series in the view or the base views a scenario view derives from."""
-    chain, seen, current = [], set(), view
-    while current is not None and current.id not in seen:
-        seen.add(current.id)
-        chain.append(current.id)
-        current = db.get(QueryDataView, current.base_view_id) if current.base_view_id else None
-
-    def load(series_id: str):
-        for view_id in chain:
-            row = db.query(TimeSeriesSync).filter_by(data_view_id=view_id, series_id=series_id).first()
-            if row is not None:
-                return row.points
-        return None
-    return load
 
 
 def svc(ontology_id: str, db: Session, user) -> RuleService:
@@ -123,6 +107,14 @@ def review(ontology_id: str, rule_id: str, proposal_id: str, body: ReviewProposa
 def set_status(ontology_id: str, rule_id: str, body: RuleStatusRequest, db: Session = Depends(get_db), user=Depends(require_editor)):
     try:
         return rule_summary(svc(ontology_id, db, user).set_status(rule_id, body.status))
+    except ObjectQueryError as exc:
+        raise http_error(exc) from exc
+
+
+@router.post("/{ontology_id}/rules/{rule_id}/schedule")
+def set_schedule(ontology_id: str, rule_id: str, body: RuleScheduleRequest, db: Session = Depends(get_db), user=Depends(require_editor)):
+    try:
+        return rule_summary(svc(ontology_id, db, user).set_schedule(rule_id, body.interval_minutes, body.source))
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
 

@@ -91,6 +91,12 @@ class RuleStatusRequest(StrictModel):
     status: Literal["active", "muted", "paused"]
 
 
+class RuleScheduleRequest(StrictModel):
+    """Automate-style scheduled evaluation. None disables the schedule."""
+    interval_minutes: int | None = Field(default=None, ge=5, le=1440)
+    source: Literal["latest_view", "live_snapshot"] = "latest_view"
+
+
 class EvaluateRuleRequest(StrictModel):
     context: ExecutionContext
     mode: Literal["preview", "commit"] = "preview"

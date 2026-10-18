@@ -352,3 +352,54 @@ def test_resolution_links_only_a_completed_action_run_on_the_same_subject(client
     assert r.json()["resolution_action_run_id"] == runs["ok"].id
     events = client.get(url, headers=auth_headers).json()["events"]
     assert events[-1]["kind"] == "resolved" and events[-1]["detail"]["action_run_id"] == runs["ok"].id
+
+
+# ── scheduled evaluation ─────────────────────────────────────────
+
+def test_schedule_runs_due_rules_once_and_respects_pause(client, auth_headers, db, admin_user, ontology):
+    from datetime import datetime, timedelta, timezone
+    from app.services.v2.rule_scheduler import run_due
+    reader = lambda view: Adapter(GRAPHS[view.graph_key])  # noqa: E731
+    rule_id = create_and_approve(client, auth_headers, ontology, filter_logic(), "down")
+    bad = client.post(f"{base_url(ontology)}/rules/{rule_id}/schedule", headers=auth_headers, json={"interval_minutes": 1})
+    assert bad.status_code == 422
+    r = client.post(f"{base_url(ontology)}/rules/{rule_id}/schedule", headers=auth_headers, json={"interval_minutes": 15})
+    assert r.json()["schedule"] == {"interval_minutes": 15, "source": "latest_view", "last_scheduled_at": None, "error": None}
+    t0 = datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)
+    assert run_due(db, reader=reader, at=t0) == [{"rule_id": rule_id, "status": "failed", "code": "no_ready_view"}]
+    assert client.get(f"{base_url(ontology)}/rules/{rule_id}", headers=auth_headers).json()["rule"]["schedule"]["error"]["code"] == "no_ready_view"
+    v1 = make_view(db, ontology, admin_user, {"m1": {"status": "down"}})
+    t1 = t0 + timedelta(minutes=15)
+    first = run_due(db, reader=reader, at=t1)
+    assert first[0]["status"] == "evaluated" and first[0]["data_view_id"] == v1.id and first[0]["triggered_count"] == 1
+    assert run_due(db, reader=reader, at=t1 + timedelta(minutes=5)) == []  # not due yet
+    replay = run_due(db, reader=reader, at=t1 + timedelta(minutes=15))
+    assert replay[0]["replayed"] is True
+    v2 = make_view(db, ontology, admin_user, {"m1": {"status": "down"}, "m2": {"status": "down"}})
+    newer = run_due(db, reader=reader, at=t1 + timedelta(minutes=30))
+    assert newer[0]["data_view_id"] == v2.id and newer[0]["triggered_count"] == 1
+    assert client.get(f"{base_url(ontology)}/alerts", headers=auth_headers).json()["total"] == 2
+    client.post(f"{base_url(ontology)}/rules/{rule_id}/status", headers=auth_headers, json={"status": "paused"})
+    assert run_due(db, reader=reader, at=t1 + timedelta(hours=2)) == []
+    client.post(f"{base_url(ontology)}/rules/{rule_id}/status", headers=auth_headers, json={"status": "muted"})
+    assert run_due(db, reader=reader, at=t1 + timedelta(hours=2))[0]["status"] == "evaluated"
+    client.post(f"{base_url(ontology)}/rules/{rule_id}/schedule", headers=auth_headers, json={"interval_minutes": None})
+    assert run_due(db, reader=reader, at=t1 + timedelta(days=1)) == []
+
+
+def test_live_snapshot_schedule_uses_builder(client, auth_headers, db, admin_user, ontology):
+    from datetime import datetime, timezone
+    from app.services.v2.rule_scheduler import run_due
+    rule_id = create_and_approve(client, auth_headers, ontology, filter_logic(), "down")
+    client.post(f"{base_url(ontology)}/rules/{rule_id}/schedule", headers=auth_headers, json={"interval_minutes": 5, "source": "live_snapshot"})
+    built = []
+
+    def builder(session, ontology_id, owner):
+        view = make_view(session, ontology, owner, {"m9": {"status": "down"}})
+        built.append((ontology_id, owner.id, view.id))
+        return view
+    reader = lambda view: Adapter(GRAPHS[view.graph_key])  # noqa: E731
+    at = datetime(2026, 10, 18, tzinfo=timezone.utc)
+    assert run_due(db, reader=reader, at=at)[0]["status"] == "failed"  # no builder -> explicit failure
+    result = run_due(db, reader=reader, live_view_builder=builder, at=at.replace(hour=1))
+    assert built and built[0][:2] == (ontology.id, admin_user.id) and result[0]["data_view_id"] == built[0][2]
