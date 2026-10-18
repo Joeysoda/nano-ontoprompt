@@ -380,6 +380,12 @@ class LoadObjectSetRequest(StrictModel):
     terminal: Literal["load"] = "load"
 
 
+class MultiSetGraphRequest(StrictModel):
+    """A graph is several typed Object Sets; set algebra cannot mix result types."""
+    sets: list[ObjectSetExpr] = Field(min_length=1, max_length=20)
+    context: ExecutionContext
+
+
 class AggregationSpec(StrictModel):
     op: Literal["count", "sum", "avg", "min", "max", "exact_distinct", "approximate_distinct"]
     property: PropertyRef | None = None

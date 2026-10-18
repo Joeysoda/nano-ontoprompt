@@ -22,7 +22,7 @@ from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.object_query.metadata import load_sql_metadata
 from app.services.v2.object_query.data_views import as_response, build_live_view, require_ready
 from app.schemas.v2.object_query import AggregateResult, QueryDataViewCreate, QueryDataViewResponse, QueryJobResponse
-from app.schemas.v2.object_query import CompareObjectSetRequest, CompareResult, ReadOptions
+from app.schemas.v2.object_query import CompareObjectSetRequest, CompareResult, MultiSetGraphRequest, ReadOptions
 from app.models.v2.query_job import QueryJob
 from app.services.v2.scenarios import resolve_scenario_context, ScenarioError
 from datetime import datetime, timezone, timedelta
@@ -203,6 +203,44 @@ def compare_object_query(ontology_id: str, request: CompareObjectSetRequest, db:
                     for key in sorted(base_map.keys() & cand_map.keys())]
         return CompareResult(mode=request.mode, added=added, removed=removed, retained=retained,
             baseline_execution_hash=base_last.execution_hash, candidate_execution_hash=cand_last.execution_hash)
+    except ObjectQueryError as exc:
+        raise http_error(exc) from exc
+
+
+@router.post("/{ontology_id}/object-query/graph:multi")
+def graph_multi_set(ontology_id: str, request: MultiSetGraphRequest, db: Session = Depends(get_db), user=Depends(get_current_user), graph_service: FalkorDBService = Depends(get_falkordb)):
+    """Induced graph over the union of several typed Object Sets (Vertex Search Around)."""
+    _authorize(ontology_id, db, user)
+    try:
+        if request.context.ontology_id != ontology_id:
+            raise ObjectQueryError("ontology_context_mismatch", "context.ontology_id", "Path ontology and execution context ontology must match")
+        context = resolve_scenario_context(db, request.context, ontology_id, user)
+        if context.consistency != 'snapshot' or not context.data_view_id:
+            raise ObjectQueryError('consistency_unavailable', 'context', 'Graph requires a pinned view')
+        view = require_ready(db, context.data_view_id, ontology_id, principal_id=user.id, is_admin=user.role == 'admin')
+        if not graph_service.available:
+            raise ObjectQueryError('graph_unavailable', 'execution', 'FalkorDB is unavailable')
+        metadata = load_sql_metadata(db, ontology_id)
+        adapter = FalkorReadAdapter(graph_service._graph(view.graph_key), graph_ontology_id=view.graph_key)
+        core = QueryCore(metadata, adapter, QueryPolicy(principal=user.id))
+        resources = ResourceService(db, ontology_id, user, metadata)
+        objects, hashes = {}, []
+        for index, expression in enumerate(request.sets):
+            load = LoadObjectSetRequest(expression=expression, context=context)
+            try:
+                members, result = core.materialize(load, resources)
+            except ObjectQueryError as exc:
+                raise ObjectQueryError(exc.code, f'sets[{index}].{exc.path}', exc.issue.message) from exc
+            hashes.append(result.execution_hash)
+            for item in members:
+                objects[(item.object_type, item.object_id)] = item
+            if len(objects) > 1000:
+                raise ObjectQueryError('query_too_complex', f'sets[{index}]', 'Narrow the graph to at most 1,000 objects')
+        snapshot = adapter.read(ontology_id)
+        edges = [{'source': {'object_type': s[0], 'object_id': s[1]}, 'target': {'object_type': t[0], 'object_id': t[1]}, 'relation_type': r}
+                 for s, r, t in snapshot.edges if s in objects and t in objects]
+        return {'objects': [objects[k].model_dump(mode='json') for k in sorted(objects)], 'edges': edges,
+                'execution_context': context.model_dump(mode='json'), 'set_execution_hashes': hashes}
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
 

@@ -59,6 +59,7 @@ from app.routers.v2 import what_if_demo as what_if_demo_v2
 from app.routers.v2 import supplier_studies as supplier_studies_v2
 from app.routers.v2 import scenario_studies as scenario_studies_v2
 from app.routers.v2 import rule_runtime as rule_runtime_v2
+from app.routers.v2 import graph_views as graph_views_v2
 from app.routers.v2 import dynamic_ontology as dynamic_ontology_v2
 from app.routers.v2 import temporal_replays as temporal_replays_v2
 from app.routers.v2 import temporal_streams as temporal_streams_v2
@@ -132,6 +133,7 @@ def _seed_db():
         from app.models.v2.scenario import ScenarioResource, ScenarioRevision, ScenarioChangeSet, ScenarioRun, ScenarioRunStage, ScenarioMetricSnapshot, ScenarioGrant, ScenarioAudit, ScenarioStudy, ScenarioStudyCase  # noqa: F401
         from app.models.v2.scenario_study import StudyDefinition, StudyVersion, CaseDefinition, RunPlan  # noqa: F401
         from app.models.v2.rule_runtime import RuleResource, RuleVersion, RuleProposal, RuleEvaluation, RuleAlert, RuleAlertEvent  # noqa: F401
+        from app.models.v2.graph_view import GraphView, GraphViewVersion  # noqa: F401
         from app.models.v2.workbench_task import MappingTask, DataImportTask, ModelInvocation  # noqa: F401
         from app.models.v2.dynamic_ontology import OntologyChange, WhatIfScenario, WhatIfRun  # noqa: F401
         from app.models.v2.temporal_replay import (  # noqa: F401
@@ -437,6 +439,7 @@ app.include_router(what_if_demo_v2.router, prefix="/api/v2/what-if", tags=["v2-w
 app.include_router(supplier_studies_v2.router, prefix="/api/v2/ontologies", tags=["v2-supplier-studies"])
 app.include_router(scenario_studies_v2.router, prefix="/api/v2/ontologies", tags=["v2-scenario-study-definitions"])
 app.include_router(rule_runtime_v2.router, prefix="/api/v2/ontologies", tags=["v2-rule-runtime"])
+app.include_router(graph_views_v2.router, prefix="/api/v2/ontologies", tags=["v2-graph-views"])
 app.include_router(dynamic_ontology_v2.router, prefix="/api/v2/ontologies", tags=["v2-ontology-editor"])
 app.include_router(what_if_v2.router, prefix="/api/v2/ontologies", tags=["v2-what-if"])
 app.include_router(semantic_core_v2.router, prefix="/api/v2/ontologies", tags=["v2-semantic-core"])

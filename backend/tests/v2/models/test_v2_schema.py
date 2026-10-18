@@ -139,6 +139,8 @@ def test_all_v2_tables_registered():
         "v2_rule_evaluations",
         "v2_rule_alerts",
         "v2_rule_alert_events",
+        "v2_graph_views",
+        "v2_graph_view_versions",
     }
 
 
