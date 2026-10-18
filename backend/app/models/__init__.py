@@ -23,6 +23,7 @@ from app.models.v2.temporal_replay import (
 from app.models.v2.semantic_core import OntologySemanticResource, OntologySemanticResourceVersion, OntologySourceMapping
 from app.models.v2.security import OntologySecurityPolicy
 from app.models.v2.schema_migration import SchemaDependency, SchemaMigrationInstruction, SchemaMigrationPlan, SchemaMigrationRun
+from app.models.v2.time_series import TimeSeriesSync
 
 __all__ = [
     "User",
@@ -55,4 +56,5 @@ __all__ = [
     "SchemaMigrationInstruction",
     "SchemaMigrationRun",
     "SchemaDependency",
+    "TimeSeriesSync",
 ]

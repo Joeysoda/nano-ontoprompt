@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.v2.object_set import (ObjectSetResource as Resource, ObjectSetVersion as Version,
     ObjectSetStaticMember as Member, ObjectSetGrant as Grant, ObjectSetAudit as Audit,
     ObjectSetDependency as Dependency, ObjectSetLease as Lease, now)
+from app.services.v2.object_query.authorization import require_ontology_access
 from app.schemas.v2.object_query import ObjectSetExpr, ParameterRef, ParameterSpec
 from .core import metadata_digest
 from .errors import ObjectQueryError
@@ -26,14 +27,26 @@ def aware(value):
 
 
 class ResourceService:
-    def __init__(self, db, ontology_id, user, metadata):
+    def __init__(self, db, ontology_id, user, metadata, authorization_projection=None):
         self.db, self.ontology_id, self.user, self.metadata = db, ontology_id, user, metadata
+        self.authorization_projection = authorization_projection
         self.parameter_schema = {}
 
     def authorize_ontology(self):
-        ontology = self.db.get(OntologyProject, self.ontology_id)
-        if ontology is None or (self.user.role != 'admin' and ontology.created_by != self.user.id):
+        if self.authorization_projection is not None:
+            if not self.authorization_projection.allowed:
+                fail('not_found', 'Ontology not found or inaccessible')
+            return self.authorization_projection
+        try:
+            self.authorization_projection = require_ontology_access(
+                self.db,
+                self.ontology_id,
+                str(self.user.id),
+                self.user.role,
+            )
+        except ObjectQueryError:
             fail('not_found', 'Ontology not found or inaccessible')
+        return self.authorization_projection
 
     def get(self, resource_id, edit=False, owner=False, allow_deleted=False):
         self.authorize_ontology()

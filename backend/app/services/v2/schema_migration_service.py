@@ -35,6 +35,13 @@ CASTS = {
     ("integer", "long"), ("integer", "double"), ("integer", "string"),
     ("long", "integer"), ("long", "double"), ("long", "string"),
     ("double", "integer"), ("double", "long"), ("double", "string"),
+    # FactoryNet and several SQL adapters expose fixed-point measurements as
+    # ``decimal``.  Keep these conversions explicit so a real numeric
+    # property can be migrated through the same shadow/reconcile path as the
+    # integer/double aliases, instead of being rejected merely because the
+    # source dialect chose a different numeric name.
+    ("decimal", "integer"), ("decimal", "long"), ("decimal", "double"), ("decimal", "string"),
+    ("float", "integer"), ("float", "long"), ("float", "double"), ("float", "string"),
     ("boolean", "string"), ("date", "string"), ("timestamp", "string"),
     ("string", "integer"), ("string", "long"), ("string", "double"),
     ("string", "boolean"), ("string", "date"), ("string", "timestamp"),
@@ -199,6 +206,21 @@ def _cast_preview(db: Session, ontology_id: str, row: OntologySemanticResourceVe
     return {"value_count": len(values), "failures": failures[:20], "failure_count": len(failures)}
 
 
+def _rename_preview(db: Session, ontology_id: str, row: OntologySemanticResourceVersion, new_name: str) -> dict[str, Any]:
+    keys = _property_keys(row)
+    moved = 0
+    collisions = []
+    for instance in _property_instances(db, ontology_id, row):
+        payload = instance.row_data if isinstance(instance.row_data, dict) else {}
+        for key in keys:
+            if key not in payload or payload[key] is None or key == new_name:
+                continue
+            if new_name in payload and payload[new_name] != payload[key]:
+                collisions.append({"instance_id": instance.id, "from": key, "to": new_name})
+            moved += 1
+    return {"value_count": moved, "collisions": collisions[:20], "collision_count": len(collisions)}
+
+
 def _replace_json_value(value: Any, old: str, new: str) -> tuple[Any, int]:
     if isinstance(value, dict):
         replaced = {}
@@ -231,6 +253,12 @@ def _apply_move_edits(db: Session, ontology_id: str, payload: dict[str, Any]) ->
     changed = []
     reference_count = 0
     for scenario in db.query(WhatIfScenario).filter(WhatIfScenario.ontology_id == ontology_id).all():
+        if _json_key_collision(scenario.assumptions_json or [], source, target) or _json_key_collision(scenario.rule_overrides_json or {}, source, target):
+            raise SchemaMigrationError(
+                "MIGRATION_BLOCKED",
+                "move_edits 会覆盖已有的目标引用",
+                details={"scenario_id": scenario.id, "source_resource_id": source, "target_resource_id": target},
+            )
         before = {
             "assumptions_json": copy.deepcopy(scenario.assumptions_json or []),
             "rule_overrides_json": copy.deepcopy(scenario.rule_overrides_json or {}),
@@ -245,6 +273,16 @@ def _apply_move_edits(db: Session, ontology_id: str, payload: dict[str, Any]) ->
     return {"source_resource_id": source, "target_resource_id": target, "moved_reference_count": reference_count, "scenarios": changed}
 
 
+def _json_key_collision(value: Any, source: str, target: str) -> bool:
+    if isinstance(value, dict):
+        if source in value and target in value:
+            return True
+        return any(_json_key_collision(item, source, target) for item in value.values())
+    if isinstance(value, list):
+        return any(_json_key_collision(item, source, target) for item in value)
+    return False
+
+
 def _move_edit_preview(db: Session, ontology_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     source = str(payload.get("from_resource_id") or payload.get("source_resource_id") or "")
     target = str(payload.get("to_resource_id") or payload.get("target_resource_id") or "")
@@ -253,6 +291,12 @@ def _move_edit_preview(db: Session, ontology_id: str, payload: dict[str, Any]) -
     count = 0
     scenario_count = 0
     for scenario in db.query(WhatIfScenario).filter(WhatIfScenario.ontology_id == ontology_id).all():
+        if _json_key_collision(scenario.assumptions_json or [], source, target) or _json_key_collision(scenario.rule_overrides_json or {}, source, target):
+            raise SchemaMigrationError(
+                "MIGRATION_BLOCKED",
+                "move_edits 会覆盖已有的目标引用",
+                details={"scenario_id": scenario.id, "source_resource_id": source, "target_resource_id": target},
+            )
         _, assumptions = _replace_json_value(scenario.assumptions_json or [], source, target)
         _, overrides = _replace_json_value(scenario.rule_overrides_json or {}, source, target)
         if assumptions or overrides:
@@ -286,6 +330,19 @@ def _transform_property_values(
             _snapshot_instance_row(backups, instance)
             if mode == "cast":
                 updated[key] = _cast_value(updated[key], str(target_type or "string"))
+            elif mode == "rename":
+                new_key = str(target_type or "").strip()
+                if not new_key:
+                    raise SchemaMigrationError("MIGRATION_INVALID", "属性重命名缺少新的 API name")
+                if new_key in updated and new_key != key and updated[new_key] != updated[key]:
+                    raise SchemaMigrationError(
+                        "MIGRATION_BLOCKED",
+                        "属性重命名会覆盖实例中已有的目标字段",
+                        details={"instance_id": instance.id, "from": key, "to": new_key},
+                    )
+                if new_key != key:
+                    updated.setdefault(new_key, updated[key])
+                    updated.pop(key, None)
             elif mode == "drop":
                 archive = updated.setdefault("__retired_properties", {})
                 if not isinstance(archive, dict):
@@ -527,6 +584,11 @@ def dry_run(db: Session, ontology_id: str, body: dict[str, Any], *, user_id: str
             if duplicate:
                 raise SchemaMigrationError("DUPLICATE_API_NAME", f"迁移后的 API name 已存在：{new_name}")
             payload["new_api_name"] = new_name
+            if target.kind == "property":
+                rename_info = _rename_preview(db, ontology_id, target, new_name)
+                extra_impact["rename"] = rename_info
+                if rename_info["collision_count"]:
+                    instruction_blockers.append({"kind": "rename_value_collision", **rename_info})
         if target and kind == "replace_source":
             if target.kind != "property":
                 raise SchemaMigrationError("MIGRATION_INVALID", "replace_source 只能作用于 property")
@@ -575,7 +637,8 @@ def dry_run(db: Session, ontology_id: str, body: dict[str, Any], *, user_id: str
             "resource_kind": target.kind if target else None,
             "dependencies": dependents,
             "blockers": blockers,
-            "requires_shadow_projection": kind in {"cast_property", "drop_property", "replace_source", "rebuild_projection"},
+            "requires_shadow_projection": kind in {"cast_property", "drop_property", "replace_source", "rebuild_projection"}
+                or (kind == "rename_api_name" and target and target.kind in {"object_type", "property", "link_type"}),
             "reversible": True,
             "can_apply": not blockers,
         }
@@ -665,7 +728,9 @@ def _apply_legacy_projection_for_instruction(
         entity, definition = _legacy_property_parent(db, ontology_id, row.resource_id)
         if not entity or not definition:
             return
-        definitions = copy.deepcopy((entity.properties or {}).get("property_definitions", [])) if isinstance(entity.properties, dict) else []
+        entity_properties = entity.properties if isinstance(entity.properties, dict) else {}
+        definition_key = "property_definitions" if isinstance(entity_properties.get("property_definitions"), list) else "properties" if isinstance(entity_properties.get("properties"), list) else "property_definitions"
+        definitions = copy.deepcopy(entity_properties.get(definition_key, []))
         prop_id = str(definition.get("id") or definition.get("name"))
         for item in definitions:
             if str(item.get("id") or item.get("name")) != prop_id:
@@ -673,7 +738,12 @@ def _apply_legacy_projection_for_instruction(
             if instruction_kind == "drop_property":
                 definitions.remove(item)
             elif instruction_kind == "rename_api_name":
-                item["api_name"] = str(payload.get("new_api_name") or payload.get("api_name") or item.get("api_name") or item.get("id"))
+                new_name = str(payload.get("new_api_name") or payload.get("api_name") or item.get("api_name") or item.get("id"))
+                # ``id`` is the legacy metadata key consumed by the query
+                # adapter.  Keep the display label intact, but move the
+                # compatibility key together with the canonical API name.
+                item["id"] = new_name
+                item["api_name"] = new_name
             elif instruction_kind == "cast_property":
                 item["type"] = payload.get("to_type") or payload.get("base_type") or item.get("type")
             elif instruction_kind == "replace_source":
@@ -684,7 +754,7 @@ def _apply_legacy_projection_for_instruction(
                 if "label" in item:
                     item["label"] = display_name
             break
-        entity.properties = {**(entity.properties if isinstance(entity.properties, dict) else {}), "property_definitions": definitions}
+        entity.properties = {**entity_properties, definition_key: definitions}
         return
     if row.kind == "link_type":
         relation = _legacy_relation_for_resource(db, ontology_id, row.resource_id)
@@ -706,6 +776,11 @@ def apply_plan(db: Session, plan_id: str, *, user_id: str | None = None) -> dict
     plan = db.query(SchemaMigrationPlan).filter(SchemaMigrationPlan.id == plan_id).with_for_update().first()
     if not plan:
         raise SchemaMigrationError("NOT_FOUND", "迁移计划不存在")
+    # A worker retry after pointer switch must reconcile the existing target;
+    # cloning and replaying the whole plan would create a second revision and
+    # could repeat external projection writes.
+    if plan.target_revision_id and plan.status in {"running", "applied"}:
+        return reconcile_plan(db, plan.id)
     if plan.status not in {"validated", "failed", "running"}:
         raise SchemaMigrationError("MIGRATION_STATE", f"当前迁移状态不能应用：{plan.status}")
     base = db.query(OntologyRevision).filter(OntologyRevision.id == plan.base_revision_id).first()
@@ -755,12 +830,26 @@ def apply_plan(db: Session, plan_id: str, *, user_id: str | None = None) -> dict
                 continue
             if not row:
                 raise SchemaMigrationError("MIGRATION_TARGET_NOT_FOUND", "影子修订中找不到迁移目标")
+            if item.instruction_kind == "rename_api_name" and row.kind == "property":
+                new_name = str(payload.get("new_api_name") or payload.get("api_name") or "").strip()
+                journal["changed_property_values"] += _transform_property_values(
+                    db,
+                    plan.ontology_id,
+                    row,
+                    mode="rename",
+                    target_type=new_name,
+                    backups=journal["instance_rows"],
+                )
             _apply_legacy_projection_for_instruction(db, plan.ontology_id, row, item.instruction_kind, payload)
             if item.instruction_kind == "rename_api_name":
                 new_name = str(payload.get("new_api_name") or payload.get("api_name") or "")
                 if not SAFE_API_NAME.fullmatch(new_name):
                     raise SchemaMigrationError("INVALID_API_NAME", "新的 API name 无效")
                 row.api_name = new_name
+                if row.kind == "property":
+                    provenance = dict(row.provenance_json or {})
+                    provenance["legacy_property_id"] = new_name
+                    row.provenance_json = provenance
                 resource = db.query(OntologySemanticResource).filter(OntologySemanticResource.id == row.resource_id).first()
                 if resource:
                     resource.api_name = new_name

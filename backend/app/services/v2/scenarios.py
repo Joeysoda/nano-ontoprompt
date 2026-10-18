@@ -14,6 +14,8 @@ from app.schemas.v2.scenario import ChangeSetRequest, Edit
 from app.services.v2.graph.falkordb_service import FalkorDBService
 from app.services.v2.object_query.core import FalkorReadAdapter
 from app.services.v2.object_query.data_views import aware, now, require_ready
+from app.services.v2.object_query.authorization import require_ontology_access
+from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.object_query.normalize import stable_hash
 from app.schemas.v2.object_query import ExecutionContext
 
@@ -65,8 +67,15 @@ class ScenarioService:
 
     def authorize_ontology(self):
         row = self.db.get(OntologyProject, self.ontology_id)
-        if not row or (self.user.role != "admin" and row.created_by != self.user.id):
+        if not row:
             raise ScenarioError("not_found", "Ontology not found", 404)
+        try:
+            # Scenario reads follow the same Plan A projection as ontology and
+            # object reads. Ownership is no longer required for a viewer;
+            # mutations still use the write check in ``get`` and route guards.
+            require_ontology_access(self.db, self.ontology_id, str(self.user.id), self.user.role)
+        except ObjectQueryError as exc:
+            raise ScenarioError("not_found", "Ontology not found", 404) from exc
 
     def get(self, scenario_id, write=False):
         row = self.db.get(ScenarioResource, scenario_id)
@@ -76,7 +85,12 @@ class ScenarioService:
             raise ScenarioError('scenario_expired', 'Scenario retention period has expired', 410)
         grant = self.db.get(ScenarioGrant, (row.id, self.user.id))
         if self.user.role != "admin" and row.owner_id != self.user.id and not grant:
-            raise ScenarioError("forbidden", "Scenario access denied", 403)
+            if write:
+                raise ScenarioError("forbidden", "Scenario editor access required", 403)
+            try:
+                require_ontology_access(self.db, self.ontology_id, str(self.user.id), self.user.role)
+            except ObjectQueryError as exc:
+                raise ScenarioError("forbidden", "Scenario access denied", 403) from exc
         if write and self.user.role != "admin" and row.owner_id != self.user.id and (not grant or grant.role != "editor"):
             raise ScenarioError("forbidden", "Scenario editor access required", 403)
         return row

@@ -15,6 +15,8 @@ from app.models.v2.scenario import (ScenarioChangeSet, ScenarioResource, Scenari
 from app.services.v2.graph.falkordb_service import FalkorDBService
 from app.services.v2.object_query.core import FalkorReadAdapter
 from app.services.v2.object_query.normalize import stable_hash
+from app.services.v2.object_query.authorization import require_ontology_access
+from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.scenarios import ScenarioService
 from app.services.v2.supplier_action import compile_supplier_action
 from app.services.v2.supplier_resilience import WOOD, validate_profile
@@ -71,12 +73,22 @@ class RetryCommand(StrictBody):
     client_request_id: str = Field(min_length=1, max_length=200)
 
 
-def _study(db, user, ontology_id, study_id):
+def _require_editor(user):
+    if user.role not in ("admin", "editor"):
+        raise HTTPException(status_code=403, detail="Editor role required")
+
+
+def _study(db, user, ontology_id, study_id, *, write: bool = False):
     row = db.get(ScenarioStudy, study_id)
     if not row or row.ontology_id != ontology_id:
         raise HTTPException(404, "未找到研究")
     if user.role != "admin" and row.owner_id != user.id:
-        raise HTTPException(403, "没有研究访问权限")
+        if write:
+            raise HTTPException(403, "没有研究编辑权限")
+        try:
+            require_ontology_access(db, ontology_id, str(user.id), user.role)
+        except ObjectQueryError as exc:
+            raise HTTPException(403, "没有研究访问权限") from exc
     return row
 
 
@@ -220,7 +232,8 @@ def get_study(ontology_id: str, study_id: str, db=Depends(get_db), user=Depends(
 
 @router.patch("/{ontology_id}/scenario-studies/{study_id}")
 def rename_study(ontology_id: str, study_id: str, body: Rename, db=Depends(get_db), user=Depends(get_current_user)):
-    study = _study(db, user, ontology_id, study_id)
+    _require_editor(user)
+    study = _study(db, user, ontology_id, study_id, write=True)
     if study.etag != body.etag:
         raise HTTPException(409, "研究已变化，请刷新后再重命名")
     study.name = body.name.strip()
@@ -235,7 +248,8 @@ def rename_study(ontology_id: str, study_id: str, body: Rename, db=Depends(get_d
 @router.post("/{ontology_id}/scenario-studies/{study_id}/cases", status_code=201)
 def create_case(ontology_id: str, study_id: str, body: CreateCase,
                 db=Depends(get_db), user=Depends(get_current_user)):
-    study = _study(db, user, ontology_id, study_id)
+    _require_editor(user)
+    study = _study(db, user, ontology_id, study_id, write=True)
     name = body.name.strip()
     if not name:
         raise HTTPException(422, "情景名称不能为空")
@@ -273,7 +287,8 @@ def create_case(ontology_id: str, study_id: str, body: CreateCase,
 @router.patch("/{ontology_id}/scenario-studies/{study_id}/cases/{case_id}/name")
 def rename_case(ontology_id: str, study_id: str, case_id: str, body: RenameCase,
                 db=Depends(get_db), user=Depends(get_current_user)):
-    study = _study(db, user, ontology_id, study_id)
+    _require_editor(user)
+    study = _study(db, user, ontology_id, study_id, write=True)
     case = _case(db, study, case_id)
     if case.etag != body.etag:
         raise HTTPException(409, "情景已变化，请刷新后再重命名")
@@ -298,7 +313,8 @@ def rename_case(ontology_id: str, study_id: str, case_id: str, body: RenameCase,
 @router.post("/{ontology_id}/scenario-studies/{study_id}/cases/{case_id}:archive")
 def archive_case(ontology_id: str, study_id: str, case_id: str, body: ArchiveCase,
                  db=Depends(get_db), user=Depends(get_current_user)):
-    study = _study(db, user, ontology_id, study_id)
+    _require_editor(user)
+    study = _study(db, user, ontology_id, study_id, write=True)
     case = _case(db, study, case_id)
     if case.case_kind == "baseline" or db.get(ScenarioResource, case.scenario_id).protected_demo:
         raise HTTPException(422, "准备好的演示情景不能归档")
@@ -344,7 +360,8 @@ def case_graph(ontology_id: str, study_id: str, case_id: str,
 
 @router.patch("/{ontology_id}/scenario-studies/{study_id}/options")
 def update_options(ontology_id: str, study_id: str, body: Options, db=Depends(get_db), user=Depends(get_current_user)):
-    study = _study(db, user, ontology_id, study_id)
+    _require_editor(user)
+    study = _study(db, user, ontology_id, study_id, write=True)
     if study.etag != body.etag:
         raise HTTPException(409, "研究已变化，请刷新后再编辑")
     if body.smoothing_minutes != 0:
@@ -374,7 +391,8 @@ def update_options(ontology_id: str, study_id: str, body: Options, db=Depends(ge
 @router.patch("/{ontology_id}/scenario-studies/{study_id}/cases/{case_id}")
 def submit_action(ontology_id: str, study_id: str, case_id: str, body: Submit,
                   db=Depends(get_db), user=Depends(get_current_user)):
-    study = _study(db, user, ontology_id, study_id)
+    _require_editor(user)
+    study = _study(db, user, ontology_id, study_id, write=True)
     case = _case(db, study, case_id)
     if case.case_kind == "baseline":
         raise HTTPException(422, "基线方案没有操作")
@@ -442,7 +460,8 @@ def _enqueue(db, user, study, case, compatibility, dependency=None, request_id=N
 @router.post("/{ontology_id}/scenario-studies/{study_id}/cases/{case_id}/runs", status_code=status.HTTP_202_ACCEPTED)
 def start_run(ontology_id: str, study_id: str, case_id: str, body: RunCommand,
               db=Depends(get_db), user=Depends(get_current_user)):
-    study = _study(db, user, ontology_id, study_id)
+    _require_editor(user)
+    study = _study(db, user, ontology_id, study_id, write=True)
     case = _case(db, study, case_id)
     if case.etag != body.etag:
         raise HTTPException(409, "情景已变化，请刷新后再运行")
@@ -494,7 +513,8 @@ def cancel_run(ontology_id: str, run_id: str, db=Depends(get_db), user=Depends(g
     run = db.get(ScenarioRun, run_id)
     if not run or not run.study_id:
         raise HTTPException(404, "未找到运行")
-    _study(db, user, ontology_id, run.study_id)
+    _require_editor(user)
+    _study(db, user, ontology_id, run.study_id, write=True)
     if run.status in ("queued", "running"):
         run.cancel_requested = True
         db.commit()
@@ -506,7 +526,8 @@ def retry_run(ontology_id: str, run_id: str, body: RetryCommand, db=Depends(get_
     previous = db.get(ScenarioRun, run_id)
     if not previous or not previous.study_id:
         raise HTTPException(404, "未找到运行")
-    study = _study(db, user, ontology_id, previous.study_id)
+    _require_editor(user)
+    study = _study(db, user, ontology_id, previous.study_id, write=True)
     if previous.status not in {"failed", "cancelled"}:
         raise HTTPException(409, "只有失败或已取消的运行可以重试")
     case = _case(db, study, previous.case_id)

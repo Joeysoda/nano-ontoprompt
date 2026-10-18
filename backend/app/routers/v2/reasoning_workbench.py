@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
-from app.deps import get_current_user
+from app.deps import get_current_user, require_editor
 from app.models.user import User
 from app.models.ontology import OntologyProject
 from app.models.logic import LogicRule
@@ -142,8 +142,111 @@ def reasoning_inputs(ontology_id: str, db: Session = Depends(get_db)):
             "node_count": len(data['nodes']), "edge_count": len(data['edges']), "sample_limit": 500,
             "total_instances": data.get('total_instances'), "truncated": data.get('total_instances', 0) > len(data['nodes'])}
 
+def _compat_parse_atom(text):
+    match = ATOM.fullmatch(text.strip())
+    if not match:
+        raise ValueError(f"无效事实表达式：{text}")
+    return match[1], [item.strip() for item in match[2].split(',')]
+
+def _compat_unify(pattern, value, bindings):
+    if pattern.startswith('?'):
+        if pattern in bindings:
+            return bindings[pattern] == value
+        bindings[pattern] = value
+        return True
+    return pattern == value
+
+def _compat_infer(facts, rules, evidence):
+    """Small deterministic forward-chaining substitute for optional Semantica.
+
+    The application pins Semantica in the production image, but local installs
+    and health checks may deliberately omit that optional package.  This path
+    keeps the same one-grounded-proof and source-evidence contract instead of
+    returning an empty or fabricated result.
+    """
+    known = list(dict.fromkeys(facts))
+    known_set = set(known)
+    proofs = {}
+    parsed_rules = []
+    for index, rule_text in enumerate(rules, start=1):
+        match = re.fullmatch(r"IF\s+(.+?)\s+THEN\s+(.+)", rule_text.strip(), re.I)
+        if not match:
+            raise ValueError(f"规则必须采用 IF … AND … THEN …：{rule_text}")
+        conditions = [item.strip() for item in re.split(r"\s+AND\s+", match[1], flags=re.I)]
+        conclusion = match[2].strip()
+        parsed_rules.append((index, conditions, conclusion))
+
+    converged = False
+    for _ in range(50):
+        additions = []
+        for rule_index, conditions, conclusion in parsed_rules:
+            candidates = [({}, [])]
+            for condition in conditions:
+                predicate, patterns = _compat_parse_atom(condition)
+                next_candidates = []
+                for bindings, premises in candidates:
+                    for fact in known:
+                        fact_predicate, values = _compat_parse_atom(fact)
+                        if fact_predicate != predicate or len(values) != len(patterns):
+                            continue
+                        candidate_bindings = dict(bindings)
+                        if all(_compat_unify(pattern, value, candidate_bindings)
+                               for pattern, value in zip(patterns, values)):
+                            next_candidates.append((candidate_bindings, premises + [fact]))
+                candidates = next_candidates
+                if not candidates:
+                    break
+            conclusion_predicate, conclusion_patterns = _compat_parse_atom(conclusion)
+            for bindings, premises in candidates:
+                values = [bindings.get(pattern, pattern) for pattern in conclusion_patterns]
+                grounded = f"{conclusion_predicate}({', '.join(values)})"
+                if grounded in known_set or grounded in proofs:
+                    continue
+                if len(known) + len(additions) >= 10000:
+                    raise ValueError("推理超出工作台规模限制，未保存结果")
+                proofs[grounded] = {
+                    "conclusion": grounded,
+                    "rule_id": f"compat-rule-{rule_index}",
+                    "rule": f"IF {' AND '.join(conditions)} THEN {conclusion}",
+                    "premises": premises,
+                    "bindings": bindings,
+                    "proof_scope": "one_grounded_derivation",
+                    "evidence": [],
+                }
+                additions.append(grounded)
+        if not additions:
+            converged = True
+            break
+        known.extend(additions)
+        known_set.update(additions)
+    if not converged:
+        raise ValueError("推理达到迭代上限，尚未收敛，未保存结果")
+
+    def leaves(fact, seen):
+        if fact in seen:
+            raise ValueError("推理证据循环")
+        proof = proofs.get(fact)
+        if proof:
+            return [item for premise in proof['premises'] for item in leaves(premise, seen | {fact})]
+        rows = evidence.get(fact)
+        if rows:
+            return [{**row, "fact": row.get("fact", fact)} for row in rows]
+        return [{"fact": fact, "source": "manual_input"}]
+
+    for proof in proofs.values():
+        proof['evidence'] = list({
+            (item.get('evidence_ref_id'), item['fact']): item
+            for item in leaves(proof['conclusion'], set())
+        }.values())
+    return list(proofs.values())
+
 def infer(facts, rules, evidence):
-    from semantica.reasoning import Reasoner
+    try:
+        from semantica.reasoning import Reasoner
+    except ModuleNotFoundError as exc:
+        if exc.name and not exc.name.startswith('semantica'):
+            raise
+        return _compat_infer(facts, rules, evidence)
     # Capture ONE grounded proof before upstream merges alternative premises.
     class TracedReasoner(Reasoner):
         def __init__(self):
@@ -179,6 +282,15 @@ def infer(facts, rules, evidence):
         proof['evidence'] = list({(e.get('evidence_ref_id'), e['fact']): e for e in leaves(fact, set())}.values())
     return list(proofs.values())
 
+def reasoning_engine_name():
+    try:
+        from semantica.reasoning import Reasoner  # noqa: F401
+    except ModuleNotFoundError as exc:
+        if exc.name and not exc.name.startswith('semantica'):
+            raise
+        return "deterministic-compatible (Semantica package unavailable)"
+    return "semantica.reasoning.Reasoner"
+
 def _project_edges(ontology_id, run_id, conclusions):
     service = FalkorDBService()
     if not service.available:
@@ -212,7 +324,7 @@ def response(run):
             "created_at": run.created_at.isoformat() if run.created_at else None}
 
 @router.post("/{ontology_id}/reasoning/run")
-def run_reasoning(ontology_id: str, body: ReasoningRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def run_reasoning(ontology_id: str, body: ReasoningRequest, db: Session = Depends(get_db), user: User = Depends(require_editor)):
     ontology = project(db, ontology_id)
     try:
         facts, rules = normalize(body.facts, body.rules)
@@ -226,7 +338,7 @@ def run_reasoning(ontology_id: str, body: ReasoningRequest, db: Session = Depend
         raise HTTPException(422, f"Semantica 推理失败，未保存结果：{exc}")
     run = ReasoningRun(ontology_id=ontology_id, created_by=user.id, status='preview', payload={
         "facts": facts, "rules": rules, "conclusions": conclusions, "ontology_revision_id": ontology.current_revision_id,
-        "rules_fired": sorted({r['rule_id'] for r in conclusions}), "engine": "semantica.reasoning.Reasoner", "proof_scope": "one_grounded_derivation",
+        "rules_fired": sorted({r['rule_id'] for r in conclusions}), "engine": reasoning_engine_name(), "proof_scope": "one_grounded_derivation",
     })
     db.add(run)
     db.commit()
@@ -272,7 +384,7 @@ def instance_graph(ontology_id: str, db: Session = Depends(get_db)):
     return data
 
 @router.post("/{ontology_id}/reasoning/runs/{run_id}/apply")
-def apply_reasoning(ontology_id: str, run_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def apply_reasoning(ontology_id: str, run_id: str, db: Session = Depends(get_db), user: User = Depends(require_editor)):
     run = db.query(ReasoningRun).filter_by(id=run_id, ontology_id=ontology_id).first()
     if not run:
         raise HTTPException(404, "推理运行不存在")

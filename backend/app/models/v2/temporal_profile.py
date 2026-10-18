@@ -15,7 +15,7 @@ class TemporalDatasetProfile(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     dataset_id: Mapped[str] = mapped_column(String, ForeignKey("v2_datasets.id", ondelete="CASCADE"), nullable=False)
-    dataset_version_id: Mapped[str] = mapped_column(String, ForeignKey("v2_dataset_versions.id", ondelete="CASCADE"), nullable=False)
+    dataset_version_id: Mapped[str] = mapped_column(String, ForeignKey("v2_dataset_versions.id", ondelete="CASCADE"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     deterministic_profile: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     llm_suggestion: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

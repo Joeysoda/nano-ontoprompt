@@ -9,6 +9,7 @@ from sqlalchemy import text
 from celery.signals import worker_ready
 
 from app.tasks.celery_app import celery_app
+from app.models.user import User
 
 STAGES = (
     "validate_action", "apply_changeset", "bind_scenario_data",
@@ -220,6 +221,7 @@ def _run_supplier_study(db, run, started):
                 from app.schemas.v2.object_query import (BaseObjectSet, ComparisonFilter, ExecutionContext,
                     FilterObjectSet, LoadObjectSetRequest, PropertyRef, ReadOptions, TypeRef)
                 from app.services.v2.object_query.core import QueryCore, QueryPolicy
+                from app.services.v2.object_query.authorization import build_query_policy
                 from app.services.v2.object_query.metadata import load_sql_metadata
                 graph = FalkorDBService()
                 if not graph.available:
@@ -229,9 +231,16 @@ def _run_supplier_study(db, run, started):
                     where=ComparisonFilter(kind="comparison", property=PropertyRef(api_name="status"), op="eq", value="open"))
                 request = LoadObjectSetRequest(expression=demand_set, read=ReadOptions(page_size=200),
                     context=ExecutionContext(ontology_id=study.ontology_id, consistency="snapshot", data_view_id=view.id))
+                actor = db.get(User, run.created_by) if run.created_by else None
                 loaded = QueryCore(load_sql_metadata(db, study.ontology_id),
                     FalkorReadAdapter(graph._graph(view.graph_key), graph_ontology_id=view.graph_key),
-                    QueryPolicy(principal=run.created_by)).load(request)
+                    build_query_policy(
+                        db,
+                        study.ontology_id,
+                        str(run.created_by),
+                        actor.role if actor else None,
+                        metadata_revision_id=request.context.revision_id,
+                    )).load(request)
                 bound_demand_ids = {item.object_id for item in loaded.objects}
                 if loaded.completeness != "complete" or len(bound_demand_ids) != 16:
                     raise ValueError("Pinned open-Demand Object Set is incomplete")

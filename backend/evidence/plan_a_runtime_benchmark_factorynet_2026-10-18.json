@@ -1,0 +1,59 @@
+{
+  "benchmark": "plan-a-metadata-authorization",
+  "generated_at": "2026-10-18T16:01:28.067038+00:00",
+  "environment": "development",
+  "database_dialect": "postgresql",
+  "python": "3.11.15",
+  "ontology_id": "plan-a-factorynet-1f3d63479f94",
+  "metadata_revision_id": "0ab9932e-a64a-43ca-9d4a-e47fb2f9fc25",
+  "principal_id": "plan-a-editor-2924f7c4028d",
+  "principal_role": "editor",
+  "fixture": "existing_database",
+  "runs": 25,
+  "warmup": 3,
+  "measurements": {
+    "metadata_parse": {
+      "samples": 25,
+      "p50_ms": 0.771,
+      "p95_ms": 0.934,
+      "p99_ms": 0.955,
+      "max_ms": 0.959,
+      "sql_statements_per_call": {
+        "min": 2,
+        "max": 2,
+        "mean": 2.0
+      },
+      "policy_queries_per_call": {
+        "min": 0,
+        "max": 0,
+        "mean": 0.0
+      }
+    },
+    "permission_projection": {
+      "samples": 25,
+      "p50_ms": 0.871,
+      "p95_ms": 0.928,
+      "p99_ms": 0.942,
+      "max_ms": 0.946,
+      "sql_statements_per_call": {
+        "min": 3,
+        "max": 3,
+        "mean": 3.0
+      },
+      "policy_queries_per_call": {
+        "min": 1,
+        "max": 1,
+        "mean": 1.0
+      }
+    }
+  },
+  "cache_invalidation": {
+    "digest_changed_after_policy_write": true,
+    "digest_restored_after_rollback": true,
+    "temporary_policy_rolled_back": true
+  },
+  "query_count_contract": {
+    "policy_queries_are_constant_per_projection": true,
+    "policy_queries_max": 1
+  }
+}

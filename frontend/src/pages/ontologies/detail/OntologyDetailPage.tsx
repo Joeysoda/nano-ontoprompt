@@ -16,6 +16,7 @@ import WhatIfTab from "./tabs/WhatIfTab";
 import OntologyEditorPanel from "./OntologyEditorPanel";
 import ChangeHistoryDrawer from "./ChangeHistoryDrawer";
 import SemanticControlPanel from "./SemanticControlPanel";
+import { useAuthStore } from "@/stores/authStore";
 
 const GraphTab = lazy(() => import("./tabs/GraphTabV2"));
 const DataModelTab = lazy(() => import("./tabs/DataModelTab"));
@@ -59,6 +60,8 @@ export default function OntologyDetailPage() {
   const [editing, setEditing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const role = useAuthStore((state) => state.user?.role);
+  const canEdit = role === "admin" || role === "editor";
   const requested = searchParams.get("tab") || "graph";
   const { data: ontology, isLoading, error, refetch } = useQuery({
     queryKey: ["ontology", id],
@@ -126,10 +129,10 @@ export default function OntologyDetailPage() {
           {ontology.name}
         </h1>
         {ontology.status && <StatusBadge status={ontology.status} />}
-        <div className="ml-auto flex items-center gap-2"><button onClick={() => setEditing((value) => !value)} className={`rounded-md border px-3 py-2 text-xs ${editing ? "border-slate-800 bg-slate-800 text-white" : "border-slate-300 text-slate-700 hover:border-slate-600"}`}>{editing ? "关闭编辑" : "编辑本体"}</button><button onClick={() => setShowHistory(true)} className="rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:border-slate-600">修改记录</button></div>
+        <div className="ml-auto flex items-center gap-2">{canEdit && <button onClick={() => setEditing((value) => !value)} className={`rounded-md border px-3 py-2 text-xs ${editing ? "border-slate-800 bg-slate-800 text-white" : "border-slate-300 text-slate-700 hover:border-slate-600"}`}>{editing ? "关闭编辑" : "编辑本体"}</button>}<button onClick={() => setShowHistory(true)} className="rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-700 hover:border-slate-600">修改记录</button></div>
       </div>
-      {editing && <OntologyEditorPanel ontologyId={id!} onChanged={() => setRefreshKey((value) => value + 1)} />}
-      {editing && <SemanticControlPanel ontologyId={id!} />}
+      {editing && canEdit && <OntologyEditorPanel ontologyId={id!} onChanged={() => setRefreshKey((value) => value + 1)} />}
+      {editing && canEdit && <SemanticControlPanel ontologyId={id!} />}
       <nav className="mb-5 flex flex-wrap gap-1 border-b border-slate-200">
         {tabs.map((tab) => (
           <button

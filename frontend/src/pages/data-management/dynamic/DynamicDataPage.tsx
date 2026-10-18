@@ -17,6 +17,12 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { apiClientV2, formatApiError } from "@/api/client";
+import {
+  compactRelationshipLabel,
+  curveClassName,
+  deterministicGraphPositions,
+  parallelCurveOffsets,
+} from "@/lib/relationshipGraph";
 
 type Run = {
   id: string;
@@ -133,6 +139,7 @@ function LiveGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const layoutSignatureRef = useRef<string>("");
+  const [showRelationshipLabels, setShowRelationshipLabels] = useState(true);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -140,9 +147,9 @@ function LiveGraph({
       container: containerRef.current,
       elements: [],
       style: [
-        { selector: "node", style: { label: "data(label)", "background-color": "#0f766e", color: "#0f172a", "font-size": 9, "text-valign": "bottom", "text-margin-y": 5, width: 20, height: 20, "border-width": 1, "border-color": "#ffffff" } },
+        { selector: "node", style: { label: "data(label)", "background-color": "#0f766e", color: "#334155", "font-size": 8, "text-valign": "bottom", "text-halign": "center", "text-margin-y": 5, width: 24, height: 24, shape: "ellipse", "text-wrap": "wrap", "text-max-width": "116px", "border-width": 1, "border-color": "#ffffff" } },
         { selector: "node.latest", style: { "background-color": "#2563eb", "border-width": 4, "border-color": "#bfdbfe", "overlay-color": "#60a5fa", "overlay-opacity": 0.28, "overlay-padding": 8 } },
-        { selector: "edge", style: { width: 1.2, "line-color": "#94a3b8", "target-arrow-color": "#64748b", "target-arrow-shape": "triangle", label: "data(label)", "font-size": 7, color: "#64748b", "curve-style": "bezier" } },
+        { selector: "edge", style: { label: "data(label)", color: "#475569", "font-size": 7, "font-weight": 500, "text-rotation": "autorotate", "text-background-color": "#ffffff", "text-background-opacity": 0.94, "text-background-padding": "2px", "text-border-width": 1, "text-border-color": "#e2e8f0", "text-border-opacity": 0.95, "text-wrap": "ellipsis", "text-max-width": "96px", width: 1, "line-color": "#94a3b8", "target-arrow-color": "#94a3b8", "target-arrow-shape": "triangle", "arrow-scale": 0.65, "curve-style": "unbundled-bezier", "control-point-distance": 0, "control-point-weight": 0.5 } },
         { selector: "edge.historical", style: { "line-style": "dashed", "line-color": "#94a3b8", "target-arrow-color": "#94a3b8", opacity: 0.55 } },
         { selector: "edge.transition", style: { "line-color": "#2563eb", "target-arrow-color": "#2563eb", width: 2 } },
       ],
@@ -162,16 +169,37 @@ function LiveGraph({
   }, [onEdge, onNode]);
 
   useEffect(() => {
+    cyRef.current?.edges().style("label", showRelationshipLabels ? "data(label)" : "");
+  }, [showRelationshipLabels]);
+
+  useEffect(() => {
     const cy = cyRef.current;
     if (!cy || !graph) return;
-    const nodeIds = new Set(graph.nodes.map((node) => node.id));
-    const edgeIds = new Set(graph.edges.map((edge) => edge.id));
+    const orderedNodes = [...graph.nodes].sort((left, right) => String(left.id).localeCompare(String(right.id)));
+    const orderedEdges = [...graph.edges]
+      .filter((edge) => edge.source && edge.target)
+      .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+    const stablePositions = deterministicGraphPositions(
+      orderedNodes,
+      orderedEdges,
+      (node) => String(node.id),
+      (edge) => String(edge.source),
+      (edge) => String(edge.target),
+    );
+    const nodeIds = new Set(orderedNodes.map((node) => node.id));
+    const edgeIds = new Set(orderedEdges.map((edge) => edge.id));
+    const curveOffsets = parallelCurveOffsets(
+      orderedEdges,
+      (edge, index) => String(edge.id || `edge:${index}`),
+      (edge) => String(edge.source),
+      (edge) => String(edge.target),
+    );
     cy.nodes().filter((node) => !nodeIds.has(String(node.id()))).remove();
     cy.edges().filter((edge) => !edgeIds.has(String(edge.id()))).remove();
     const latestId = latestEvent?.episode_id && latestEvent.source_row_id
       ? `FactoryNet:Observation:${latestEvent.episode_id}:${latestEvent.source_row_id}`
       : "";
-    graph.nodes.forEach((node) => {
+    orderedNodes.forEach((node) => {
       const existing = cy.getElementById(node.id);
       const data = {
         id: node.id,
@@ -180,31 +208,37 @@ function LiveGraph({
       };
       if (existing.length) {
         existing.data(data);
+        existing.position(stablePositions.get(String(node.id)) || existing.position());
         existing.toggleClass("latest", node.id === latestId);
       } else {
-        cy.add({ data, classes: node.id === latestId ? "latest" : "" });
+        cy.add({ data, position: stablePositions.get(String(node.id)), classes: node.id === latestId ? "latest" : "" });
       }
     });
-    graph.edges.forEach((edge) => {
+    orderedEdges.forEach((edge) => {
       if (!edge.source || !edge.target) return;
       const existing = cy.getElementById(edge.id);
       const historical = edge.properties?.valid_to_ordinal !== null && edge.properties?.valid_to_ordinal !== undefined;
       const transition = Boolean(edge.properties?.state_key);
       const classes = `${historical ? "historical" : ""} ${transition ? "transition" : ""}`.trim();
-      const data = { id: edge.id, source: edge.source, target: edge.target, label: edge.type || edge.label, edge };
+      const curveOffset = curveOffsets.get(String(edge.id)) || 0;
+      const data = { id: edge.id, source: edge.source, target: edge.target, label: compactRelationshipLabel(edge.type || edge.label), curveOffset, edge };
+      const curveClass = curveClassName(curveOffset);
+      let element = existing;
       if (existing.length) {
         existing.data(data);
-        existing.classes(classes);
+        existing.classes(`${classes} ${curveClass}`.trim());
       } else {
-        cy.add({ data, classes });
+        element = cy.add({ data, classes: `${classes} ${curveClass}`.trim() });
       }
+      element.style("control-point-distance", curveOffset);
+      element.style("label", showRelationshipLabels ? "data(label)" : "");
     });
     const layoutSignature = [
       latestId,
       graph.at ?? "",
       graph.relation_state ?? "",
-      graph.nodes.map((node) => node.id).sort().join(","),
-      graph.edges.map((edge) => {
+      orderedNodes.map((node) => node.id).join(","),
+      orderedEdges.map((edge) => {
         const historical = edge.properties?.valid_to_ordinal !== null && edge.properties?.valid_to_ordinal !== undefined;
         const transition = Boolean(edge.properties?.state_key);
         return `${edge.id}:${historical ? "h" : "c"}:${transition ? "t" : "r"}`;
@@ -213,7 +247,6 @@ function LiveGraph({
     const shouldLayout = layoutSignatureRef.current !== layoutSignature;
     layoutSignatureRef.current = layoutSignature;
     if (shouldLayout && cy.elements().length) {
-      cy.layout({ name: "cose", animate: false, fit: true, padding: 32 }).run();
       cy.resize();
       cy.fit(undefined, 32);
     } else if (cy.elements().length) {
@@ -222,9 +255,9 @@ function LiveGraph({
       // nodes visibly drift even though no event arrived.
       cy.resize();
     }
-  }, [graph, latestEvent]);
+  }, [graph, latestEvent, showRelationshipLabels]);
 
-  return <div ref={containerRef} className="min-h-[520px] flex-1 rounded-lg bg-slate-50" />;
+  return <div className="min-h-[520px] flex-1 overflow-hidden rounded-lg bg-slate-50"><div className="flex items-center justify-between border-b border-slate-200 bg-white/70 px-3 py-2"><span className="text-[11px] text-slate-500">关系文字{showRelationshipLabels ? "已显示" : "已隐藏"}</span><button onClick={() => setShowRelationshipLabels(value => !value)} className={`rounded border px-2.5 py-1 text-[11px] ${showRelationshipLabels ? "border-slate-300 bg-white text-slate-700" : "border-slate-800 bg-slate-800 text-white"}`} title={showRelationshipLabels ? "隐藏关系文字，保留关系线" : "显示关系文字"} aria-pressed={showRelationshipLabels} data-testid="toggle-live-relationship-labels">{showRelationshipLabels ? "隐藏关系文字" : "显示关系文字"}</button></div><div ref={containerRef} className="min-h-[475px]" /></div>;
 }
 
 async function loadAllGraph(runId: string, params: Record<string, unknown>): Promise<Graph> {

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import json
 from pathlib import Path
 
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_editor
 from app.models.ontology import OntologyProject
 from app.models.v2.construction import ConstructionRun
 from app.models.v2.query_view import QueryDataView
@@ -12,6 +12,8 @@ from app.services.v2.graph.falkordb_service import FalkorDBService
 from app.services.v2.object_query.core import FalkorReadAdapter
 from app.services.v2.object_query.data_views import as_response, build_live_view
 from app.services.v2.object_query.metadata import load_sql_metadata
+from app.services.v2.object_query.authorization import require_ontology_access
+from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.scenarios import ScenarioService
 from app.schemas.v2.scenario import CreateScenarioRequest
 from app.services.v2.object_query.normalize import stable_hash
@@ -72,7 +74,7 @@ def _ensure_base_view(db, ontology, user, graph):
 
 
 @router.post("/demo/bootstrap")
-def bootstrap_demo(db=Depends(get_db), user=Depends(get_current_user)):
+def bootstrap_demo(db=Depends(get_db), user=Depends(require_editor)):
     ontology = _find_demo_ontology(db, user)
     if not ontology:
         raise HTTPException(409, detail={"code": "frepple_demo_not_imported", "message": "固定 frePPLe 演示样例尚未导入"})
@@ -131,3 +133,21 @@ def bootstrap_demo(db=Depends(get_db), user=Depends(get_current_user)):
     except Exception as exc:
         db.rollback()
         raise HTTPException(422, detail={"code": "demo_bootstrap_failed", "message": str(exc)}) from exc
+
+
+@router.get("/demo/catalog")
+def demo_catalog(db=Depends(get_db), user=Depends(get_current_user)):
+    """Open the prepared wood study without changing server state."""
+    studies = db.query(ScenarioStudy).filter(
+        ScenarioStudy.name == "木材供应韧性演示",
+    ).order_by(ScenarioStudy.updated_at.desc()).all()
+    for study in studies:
+        try:
+            require_ontology_access(db, str(study.ontology_id), str(user.id), user.role)
+        except ObjectQueryError:
+            continue
+        return {"ontology_id": study.ontology_id, "study_id": study.id, "study_name": study.name}
+    raise HTTPException(
+        status_code=404,
+        detail={"code": "frepple_demo_not_found", "message": "固定 frePPLe 演示样例尚未准备"},
+    )

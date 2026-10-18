@@ -8,6 +8,7 @@ from app.services.v2.object_query.metadata import load_sql_metadata
 from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.graph.falkordb_service import FalkorDBService
 from app.services.v2.object_query.core import QueryCore, QueryPolicy, FalkorReadAdapter
+from app.services.v2.object_query.authorization import build_query_policy, policies_from_projection
 from app.services.v2.object_query.data_views import require_ready
 from app.schemas.v2.object_query import LoadObjectSetRequest, ExecutionContext, ReadOptions
 
@@ -117,8 +118,20 @@ def set_handle(ontology_id: str, rid: str, request: SetHandleRequest | None = No
     load = LoadObjectSetRequest(expression=definition.expression, parameter_schema=definition.parameter_schema,
         parameters=request.parameters, read=ReadOptions(page_size=200),
         context=ExecutionContext(ontology_id=ontology_id, consistency='snapshot', data_view_id=view.id,
-                                 metadata_digest=view.metadata_digest))
-    core = QueryCore(svc.metadata, FalkorReadAdapter(graph, graph_ontology_id=view.graph_key), QueryPolicy(principal=svc.user.id))
+                                 revision_id=svc.authorization_projection.context.metadata_revision_id,
+                                 metadata_digest=view.metadata_digest, projection_token=view.source_manifest_digest))
+    core = QueryCore(
+        svc.metadata,
+        FalkorReadAdapter(graph, graph_ontology_id=view.graph_key),
+        build_query_policy(
+            svc.db,
+            ontology_id,
+            str(svc.user.id),
+            svc.user.role,
+            requested_fields=tuple(item.api_name for item in load.read.select),
+            preloaded_policies=policies_from_projection(svc.authorization_projection),
+        ),
+    )
     objects = []
     token = None
     for _ in range(50):

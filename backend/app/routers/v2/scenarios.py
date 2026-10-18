@@ -27,6 +27,11 @@ def service(ontology_id: str, db: Session = Depends(get_db), user=Depends(get_cu
         _http(exc)
 
 
+def _require_editor(user):
+    if user.role not in ("admin", "editor"):
+        raise HTTPException(status_code=403, detail="Editor role required")
+
+
 def revision_response(row, db):
     return {"id": row.id, "scenario_id": row.scenario_id, "revision": row.revision, "parent_revision": row.parent_revision,
             "changeset_id": row.changeset_id, "result_view_id": row.result_view_id, "content_digest": row.content_digest,
@@ -36,6 +41,7 @@ def revision_response(row, db):
 @router.post("/{ontology_id}/scenarios", status_code=201)
 def create(ontology_id: str, request: CreateScenarioRequest, svc=Depends(service)):
     try:
+        _require_editor(svc.user)
         return _summary(svc.create(request))
     except ScenarioError as exc:
         _http(exc)
@@ -44,9 +50,6 @@ def create(ontology_id: str, request: CreateScenarioRequest, svc=Depends(service
 @router.get("/{ontology_id}/scenarios")
 def listing(ontology_id: str, include_archived: bool = False, svc=Depends(service)):
     query = svc.db.query(ScenarioResource).filter(ScenarioResource.ontology_id == ontology_id)
-    if svc.user.role != "admin":
-        query = query.outerjoin(ScenarioGrant, ScenarioGrant.scenario_id == ScenarioResource.id).filter(
-            (ScenarioResource.owner_id == svc.user.id) | (ScenarioGrant.principal_id == svc.user.id))
     if not include_archived:
         query = query.filter(ScenarioResource.status == "active")
     rows = query.order_by(ScenarioResource.updated_at.desc()).all()
@@ -66,6 +69,7 @@ def get(ontology_id: str, scenario_id: str, svc=Depends(service)):
 @router.post("/{ontology_id}/scenarios/{scenario_id}:duplicate", status_code=201)
 def duplicate(ontology_id: str, scenario_id: str, request: CreateScenarioRequest, svc=Depends(service)):
     try:
+        _require_editor(svc.user)
         source = svc.get(scenario_id)
         if request.base_view_id != source.base_view_id:
             raise ScenarioError("invalid_base_view", "Scenario duplication must retain the immutable base view", 422, "base_view_id")
@@ -115,6 +119,7 @@ def validate(ontology_id: str, scenario_id: str, request: ChangeSetRequest, svc=
 @router.post("/{ontology_id}/scenarios/{scenario_id}/revisions", status_code=201)
 def publish(ontology_id: str, scenario_id: str, request: RevisionRequest, svc=Depends(service)):
     try:
+        _require_editor(svc.user)
         row = svc.get(scenario_id, write=True)
         return revision_response(svc.revision(row, request), svc.db)
     except ScenarioError as exc:
@@ -139,6 +144,7 @@ def get_revision(ontology_id: str, scenario_id: str, revision: int, svc=Depends(
 @router.post("/{ontology_id}/scenarios/{scenario_id}:archive")
 def archive(ontology_id: str, scenario_id: str, svc=Depends(service)):
     try:
+        _require_editor(svc.user)
         row = svc.get(scenario_id, write=True); row.status = "archived"
         svc.db.add(ScenarioAudit(scenario_id=row.id, actor_id=svc.user.id, operation="archive", summary={}))
         svc.db.commit(); return _summary(row)
@@ -149,6 +155,7 @@ def archive(ontology_id: str, scenario_id: str, svc=Depends(service)):
 @router.put("/{ontology_id}/scenarios/{scenario_id}/grants")
 def grant(ontology_id: str, scenario_id: str, request: GrantRequest, svc=Depends(service)):
     try:
+        _require_editor(svc.user)
         scenario = svc.get(scenario_id, write=True)
         item = svc.db.get(ScenarioGrant, (scenario.id, request.principal_id))
         if item: item.role = request.role
@@ -162,6 +169,7 @@ def grant(ontology_id: str, scenario_id: str, request: GrantRequest, svc=Depends
 @router.post("/{ontology_id}/scenarios/{scenario_id}/runs", status_code=202)
 def run_logic(ontology_id: str, scenario_id: str, request: RunRequest, svc=Depends(service)):
     try:
+        _require_editor(svc.user)
         scenario = svc.get(scenario_id, write=True)
         if request.revision > scenario.head_revision:
             raise ScenarioError("revision_not_found", "Run revision is not available", 404, "revision")
@@ -210,6 +218,7 @@ def list_runs(ontology_id: str, scenario_id: str, svc=Depends(service)):
 @router.post("/{ontology_id}/scenarios/{scenario_id}/runs/{run_id}:cancel")
 def cancel_run(ontology_id: str, scenario_id: str, run_id: str, svc=Depends(service)):
     try:
+        _require_editor(svc.user)
         scenario = svc.get(scenario_id, write=True)
         row = svc.db.query(ScenarioRun).filter_by(id=run_id, scenario_id=scenario.id).first()
         if not row: raise ScenarioError("not_found", "Run not found", 404, "run_id")

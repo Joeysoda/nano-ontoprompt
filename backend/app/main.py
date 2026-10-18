@@ -149,6 +149,7 @@ def _seed_db():
             SchemaMigrationPlan,
             SchemaMigrationRun,
         )
+        from app.models.v2.time_series import TimeSeriesSync  # noqa: F401
         _run_schema_migration()
 
         seed_admin(db)
@@ -350,6 +351,16 @@ def _seed_db():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # MinIO is an external service from the API's point of view.  A fresh
+    # volume therefore has no buckets yet, even though the service itself is
+    # healthy.  Create the declared buckets before startup seeding so a new
+    # deployment cannot publish dataset URIs that immediately fail with
+    # ``NoSuchBucket``.
+    try:
+        from app.services.storage_service import get_storage_service
+        get_storage_service().ensure_default_buckets()
+    except Exception:
+        logger.warning("Object-storage bucket setup skipped; startup continues", exc_info=True)
     _seed_db()
     # 初始化 Neo4j 索引（后台执行，不阻塞启动）
     try:

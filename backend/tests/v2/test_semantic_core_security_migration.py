@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from app.models.entity import Entity
 from app.models.entity_instance import EntityInstance
 from app.models.ontology import OntologyProject
@@ -587,6 +589,83 @@ def test_cast_property_transforms_postgres_instances_and_revert_restores_values(
         assert applied["result"]["changed_property_value_count"] == 1
         revert_plan(db, applied["run"]["id"], user_id=admin_user.id)
         assert db.query(EntityInstance).filter_by(id="equipment-cast-1").one().row_data["equipment_id"] == "42"
+
+
+def test_cast_property_accepts_decimal_measurements(db, admin_user):
+    project = _project(db, admin_user, project_id="semantic-core-cast-decimal")
+    db.add(EntityInstance(id="observation-decimal-1", ontology_id=project.id, entity_id="observation", row_identity="1", row_data={"ordinal": 42.5}))
+    db.commit()
+    with patch("app.services.v2.revision_service.get_storage_service", return_value=MemoryStorage()):
+        base = create_revision(db, project.id)
+        ensure_semantic_metadata(db, project.id, base.id, commit=True)
+        prop = next(item for item in semantic_schema(db, project.id)["resources"]["property"] if item["api_name"] == "ordinal")
+        # Decimal is a supported semantic base type used by FactoryNet
+        # measurements, even though this small legacy fixture starts as an
+        # integer property.
+        from app.models.v2.semantic_core import OntologySemanticResourceVersion
+
+        row = db.query(OntologySemanticResourceVersion).filter(
+            OntologySemanticResourceVersion.resource_id == prop["resource_id"],
+            OntologySemanticResourceVersion.revision_id == base.id,
+        ).one()
+        row.base_type = "decimal"
+        db.commit()
+        plan = dry_run(db, project.id, {
+            "base_revision_id": base.id,
+            "instructions": [{"kind": "cast_property", "resource_id": prop["resource_id"], "to_type": "double"}],
+        }, user_id=admin_user.id)
+        assert plan["impact"]["items"][0]["cast"]["failure_count"] == 0
+        applied = apply_plan(db, plan["id"], user_id=admin_user.id)
+        assert db.query(EntityInstance).filter_by(id="observation-decimal-1").one().row_data["ordinal"] == 42.5
+        assert applied["result"]["changed_property_value_count"] == 1
+        revert_plan(db, applied["run"]["id"], user_id=admin_user.id)
+        assert db.query(EntityInstance).filter_by(id="observation-decimal-1").one().row_data["ordinal"] == 42.5
+
+
+def test_rename_property_moves_legacy_instance_keys_and_revert_restores_them(db, admin_user):
+    project = _project(db, admin_user, project_id="semantic-core-rename-values")
+    db.add(EntityInstance(id="equipment-rename-1", ontology_id=project.id, entity_id="equipment", row_identity="1", row_data={"equipment_id": "EQ-1"}))
+    db.commit()
+    with patch("app.services.v2.revision_service.get_storage_service", return_value=MemoryStorage()):
+        base = create_revision(db, project.id)
+        ensure_semantic_metadata(db, project.id, base.id, commit=True)
+        prop = next(item for item in semantic_schema(db, project.id)["resources"]["property"] if item["api_name"] == "equipment_id")
+        plan = dry_run(db, project.id, {
+            "base_revision_id": base.id,
+            "instructions": [{"kind": "rename_api_name", "resource_id": prop["resource_id"], "new_api_name": "asset_code"}],
+        }, user_id=admin_user.id)
+        assert plan["impact"]["items"][0]["rename"]["value_count"] == 1
+        applied = apply_plan(db, plan["id"], user_id=admin_user.id)
+        assert db.query(EntityInstance).filter_by(id="equipment-rename-1").one().row_data == {"asset_code": "EQ-1"}
+        target_schema = semantic_schema(db, project.id)
+        assert any(item["api_name"] == "asset_code" for item in target_schema["resources"]["property"])
+        revert_plan(db, applied["run"]["id"], user_id=admin_user.id)
+        assert db.query(EntityInstance).filter_by(id="equipment-rename-1").one().row_data == {"equipment_id": "EQ-1"}
+
+
+def test_interface_resource_cannot_be_instantiated(db, admin_user):
+    project = _project(db, admin_user, project_id="semantic-core-interface-instance")
+    with patch("app.services.v2.revision_service.get_storage_service", return_value=MemoryStorage()):
+        base = create_revision(db, project.id)
+        ensure_semantic_metadata(db, project.id, base.id, commit=True)
+        created = apply_semantic_change(db, project.id, {
+            "resource_kind": "interface",
+            "operation": "add",
+            "base_revision_id": base.id,
+            "payload": {"api_name": "Trackable", "display_name": "可追踪"},
+        }, user_id=admin_user.id)
+        interface_id = created["resource"]["resource_id"]
+        db.add(EntityInstance(
+            id="interface-instance-1",
+            ontology_id=project.id,
+            entity_id="equipment",
+            object_type_resource_id=interface_id,
+            row_identity="1",
+            row_data={},
+        ))
+        with pytest.raises(ValueError, match="INTERFACE_NOT_INSTANTIABLE"):
+            db.commit()
+        db.rollback()
 
 
 def test_replace_source_is_revisioned_and_move_edits_is_reversible(db, admin_user):

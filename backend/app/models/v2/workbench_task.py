@@ -14,7 +14,7 @@ class MappingTask(Base):
     __tablename__ = "v2_mapping_tasks"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    draft_id: Mapped[str] = mapped_column(String, ForeignKey("v2_construction_drafts.id", ondelete="CASCADE"), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String, ForeignKey("v2_construction_drafts.id", ondelete="CASCADE"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="queued")
     model_route: Mapped[str | None] = mapped_column(String(200), nullable=True)
     payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -38,7 +38,7 @@ class DataImportTask(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     connection_id: Mapped[str | None] = mapped_column(String, ForeignKey("v2_connections.id", ondelete="SET NULL"), nullable=True)
-    dataset_id: Mapped[str | None] = mapped_column(String, ForeignKey("v2_datasets.id", ondelete="SET NULL"), nullable=True)
+    dataset_id: Mapped[str | None] = mapped_column(String, ForeignKey("v2_datasets.id", ondelete="SET NULL"), nullable=True, index=True)
     data_class: Mapped[str] = mapped_column(String(30), nullable=False, default="regular")
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="queued")
     config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -69,5 +69,5 @@ class ModelInvocation(Base):
     metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

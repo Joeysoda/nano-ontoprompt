@@ -1,0 +1,59 @@
+{
+  "benchmark": "plan-a-metadata-authorization",
+  "generated_at": "2026-10-18T15:45:55.105431+00:00",
+  "environment": "development",
+  "database_dialect": "postgresql",
+  "python": "3.11.15",
+  "ontology_id": "plan-a-ontology-d63edb2ee5f641e5bc6515f12b4778e0",
+  "metadata_revision_id": null,
+  "principal_id": "plan-a-principal-d63edb2ee5f641e5bc6515f12b4778e0",
+  "principal_role": "editor",
+  "fixture": "temporary_uncommitted",
+  "runs": 10,
+  "warmup": 2,
+  "measurements": {
+    "metadata_parse": {
+      "samples": 10,
+      "p50_ms": 0.593,
+      "p95_ms": 0.709,
+      "p99_ms": 0.765,
+      "max_ms": 0.779,
+      "sql_statements_per_call": {
+        "min": 2,
+        "max": 2,
+        "mean": 2.0
+      },
+      "policy_queries_per_call": {
+        "min": 0,
+        "max": 0,
+        "mean": 0.0
+      }
+    },
+    "permission_projection": {
+      "samples": 10,
+      "p50_ms": 0.855,
+      "p95_ms": 0.909,
+      "p99_ms": 0.926,
+      "max_ms": 0.93,
+      "sql_statements_per_call": {
+        "min": 3,
+        "max": 3,
+        "mean": 3.0
+      },
+      "policy_queries_per_call": {
+        "min": 1,
+        "max": 1,
+        "mean": 1.0
+      }
+    }
+  },
+  "cache_invalidation": {
+    "digest_changed_after_policy_write": true,
+    "digest_restored_after_rollback": true,
+    "temporary_policy_rolled_back": true
+  },
+  "query_count_contract": {
+    "policy_queries_are_constant_per_projection": true,
+    "policy_queries_max": 1
+  }
+}

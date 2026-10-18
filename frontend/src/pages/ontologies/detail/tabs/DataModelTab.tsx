@@ -15,6 +15,8 @@ import {
   X,
 } from "lucide-react";
 import { apiClientV2 } from "@/api/client";
+import { useResizableHeight } from "@/hooks/useResizableHeight";
+import { deterministicGraphPositions } from "@/lib/relationshipGraph";
 import {
   MultimodalEvidenceWorkspace,
   type MultimodalEvidence,
@@ -198,6 +200,14 @@ export default function DataModelTab({
   >(null);
   const [query, setQuery] = useState("");
   const [playing, setPlaying] = useState(false);
+  const [showRelationshipLabels, setShowRelationshipLabels] = useState(true);
+  const {
+    height: canvasHeight,
+    beginResize: beginCanvasResize,
+    handleKeyDown: handleCanvasResizeKeyDown,
+    minHeight: canvasMinHeight,
+    maxHeight: canvasMaxHeight,
+  } = useResizableHeight();
   const [evidence, setEvidence] = useState<MultimodalEvidence | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
 
@@ -378,29 +388,60 @@ export default function DataModelTab({
     // pages is useful for counts/search, but laying out thousands of nodes at
     // once makes a browser unresponsive.  Keep the complete data in state and
     // use a bounded canvas projection for the visual surface.
-    const renderNodes = data.nodes.length > 800 ? data.nodes.slice(0, 800) : data.nodes;
+    const renderNodes = (data.nodes.length > 800 ? data.nodes.slice(0, 800) : data.nodes)
+      .slice()
+      .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
     const visibleIds = new Set(renderNodes.map((node) => node.id));
+    const visibleEdges = (data.edges || [])
+      .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
+      .slice()
+      .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+    const stablePositions = deterministicGraphPositions(
+      renderNodes,
+      visibleEdges,
+      (node) => node.id,
+      (edge) => edge.source,
+      (edge) => edge.target,
+    );
+    const parallelCounts = new Map<string, number>();
+    visibleEdges.forEach((edge) => {
+      const pair = [edge.source, edge.target].sort().join("\u0000");
+      parallelCounts.set(pair, (parallelCounts.get(pair) || 0) + 1);
+    });
+    const parallelSeen = new Map<string, number>();
+    const curveOffsets = new Map<string, number>();
     const elements = [
       ...renderNodes.map((node) => ({
         data: {
           id: node.id,
-          label: nodeLabel(node),
+          label: `${displayType(node).slice(0, 16)}\n${nodeLabel(node).slice(0, 18)}`,
           color: stableColor(displayType(node)),
           raw: node,
           nodeKind: node.node_kind || "instance",
+          width: Math.min(190, Math.max(110, 62 + nodeLabel(node).length * 5)),
+          height: nodeLabel(node).length > 16 ? 62 : 50,
+          textMaxWidth: Math.min(164, Math.max(88, 40 + nodeLabel(node).length * 5)),
         },
+        position: stablePositions.get(node.id),
       })),
-        ...(data.edges || [])
-        .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
-        .map((edge) => ({
+      ...visibleEdges.map((edge) => {
+        const pair = [edge.source, edge.target].sort().join("\u0000");
+        const ordinal = parallelSeen.get(pair) || 0;
+        parallelSeen.set(pair, ordinal + 1);
+        const total = parallelCounts.get(pair) || 1;
+        const curveOffset = total === 1 ? 0 : (ordinal - (total - 1) / 2) * 68;
+        curveOffsets.set(edge.id, curveOffset);
+        return {
           data: {
             id: edge.id,
             source: edge.source,
             target: edge.target,
-            label: edge.label || edge.type || "关联",
+            label: String(edge.label || edge.type || "关联").replace(/_/g, " ").slice(0, 24),
             raw: edge,
           },
-        })),
+          classes: `curve-${curveOffset < 0 ? "negative" : curveOffset > 0 ? "positive" : "center"}-${Math.abs(curveOffset)}`,
+        };
+      }),
     ];
     cyRef.current?.destroy();
     const cy = cytoscape({
@@ -412,76 +453,83 @@ export default function DataModelTab({
           style: {
             label: "data(label)",
             "background-color": "data(color)",
-            color: "#ffffff",
-            "font-size": "10px",
-            "font-weight": "bold",
-            "text-valign": "center",
+            color: "#334155",
+            "font-size": "7px",
+            "text-valign": "bottom",
             "text-halign": "center",
-            width: "76px",
-            height: "44px",
-            shape: "round-rectangle",
+            "text-margin-y": 5,
+            width: 24,
+            height: 24,
+            shape: "ellipse",
             "text-wrap": "wrap",
-            "text-max-width": "62px",
-            "text-outline-width": 2,
-            "text-outline-color": "data(color)",
+            "text-max-width": "96px",
             "border-width": 1,
             "border-color": "#ffffff",
           },
         },
         {
           selector: 'node[nodeKind = "sample"]',
-          style: { shape: "ellipse", width: "82px", height: "52px" },
+          style: { shape: "ellipse", width: "28px", height: "28px" },
         },
         {
           selector: 'node[nodeKind = "media"]',
-          style: { shape: "rectangle", "border-style": "dashed" },
+          style: { shape: "ellipse", "border-style": "dashed", width: "28px", height: "28px" },
         },
         {
           selector: "edge",
           style: {
-            label: "data(label)",
-            "font-size": "8px",
+            label: showRelationshipLabels ? "data(label)" : "",
             color: "#475569",
+            "font-size": "8px",
+            "font-weight": 500,
+            "text-rotation": "autorotate",
+            "text-background-color": "#ffffff",
+            "text-background-opacity": 0.94,
+            "text-background-padding": "2px",
+            "text-border-width": 1,
+            "text-border-color": "#e2e8f0",
+            "text-border-opacity": 0.95,
+            "text-wrap": "ellipsis",
+            "text-max-width": "96px",
             width: 1.4,
             "line-color": "#94a3b8",
             "target-arrow-color": "#94a3b8",
             "target-arrow-shape": "triangle",
-            "curve-style": "bezier",
-            "text-background-color": "#ffffff",
-            "text-background-opacity": 0.94,
-            "text-background-padding": "2px",
-            "text-rotation": "autorotate",
+            "arrow-scale": 0.65,
+            "curve-style": "unbundled-bezier",
+            "control-point-distance": 0,
+            "control-point-weight": 0.5,
           },
         },
+        ...Array.from(new Set(curveOffsets.values())).map((offset) => ({
+          selector: `.curve-${offset < 0 ? "negative" : offset > 0 ? "positive" : "center"}-${Math.abs(offset)}`,
+          style: { "control-point-distance": offset },
+        })),
         { selector: ".active", style: { "border-width": 3, "border-color": "#f8fafc", width: "88px", height: "56px" } },
         { selector: ".muted", style: { opacity: 0.14 } },
         { selector: ".search-hit", style: { "border-width": 3, "border-color": "#f59e0b", "line-color": "#f59e0b", "target-arrow-color": "#f59e0b" } },
       ],
-      layout: {
-        ...(data.nodes.length > 800
-          ? { name: "grid", avoidOverlap: true, condense: true, rows: Math.ceil(Math.sqrt(renderNodes.length)) }
-          : {
-              name: "cose",
-              animate: false,
-              randomize: true,
-              componentSpacing: 80,
-              idealEdgeLength: data.nodes.length > 150 ? 105 : 145,
-              nodeRepulsion: data.nodes.length > 150 ? 3500 : 6500,
-              numIter: data.nodes.length > 150 ? 420 : 760,
-            }),
-      } as cytoscape.LayoutOptions,
+      layout: { name: "preset", fit: false } as cytoscape.LayoutOptions,
     });
     cy.on("tap", "node", (event) => setSelected({ kind: "node", value: event.target.data("raw") as InstanceNode }));
     cy.on("tap", "edge", (event) => setSelected({ kind: "edge", value: event.target.data("raw") as InstanceEdge }));
     cy.on("tap", (event) => {
       if (event.target === cy) setSelected(null);
     });
+    cy.one("layoutstop", () => cy.fit(cy.elements(), 42));
+    cy.fit(cy.elements(), 42);
+    const observer = new ResizeObserver(() => {
+      cy.resize();
+      cy.fit(cy.elements(), 42);
+    });
+    observer.observe(containerRef.current);
     cyRef.current = cy;
     return () => {
+      observer.disconnect();
       cy.destroy();
       cyRef.current = null;
     };
-  }, [data]);
+  }, [data, showRelationshipLabels]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -605,10 +653,27 @@ export default function DataModelTab({
         </section>
       )}
 
-      <div className="grid min-h-[650px] gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3"><div><p className="text-sm font-semibold text-slate-900">实例关系画布</p><p className="mt-0.5 text-xs text-slate-500">节点按实体类型着色，关系带方向</p></div><div className="flex items-center gap-2 text-xs text-slate-500"><span>{loadingAll ? `分批加载 ${allProgress}%` : data?.nodes && data.nodes.length > 800 ? `画布展示 800 / ${data.nodes.length} 个节点` : `${data?.nodes?.length || 0} 个节点`}</span>{loading && <Loader2 size={13} className="animate-spin" />}</div></div>
-          {!data?.nodes?.length ? <div className="flex h-[560px] flex-col items-center justify-center text-slate-400"><Database size={24} /><p className="mt-3 text-sm">当前筛选没有数据实例</p></div> : <div ref={containerRef} className="h-[590px] w-full" />}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3"><div><p className="text-sm font-semibold text-slate-900">实例关系画布</p><p className="mt-0.5 text-xs text-slate-500">节点按实体类型着色 · {showRelationshipLabels ? "关系文字已显示" : "关系文字已隐藏"}</p></div><div className="flex items-center gap-2 text-xs text-slate-500"><span>{loadingAll ? `分批加载 ${allProgress}%` : data?.nodes && data.nodes.length > 800 ? `画布展示 800 / ${data.nodes.length} 个节点` : `${data?.nodes?.length || 0} 个节点`}</span><button onClick={() => setShowRelationshipLabels((value) => !value)} className={`rounded-lg border px-3 py-1.5 text-xs ${showRelationshipLabels ? "border-slate-300 bg-white text-slate-700" : "border-slate-800 bg-slate-800 text-white"}`} title={showRelationshipLabels ? "隐藏关系文字，保留关系线" : "显示关系文字"} aria-pressed={showRelationshipLabels} data-testid="toggle-instance-relationship-labels">{showRelationshipLabels ? "隐藏关系文字" : "显示关系文字"}</button>{loading && <Loader2 size={13} className="animate-spin" />}</div></div>
+          {!data?.nodes?.length ? <div className="flex flex-col items-center justify-center text-slate-400" style={{ height: canvasHeight }}><Database size={24} /><p className="mt-3 text-sm">当前筛选没有数据实例</p></div> : <div ref={containerRef} className="w-full" style={{ height: canvasHeight }} />}
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="调整实例关系画布高度"
+            aria-valuemin={canvasMinHeight}
+            aria-valuemax={canvasMaxHeight}
+            aria-valuenow={canvasHeight}
+            tabIndex={0}
+            data-testid="resize-instance-canvas"
+            onPointerDown={beginCanvasResize}
+            onKeyDown={handleCanvasResizeKeyDown}
+            className="group flex h-4 cursor-row-resize items-center justify-center border-t border-slate-200 bg-white transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-300"
+            title="拖动调整实例关系图高度；也可以聚焦后使用上下方向键"
+          >
+            <span className="h-1 w-16 rounded-full bg-slate-300 transition-colors group-hover:bg-slate-500" />
+          </div>
+          <p className="px-4 pb-2 text-[10px] text-slate-400">拖动底部横线调整展示高度</p>
           <div className="border-t border-slate-200 px-4 py-3"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-1.5"><span className="text-xs text-slate-500">加载节点</span>{([50, 100, 200, 500, "all"] as PageSize[]).map((value) => <button key={String(value)} onClick={() => changePageSize(value)} className={`rounded border px-2 py-1 text-xs ${pageSize === value ? "border-slate-800 bg-slate-800 text-white" : "border-slate-200 text-slate-600 hover:border-slate-400"}`}>{value === "all" ? "全部（分批）" : value}</button>)}</div>{pageSize !== "all" && <div className="flex items-center gap-2 text-xs text-slate-500"><button disabled={!hasPrevious || loading} onClick={() => setUrl({ offset: Math.max(0, offset - pageSize) })} className="rounded border border-slate-200 px-2 py-1 disabled:opacity-40">上一页</button><span>{pageTotal ? `${offset + 1}–${Math.min(offset + (data?.nodes?.length || 0), pageTotal)} / ${pageTotal}` : "0 / 0"}</span><button disabled={!hasNext || loading} onClick={() => setUrl({ offset: nextOffset })} className="rounded border border-slate-200 px-2 py-1 disabled:opacity-40">下一页</button></div>}</div></div>
         </section>
         <aside className="flex min-h-[650px] flex-col rounded-xl border border-slate-200 bg-white">

@@ -3,7 +3,7 @@ from time import perf_counter
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from app.deps import get_db, get_current_user
+from app.deps import get_db, get_current_user, require_editor
 from app.models.ontology import OntologyProject
 from app.models.v2.logic_asset import LogicAsset, LogicAssetRun, LogicDerivedFact
 from app.services.v2.logic_assets import ASSET_DEFINITIONS, EXECUTORS, execute
@@ -112,7 +112,7 @@ def discover_capabilities(oid: str, interface_key: str | None = None, kind: str 
     return {'capabilities': [_as_dict(row) for row in rows], 'count': len(rows)}
 
 @router.post('/{oid}/logic-assets/seed')
-def seed_assets(oid: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def seed_assets(oid: str, db: Session = Depends(get_db), user=Depends(require_editor)):
     _authorized(oid, db, user)
     return {'assets':[_as_dict(r) for r in _seed(db, oid)]}
 
@@ -128,7 +128,7 @@ def resolve_function(oid: str, asset_key: str, requirement: str, db: Session = D
 
 
 @router.post('/{oid}/logic-assets/{asset_id}/releases', status_code=201)
-def release_function(oid: str, asset_id: str, body: FunctionRelease, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def release_function(oid: str, asset_id: str, body: FunctionRelease, db: Session = Depends(get_db), user=Depends(require_editor)):
     _authorized(oid, db, user)
     db.query(OntologyProject).filter_by(id=oid).with_for_update().one()
     asset = db.query(LogicAsset).filter_by(id=asset_id, ontology_id=oid).first()
@@ -164,7 +164,7 @@ def list_runs(oid: str, limit: int = Query(default=20, ge=1, le=100), db: Sessio
     return {'runs':[{'id':r.id,'asset_id':r.asset_id,'asset_version':r.asset_version,'inputs':r.inputs,'output':r.output,'status':r.status,'error':r.error,'trace':r.trace,'duration_ms':r.duration_ms,'created_at':r.created_at.isoformat()} for r in rows]}
 
 @router.post('/{oid}/logic-assets/{asset_id}/run')
-def run_asset(oid: str, asset_id: str, request: RunRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def run_asset(oid: str, asset_id: str, request: RunRequest, db: Session = Depends(get_db), user=Depends(require_editor)):
     _authorized(oid, db, user)
     asset=db.query(LogicAsset).filter_by(id=asset_id, ontology_id=oid).first()
     if not asset: raise HTTPException(404, '逻辑资产不存在')
@@ -207,7 +207,7 @@ def run_asset(oid: str, asset_id: str, request: RunRequest, db: Session = Depend
     return payload
 
 @router.post('/{oid}/logic-assets/execute-plan')
-def execute_plan(oid: str, request: PlanRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def execute_plan(oid: str, request: PlanRequest, db: Session = Depends(get_db), user=Depends(require_editor)):
     """Execute a stored sequential plan and pass prior outputs by JSON path.
 
     This is the first runtime composition layer. It is intentionally explicit;

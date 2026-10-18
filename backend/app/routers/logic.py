@@ -49,7 +49,7 @@ def delete_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db),
 
 
 @router.post("/{logic_id}/toggle")
-def toggle_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def toggle_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), _=Depends(require_editor)):
     """Human Review: 启用/禁用规则"""
     r = db.query(LogicRule).filter(LogicRule.id == logic_id, LogicRule.ontology_id == ontology_id).first()
     if not r:
@@ -72,7 +72,7 @@ def toggle_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db),
 
 
 @router.post("/publish")
-def publish_logic_rules(ontology_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def publish_logic_rules(ontology_id: str, db: Session = Depends(get_db), _=Depends(require_editor)):
     """Human Review: 发布所有草稿规则"""
     rules = db.query(LogicRule).filter(
         LogicRule.ontology_id == ontology_id,

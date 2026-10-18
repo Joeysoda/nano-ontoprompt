@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import cytoscape from 'cytoscape';
 import { apiClientV2 } from '@/api/client';
+import { deterministicGraphPositions } from '@/lib/relationshipGraph';
 
 // Chain cards and labelled connectors follow Semantica DecisionWorkspace
 // (MIT, commit 3a69721); data and authentication use the host workbench.
@@ -46,6 +47,7 @@ export default function DecisionsTab({ontologyId}:{ontologyId:string}) {
   const [result,setResult] = useState<Analysis | null>(null);
   const [error,setError] = useState('');
   const [busy,setBusy] = useState(false);
+  const [showRelationshipLabels,setShowRelationshipLabels] = useState(true);
   const history = useQuery({ queryKey: ['decision-runs', ontologyId], queryFn: () => apiClientV2.get<Run[]>(`/ontologies/${ontologyId}/reasoning/runs`) });
   const graph = useQuery({ queryKey: ['decision-objects', ontologyId], queryFn: () => apiClientV2.get<{ nodes: GraphObject[]; available: boolean }>(`/ontologies/${ontologyId}/reasoning/graph`) });
   const proofQuery = useQuery({ queryKey: ['decision-proofs', ontologyId, run], enabled: Boolean(run), queryFn: () => apiClientV2.get<{ inferred_facts: Proof[] }>(`/ontologies/${ontologyId}/reasoning/runs/${run}`) });
@@ -57,14 +59,18 @@ export default function DecisionsTab({ontologyId}:{ontologyId:string}) {
   const cyRef = useRef<cytoscape.Core | null>(null);
   useEffect(()=>{
     if(!canvas.current) return;
+    const orderedDecisions = [...decisions].sort((left, right) => left.id.localeCompare(right.id));
+    const orderedLinks = [...links].sort((left, right) => left.id.localeCompare(right.id));
+    const stablePositions = deterministicGraphPositions(orderedDecisions, orderedLinks, decision => decision.id, link => link.source, link => link.target);
     const cy=cytoscape({container:canvas.current,
-      elements:[...decisions.map(d=>({data:{id:d.id,label:d.scenario}})),...links.map(l=>({data:{id:l.id,source:l.source,target:l.target,label:l.relationship}}))],
-      style:[{selector:'node',style:{label:'data(label)','background-color':'#64748b','font-size':12,'text-wrap':'wrap','text-max-width':'160px'}},{selector:'edge',style:{label:'data(label)','curve-style':'bezier','target-arrow-shape':'triangle','line-color':'#8b5cf6','target-arrow-color':'#8b5cf6','font-size':10}},{selector:'.impact-highlight',style:{'background-color':'#2563eb','line-color':'#2563eb','target-arrow-color':'#2563eb','width':5,'opacity':1}},{selector:'.impact-dim',style:{opacity:0.18}},{selector:':selected',style:{'background-color':'#7c3aed','line-color':'#7c3aed'}}],
-      layout:{name:'breadthfirst',directed:true,padding:45},minZoom:0.2,maxZoom:3});
+      elements:[...orderedDecisions.map(d=>({data:{id:d.id,label:d.scenario},position:stablePositions.get(d.id)})),...orderedLinks.map(l=>({data:{id:l.id,source:l.source,target:l.target,label:l.relationship,curveOffset:30}}))],
+      style:[{selector:'node',style:{label:'data(label)','background-color':'#64748b',color:'#334155','font-size':8,'text-valign':'bottom','text-halign':'center','text-margin-y':5,width:24,height:24,shape:'ellipse','text-wrap':'wrap','text-max-width':'116px','border-width':1,'border-color':'#ffffff'}},{selector:'edge',style:{label:showRelationshipLabels?'data(label)':'',color:'#475569','font-size':8,'font-weight':500,'text-rotation':'autorotate','text-background-color':'#ffffff','text-background-opacity':0.94,'text-background-padding':'2px','text-border-width':1,'text-border-color':'#e2e8f0','text-border-opacity':0.95,'text-wrap':'ellipsis','text-max-width':'120px',width:1,'line-color':'#94a3b8','target-arrow-color':'#94a3b8','target-arrow-shape':'triangle','arrow-scale':0.65,'curve-style':'unbundled-bezier','control-point-distance':30,'control-point-weight':0.5}},{selector:'.impact-highlight',style:{'background-color':'#2563eb','line-color':'#2563eb','width':3,'opacity':1}},{selector:'.impact-dim',style:{opacity:0.18}},{selector:':selected',style:{'background-color':'#7c3aed','line-color':'#7c3aed'}}],
+      layout:{name:'preset',fit:false},minZoom:0.2,maxZoom:3});
+    cy.fit(cy.elements(), 50);
     cyRef.current=cy;
     cy.on('tap','node',e=>setSelected(e.target.id()));
     return ()=>{cy.destroy(); cyRef.current=null;};
-  },[decisions,links]);
+  },[decisions,links,showRelationshipLabels]);
   useEffect(()=>{
     const cy=cyRef.current;
     if(!cy) return;
@@ -112,6 +118,6 @@ export default function DecisionsTab({ontologyId}:{ontologyId:string}) {
       <button disabled={busy} className={control} onClick={()=>act(async()=>{setResult(null);setResult(await apiClientV2.post<Analysis>(base+'/analyze',{operation,decision_id:selected || null,target_id:target || null,direction,max_depth:depth,at_time:at?new Date(at).toISOString():null}));})}>{busy?'分析中…':'运行分析'}</button>
       {result && <><p>{result.score_notice}</p>{result.highlight && <div data-testid="highlight-status" className="rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"><strong>已高亮影响链</strong>：{result.highlight.nodes.length} 个决策节点，{result.highlight.edges.length} 条有向关系。蓝色为本次分析路径，灰显为未参与本次路径的关系。</div>}{Array.isArray(result.result) && <div>{!result.result.length && <p>在本次查询范围内未找到结果</p>}{result.result.filter(r=>r.decision_id).map((r,i)=><article key={i} className="my-2 rounded border-l-4 border-violet-500 bg-violet-50 p-3"><button onClick={()=>setSelected(r.decision_id || '')}>{r.scenario || r.decision_id}</button><p className="text-xs">{JSON.stringify(r.metadata)}</p></article>)}</div>}{causal?.causal_path && <div className="rounded border bg-slate-50 p-3"><h3 className="font-medium">因果路径</h3><div className="mt-2 flex flex-wrap items-center gap-2">{causal.causal_path.map((id:string,i:number)=><span key={id} className="flex items-center gap-2"><button className="rounded border bg-white px-2 py-1 text-sm hover:border-blue-500" onClick={()=>setSelected(id)}>{decisions.find(d=>d.id===id)?.scenario || id}</button>{i < (causal.causal_path?.length || 0)-1 && <span className="font-bold text-violet-600">→</span>}</span>)}</div><p className="mt-2 text-xs text-slate-600">共 {causal.causal_hop_count} 跳 · 置信度衰减 {causal.confidence_decay}</p></div>}<details open><summary>完整分析结果</summary><pre data-testid="decision-analysis-result" className="max-h-96 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(result.result,null,2)}</pre></details></>}
     </section>
-    <section className="rounded border bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2>已记录的有向关系</h2><p className="text-sm text-slate-500">本体内决策总览；点击节点查看依据。分析结果会在图中高亮。</p></div><div className="flex gap-3 text-xs text-slate-600"><span><i className="mr-1 inline-block h-3 w-3 rounded-full bg-blue-600"/>分析路径</span><span><i className="mr-1 inline-block h-3 w-3 rounded-full bg-violet-500"/>已记录关系</span><span><i className="mr-1 inline-block h-3 w-3 rounded-full bg-slate-300"/>未参与路径</span></div></div><div ref={canvas} data-testid="decision-graph" className="mt-3 h-96 rounded border bg-slate-50"/>{!links.length && <p>暂无决策关联</p>}{links.map(l=><article key={l.id} className="my-3 border-l-4 border-violet-500 p-3"><button onClick={()=>setSelected(l.source)}>{decisions.find(d=>d.id===l.source)?.scenario}</button><p className="text-violet-700">↓ {l.relationship} · {l.explanation}</p><button onClick={()=>setSelected(l.target)}>{decisions.find(d=>d.id===l.target)?.scenario}</button></article>)}</section>
+    <section className="rounded border bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2>已记录的有向关系</h2><p className="text-sm text-slate-500">本体内决策总览；点击节点查看依据。分析结果会在图中高亮。</p></div><div className="flex flex-wrap items-center gap-3 text-xs text-slate-600"><span><i className="mr-1 inline-block h-3 w-3 rounded-full bg-blue-600"/>分析路径</span><span><i className="mr-1 inline-block h-3 w-3 rounded-full bg-violet-500"/>已记录关系</span><span><i className="mr-1 inline-block h-3 w-3 rounded-full bg-slate-300"/>未参与路径</span><button className={control} onClick={()=>setShowRelationshipLabels(value=>!value)} aria-pressed={showRelationshipLabels} data-testid="toggle-decision-relationship-labels">{showRelationshipLabels?'隐藏关系文字':'显示关系文字'}</button></div></div><div ref={canvas} data-testid="decision-graph" className="mt-3 h-96 rounded border bg-slate-50"/>{!links.length && <p>暂无决策关联</p>}{links.map(l=><article key={l.id} className="my-3 border-l-4 border-violet-500 p-3"><button onClick={()=>setSelected(l.source)}>{decisions.find(d=>d.id===l.source)?.scenario}</button><p className="text-violet-700">↓ {l.relationship} · {l.explanation}</p><button onClick={()=>setSelected(l.target)}>{decisions.find(d=>d.id===l.target)?.scenario}</button></article>)}</section>
   </div>;
 }

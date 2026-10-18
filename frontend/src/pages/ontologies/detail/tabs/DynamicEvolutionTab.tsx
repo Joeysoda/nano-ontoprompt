@@ -7,6 +7,7 @@ import { useSearchParams } from "react-router-dom";
 import cytoscape from "cytoscape";
 import { CheckCircle2, CirclePause, Loader2, Play, RefreshCw, RotateCcw, SkipForward, Square, TriangleAlert } from "lucide-react";
 import { apiClientV2 } from "@/api/client";
+import { compactRelationshipLabel, curveClassName, curveStyleRules, deterministicGraphPositions, parallelCurveOffsets } from "@/lib/relationshipGraph";
 
 type Run = {
   id: string; run_id?: string; ontology_id: string; status: string; source_mode?: string; source_id?: string; time_kind?: string; config?: Record<string, any>;
@@ -37,6 +38,7 @@ function StreamGraph({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
+  const [showRelationshipLabels, setShowRelationshipLabels] = useState(true);
   useEffect(() => {
     if (!ref.current) return;
     cyRef.current?.destroy();
@@ -45,36 +47,51 @@ function StreamGraph({
       : latestEvent?.episode_id && latestEvent.source_row_id
       ? `FactoryNet:Observation:${latestEvent.episode_id}:${latestEvent.source_row_id}`
       : "";
+    const graphEdges = (graph.edges || []).filter((edge) => edge.source && edge.target);
+    const orderedNodes = [...(graph.nodes || [])].sort((left, right) => String(left.id).localeCompare(String(right.id)));
+    const orderedEdges = [...graphEdges].sort((left, right) => String(left.id || `${left.source}|${left.target}`).localeCompare(String(right.id || `${right.source}|${right.target}`)));
+    const stablePositions = deterministicGraphPositions(orderedNodes, orderedEdges, (node) => String(node.id), (edge) => String(edge.source), (edge) => String(edge.target));
+    const curveOffsets = parallelCurveOffsets(orderedEdges, (edge, index) => String(edge.id || `edge:${index}`), edge => String(edge.source), edge => String(edge.target));
     const cy = cytoscape({
       container: ref.current,
       elements: [
-        ...(graph.nodes || []).map((node) => ({
+        ...orderedNodes.map((node) => ({
           data: {
             id: node.id,
             label: String(node.properties?.episode_id || node.properties?.value || node.properties?.machine_type || node.entity_type || node.id).slice(0, 24),
             node,
           },
+          position: stablePositions.get(String(node.id)),
           classes: node.id === latestId ? "latest" : "",
         })),
-        ...(graph.edges || []).filter((edge) => edge.source && edge.target).map((edge) => ({
-          data: { id: edge.id, source: edge.source, target: edge.target, label: edge.type || edge.label, edge },
-          classes: edge.properties?.valid_to_ordinal !== null && edge.properties?.valid_to_ordinal !== undefined ? "historical" : "",
-        })),
+        ...orderedEdges.map((edge, index) => {
+          const id = String(edge.id || `edge:${index}`);
+          const curveOffset = curveOffsets.get(id) || 0;
+          return {
+            data: { id, source: edge.source, target: edge.target, label: compactRelationshipLabel(edge.type || edge.label), edge },
+            classes: `${curveClassName(curveOffset)}${edge.properties?.valid_to_ordinal !== null && edge.properties?.valid_to_ordinal !== undefined ? " historical" : ""}`,
+          };
+        }),
       ],
       style: [
-        { selector: "node", style: { label: "data(label)", "background-color": "#0f766e", color: "#0f172a", "font-size": 9, "text-valign": "bottom", "text-margin-y": 5, width: 19, height: 19, "border-width": 1, "border-color": "#ffffff" } },
-        { selector: "node.latest", style: { "background-color": "#2563eb", "border-width": 4, "border-color": "#bfdbfe", "overlay-color": "#60a5fa", "overlay-opacity": 0.2, "overlay-padding": 7 } },
-        { selector: "edge", style: { width: 1.2, "line-color": "#94a3b8", "target-arrow-color": "#64748b", "target-arrow-shape": "triangle", label: "data(label)", "font-size": 7, color: "#64748b", "curve-style": "bezier" } },
+        { selector: "node", style: { label: "data(label)", "background-color": "#0f766e", color: "#334155", "font-size": 8, "text-valign": "bottom", "text-halign": "center", "text-margin-y": 5, width: 24, height: 24, shape: "ellipse", "text-wrap": "wrap", "text-max-width": "116px", "border-width": 1, "border-color": "#ffffff" } },
+        { selector: "node.latest", style: { "background-color": "#2563eb", "border-width": 3, "border-color": "#bfdbfe" } },
+        { selector: "edge", style: { label: showRelationshipLabels ? "data(label)" : "", color: "#475569", "font-size": 7, "font-weight": 500, "text-rotation": "autorotate", "text-background-color": "#ffffff", "text-background-opacity": 0.94, "text-background-padding": "2px", "text-border-width": 1, "text-border-color": "#e2e8f0", "text-border-opacity": 0.95, "text-wrap": "ellipsis", "text-max-width": "96px", width: 1, "line-color": "#94a3b8", "target-arrow-color": "#94a3b8", "target-arrow-shape": "triangle", "arrow-scale": 0.65, "curve-style": "unbundled-bezier", "control-point-distance": 0, "control-point-weight": 0.5 } },
+        ...curveStyleRules(curveOffsets.values()),
         { selector: "edge.historical", style: { "line-style": "dashed", "line-color": "#94a3b8", "target-arrow-color": "#94a3b8", opacity: 0.55 } },
       ],
-      layout: { name: "cose", animate: false, fit: true, padding: 28 },
+      layout: { name: "preset", animate: false, fit: false, padding: 35 },
     });
+    cy.fit(cy.elements(), 42);
     cy.on("tap", "node", (event) => onSelectNode(event.target.data("node")));
     cy.on("tap", "edge", (event) => onSelectEdge(event.target.data("edge")));
+    cy.one("layoutstop", () => cy.fit(cy.elements(), 42));
+    const observer = new ResizeObserver(() => { cy.resize(); cy.fit(cy.elements(), 42); });
+    observer.observe(ref.current);
     cyRef.current = cy;
-    return () => { cy.destroy(); cyRef.current = null; };
-  }, [graph, latestEvent, onSelectEdge, onSelectNode, sourceId]);
-  return <div ref={ref} className="h-[430px] rounded-lg bg-slate-50" />;
+    return () => { observer.disconnect(); cy.destroy(); cyRef.current = null; };
+  }, [graph, latestEvent, onSelectEdge, onSelectNode, showRelationshipLabels, sourceId]);
+  return <div className="overflow-hidden rounded-lg bg-slate-50"><div className="flex items-center justify-between border-b border-slate-200 bg-white/70 px-3 py-2"><span className="text-[11px] text-slate-500">关系文字{showRelationshipLabels ? "已显示" : "已隐藏"}</span><button onClick={() => setShowRelationshipLabels(value => !value)} className={`rounded border px-2.5 py-1 text-[11px] ${showRelationshipLabels ? "border-slate-300 bg-white text-slate-700" : "border-slate-800 bg-slate-800 text-white"}`} title={showRelationshipLabels ? "隐藏关系文字，保留关系线" : "显示关系文字"} aria-pressed={showRelationshipLabels} data-testid="toggle-dynamic-relationship-labels">{showRelationshipLabels ? "隐藏关系文字" : "显示关系文字"}</button></div><div ref={ref} className="h-[400px]" /></div>;
 }
 
 function KeyValueTable({ values }: { values: Record<string, unknown> }) {

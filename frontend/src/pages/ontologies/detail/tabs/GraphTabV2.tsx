@@ -11,6 +11,8 @@ import {
   X,
 } from "lucide-react";
 import { apiClientV2 } from "@/api/client";
+import { useResizableHeight } from "@/hooks/useResizableHeight";
+import { deterministicGraphPositions } from "@/lib/relationshipGraph";
 
 type PropertyDefinition = {
   id?: string;
@@ -139,10 +141,12 @@ function semanticGraphPositions(nodes: OntologyNode[]) {
     InspectionResult: { x: 680, y: 530 },
   };
   const fallback = { x: 900, y: 130 };
-  nodes.forEach((node, index) => {
+  [...nodes]
+    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+    .forEach((node, index) => {
     const key = semanticKey(node);
     positions[node.id] = slots[key] || { x: fallback.x, y: fallback.y + index * 100 };
-  });
+    });
   return positions;
 }
 
@@ -213,9 +217,10 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const [searchParams] = useSearchParams();
-  // The fixed semantic layout is specific to the FactoryNet temporal ontology.
-  // Other ontology types keep the original force-directed presentation so that
-  // multimodal evidence relationships are not forced into temporal slots.
+  // FactoryNet keeps its semantic slots, while every ontology shares the same
+  // readable node/edge treatment below.  In particular, regular and
+  // multimodal ontologies must not fall back to the old straight-looking
+  // graph presentation.
   const useTemporalLayout = dataClass === "temporal";
   const graphQuery = useQuery({ queryKey: ['ontology-graph', ontologyId], queryFn: ({ signal }) => apiClientV2.get<GraphData>(`/ontologies/${ontologyId}/graph`, { params: { view: 'ontology', limit: 1000 }, signal }) });
   const data = graphQuery.data;
@@ -227,6 +232,14 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
     | { kind: "edge"; value: OntologyEdge }
     | null
   >(null);
+  const [showRelationshipLabels, setShowRelationshipLabels] = useState(true);
+  const {
+    height: canvasHeight,
+    beginResize: beginCanvasResize,
+    handleKeyDown: handleCanvasResizeKeyDown,
+    minHeight: canvasMinHeight,
+    maxHeight: canvasMaxHeight,
+  } = useResizableHeight();
   const [query, setQuery] = useState("");
   const urlNode = data?.nodes.find(node => node.id === searchParams.get('entity'));
   const selectedNode = selected?.kind === "node" ? selected.value : selected === null ? urlNode || null : null;
@@ -255,39 +268,79 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
     const connected = (data?.edges || []).filter(
       (edge) => edge.source === selectedNode.id || edge.target === selectedNode.id,
     );
-    return useTemporalLayout ? uniqueVisualEdges(connected) : connected;
-  }, [data, selectedNode, useTemporalLayout]);
+    return uniqueVisualEdges(connected);
+  }, [data, selectedNode]);
 
   useEffect(() => {
     if (!data || !containerRef.current) return;
-    const visualEdges = useTemporalLayout ? uniqueVisualEdges(data.edges) : data.edges;
+    // The relationship geometry is always present. The switch below only
+    // controls the text labels, so hiding labels never makes the graph look
+    // disconnected or changes what can be selected in the inspector.
+    const visualEdges = uniqueVisualEdges(data.edges).sort((left, right) =>
+      left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+    );
+    const orderedNodes = [...data.nodes].sort((left, right) =>
+      left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+    );
+    const stablePositions = useTemporalLayout
+      ? null
+      : deterministicGraphPositions(
+          orderedNodes,
+          visualEdges,
+          (node) => node.id,
+          (edge) => edge.source,
+          (edge) => edge.target,
+        );
+    const groupedEdges = new Map<string, OntologyEdge[]>();
+    visualEdges.forEach((edge) => {
+      const key = [edge.source, edge.target].sort().join("|");
+      groupedEdges.set(key, [...(groupedEdges.get(key) || []), edge]);
+    });
+    const curveOffsets = new Map<string, number>();
+    groupedEdges.forEach((group) => {
+      group.forEach((edge, index) => {
+        const centered = index - (group.length - 1) / 2;
+        curveOffsets.set(edge.id, group.length === 1 ? 0 : centered * 82);
+      });
+    });
     const elements = [
-      ...data.nodes.map((node) => ({
-        data: {
-          id: node.id,
-          label: String(
-            node.properties.name ||
-              node.properties.name_cn ||
-              node.properties.name_en ||
-              node.id,
-          ).slice(0, 28),
-          color: useTemporalLayout
-            ? semanticNodeColor(node)
-            : stableColor(String(node.properties.name || node.id)),
-          raw: node,
-        },
-      })),
-      ...visualEdges.map((edge) => ({
-        data: {
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          label: useTemporalLayout
-            ? edge.label || edge.type
-            : `${edge.label || edge.type}${edge.properties?.cardinality ? ` · ${edge.properties.cardinality}` : ""}`,
-          raw: edge,
-        },
-      })),
+      ...orderedNodes.map((node) => {
+        const label = String(
+          node.properties.name ||
+            node.properties.name_cn ||
+            node.properties.name_en ||
+            node.id,
+        ).slice(0, 20);
+        const position = stablePositions?.get(node.id);
+        return {
+          data: {
+            id: node.id,
+            label,
+            color: useTemporalLayout
+              ? semanticNodeColor(node)
+              : stableColor(String(node.properties.name || node.id)),
+            width: Math.max(126, Math.min(178, label.length * 8 + 46)),
+            height: label.length > 16 ? 70 : 58,
+            textMaxWidth: Math.max(104, Math.min(148, label.length * 7 + 20)),
+            raw: node,
+          },
+          ...(position ? { position } : {}),
+        };
+      }),
+      ...visualEdges.map((edge) => {
+        const curveOffset = curveOffsets.get(edge.id) || 0;
+        const curveClass = `curve-${curveOffset < 0 ? "negative" : curveOffset > 0 ? "positive" : "center"}-${Math.abs(curveOffset)}`;
+        return {
+          data: {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            label: String(edge.label || edge.type || "关联").replace(/_/g, " ").slice(0, 24),
+            raw: edge,
+          },
+          classes: curveClass,
+        };
+      }),
     ];
     cyRef.current?.destroy();
     const cy = cytoscape({
@@ -299,18 +352,16 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
           style: {
             label: "data(label)",
             "background-color": "data(color)",
-            color: "#ffffff",
-            "font-size": "11px",
-            "font-weight": "bold",
-            "text-valign": "center",
+            color: "#334155",
+            "font-size": "9px",
+            "text-valign": "bottom",
             "text-halign": "center",
-            width: "82px",
-            height: "52px",
-            shape: "round-rectangle",
+            "text-margin-y": 5,
+            width: 24,
+            height: 24,
+            shape: "ellipse",
             "text-wrap": "wrap",
-            "text-max-width": "68px",
-            "text-outline-width": "2px",
-            "text-outline-color": "data(color)",
+            "text-max-width": "96px",
             "border-width": "1px",
             "border-color": "#ffffff",
           },
@@ -318,20 +369,33 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
         {
           selector: "edge",
           style: {
-            label: "data(label)",
-            "font-size": useTemporalLayout ? "8px" : "9px",
+            label: showRelationshipLabels ? "data(label)" : "",
             color: "#475569",
-            width: useTemporalLayout ? 1.25 : 1.5,
+            "font-size": "7px",
+            "font-weight": 500,
+            "text-rotation": "autorotate",
+            "text-background-color": "#ffffff",
+            "text-background-opacity": 0.94,
+            "text-background-padding": "2px",
+            "text-border-width": 1,
+            "text-border-color": "#e2e8f0",
+            "text-border-opacity": 0.95,
+            "text-wrap": "ellipsis",
+            "text-max-width": "96px",
+            width: 1,
             "line-color": "#94a3b8",
             "target-arrow-color": "#94a3b8",
             "target-arrow-shape": "triangle",
-            "curve-style": "bezier",
-            "text-background-color": "#f8fafc",
-            "text-background-opacity": 0.96,
-            "text-background-padding": useTemporalLayout ? "3px" : "2px",
-            "text-rotation": "autorotate",
+            "arrow-scale": 0.65,
+            "curve-style": "unbundled-bezier",
+            "control-point-distance": 0,
+            "control-point-weight": 0.5,
           },
         },
+        ...Array.from(new Set(Array.from(curveOffsets.values()))).map((offset) => ({
+          selector: `.curve-${offset < 0 ? "negative" : offset > 0 ? "positive" : "center"}-${Math.abs(offset)}`,
+          style: { "control-point-distance": offset },
+        })),
         {
           selector: ".active",
           style: {
@@ -356,17 +420,7 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
           },
         },
       ],
-      layout: useTemporalLayout
-        ? { name: "preset", fit: false }
-        : {
-            name: "cose",
-            animate: false,
-            randomize: false,
-            componentSpacing: 100,
-            idealEdgeLength: 160,
-            nodeRepulsion: 8500,
-            numIter: 1400,
-          },
+      layout: { name: "preset", fit: false },
     });
     if (useTemporalLayout) {
       const positions = semanticGraphPositions(data.nodes);
@@ -376,6 +430,9 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
       });
       cy.resize();
       cy.fit(undefined, 54);
+    } else {
+      cy.resize();
+      cy.fit(undefined, 64);
     }
     cy.on("tap", "node", (event) =>
       setSelected({
@@ -393,9 +450,9 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
       if (event.target === cy) setSelected(null);
     });
     cyRef.current = cy;
-    const observer = useTemporalLayout ? new ResizeObserver(() => {
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => {
       cy.resize();
-      cy.fit(undefined, 54);
+      cy.fit(undefined, 64);
     }) : null;
     observer?.observe(containerRef.current);
     return () => {
@@ -403,7 +460,7 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
       cy.destroy();
       cyRef.current = null;
     };
-  }, [data, searchParams, useTemporalLayout]);
+  }, [data, searchParams, showRelationshipLabels, useTemporalLayout]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -478,22 +535,33 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
   };
   return (
     <div
-      className="grid min-h-[650px] gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"
+      className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"
       data-testid="ontology-canvas"
     >
       <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div>
             <p className="text-sm font-semibold text-slate-900">本体关系</p>
-            <p className="mt-0.5 text-xs text-slate-500">实体类型与关系</p>
+            <p className="mt-0.5 text-xs text-slate-500">实体类型与关系 · {showRelationshipLabels ? "关系文字已显示" : "关系文字已隐藏"}</p>
           </div>
-          <button
-            onClick={load}
-            className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
-            title="刷新本体"
-          >
-            <RefreshCw size={15} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowRelationshipLabels((value) => !value)}
+              className={`rounded-lg border px-3 py-1.5 text-xs ${showRelationshipLabels ? "border-slate-300 bg-white text-slate-700" : "border-slate-800 bg-slate-800 text-white"}`}
+              title={showRelationshipLabels ? "隐藏关系文字，保留关系线" : "显示关系文字"}
+              aria-pressed={showRelationshipLabels}
+              data-testid="toggle-relationships"
+            >
+              {showRelationshipLabels ? "隐藏关系文字" : "显示关系文字"}
+            </button>
+            <button
+              onClick={load}
+              className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+              title="刷新本体"
+            >
+              <RefreshCw size={15} />
+            </button>
+          </div>
         </div>
         {error && (
           <div className="mx-4 mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -501,13 +569,35 @@ export default function GraphTabV2({ ontologyId, dataClass }: { ontologyId: stri
           </div>
         )}
         {!data?.nodes.length ? (
-          <div className="flex h-[560px] flex-col items-center justify-center text-slate-400">
+          <div
+            className="flex flex-col items-center justify-center text-slate-400"
+            style={{ height: canvasHeight }}
+          >
             <Database size={24} />
             <p className="mt-3 text-sm">尚未发布实体类型与关系</p>
           </div>
         ) : (
-          <div ref={containerRef} className="h-[590px] w-full" />
+          <div ref={containerRef} className="w-full" style={{ height: canvasHeight }} />
         )}
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="调整本体关系画布高度"
+          aria-valuemin={canvasMinHeight}
+          aria-valuemax={canvasMaxHeight}
+          aria-valuenow={canvasHeight}
+          tabIndex={0}
+          data-testid="resize-ontology-canvas"
+          onPointerDown={beginCanvasResize}
+          onKeyDown={handleCanvasResizeKeyDown}
+          className="group flex h-4 cursor-row-resize items-center justify-center border-t border-slate-200 bg-white transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-slate-300"
+          title="拖动调整关系图高度；也可以聚焦后使用上下方向键"
+        >
+          <span className="h-1 w-16 rounded-full bg-slate-300 transition-colors group-hover:bg-slate-500" />
+        </div>
+        <p className="px-4 pb-2 text-[10px] text-slate-400">
+          拖动底部横线调整展示高度
+        </p>
       </section>
       <aside className="flex min-h-[650px] flex-col rounded-xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-3">

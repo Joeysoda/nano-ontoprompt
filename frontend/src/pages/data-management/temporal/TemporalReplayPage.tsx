@@ -15,6 +15,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { apiClientV2 } from "@/api/client";
+import { compactRelationshipLabel, deterministicGraphPositions } from "@/lib/relationshipGraph";
 
 type Replay = {
   id: string;
@@ -69,6 +70,7 @@ export default function TemporalReplayPage() {
   const [speed, setSpeed] = useState(5);
   const [viewTime, setViewTime] = useState<number | null>(null);
   const [followLatest, setFollowLatest] = useState(true);
+  const [showRelationshipLabels, setShowRelationshipLabels] = useState(true);
   const [segmentStart, setSegmentStart] = useState("");
   const [segmentEnd, setSegmentEnd] = useState("");
   const [busy, setBusy] = useState("");
@@ -154,19 +156,35 @@ export default function TemporalReplayPage() {
   useEffect(() => {
     if (!canvasRef.current || !graph) return;
     cyRef.current?.destroy();
+    const orderedNodes = [...(graph.nodes || [])].sort((left: any, right: any) => String(left.id).localeCompare(String(right.id)));
+    const orderedEdges = [...(graph.edges || [])].sort((left: any, right: any) => String(left.id).localeCompare(String(right.id)));
+    const stablePositions = deterministicGraphPositions(orderedNodes, orderedEdges, (node: any) => String(node.id), (edge: any) => String(edge.source), (edge: any) => String(edge.target));
+    const parallelCounts = new Map<string, number>();
+    orderedEdges.forEach((edge: any) => {
+      const pair = [edge.source, edge.target].sort().join("\u0000");
+      parallelCounts.set(pair, (parallelCounts.get(pair) || 0) + 1);
+    });
+    const parallelSeen = new Map<string, number>();
     const cy = cytoscape({
       container: canvasRef.current,
       elements: [
-        ...(graph.nodes || []).map((node: any) => ({ data: { id: node.id, label: node.entity_type, node } })),
-        ...(graph.edges || []).map((edge: any) => ({ data: { id: edge.id, source: edge.source, target: edge.target, label: edge.type } })),
+        ...orderedNodes.map((node: any) => ({ data: { id: node.id, label: node.entity_type, node }, position: stablePositions.get(String(node.id)) })),
+        ...orderedEdges.map((edge: any) => {
+          const pair = [edge.source, edge.target].sort().join("\u0000");
+          const ordinal = parallelSeen.get(pair) || 0;
+          parallelSeen.set(pair, ordinal + 1);
+          const total = parallelCounts.get(pair) || 1;
+          return { data: { id: edge.id, source: edge.source, target: edge.target, label: compactRelationshipLabel(edge.type || edge.label, 34), curveOffset: total === 1 ? 30 : (ordinal - (total - 1) / 2) * 44 } };
+        }),
       ],
       style: [
-        { selector: "node", style: { label: "data(label)", "background-color": "#334155", color: "#0f172a", "font-size": 10, "text-valign": "bottom", "text-margin-y": 5, width: 18, height: 18 } },
-        { selector: "edge", style: { width: 1.2, "line-color": "#cbd5e1", "target-arrow-color": "#94a3b8", "target-arrow-shape": "triangle", label: "data(label)", "font-size": 8, color: "#64748b", "curve-style": "bezier" } },
+        { selector: "node", style: { label: "data(label)", "background-color": "#334155", color: "#334155", "font-size": 8, "text-valign": "bottom", "text-halign": "center", "text-margin-y": 5, width: 24, height: 24, shape: "ellipse", "text-wrap": "wrap", "text-max-width": "116px", "border-width": 1, "border-color": "#ffffff" } },
+        { selector: "edge", style: { label: showRelationshipLabels ? "data(label)" : "", color: "#475569", "font-size": 8, "font-weight": 500, "text-rotation": "autorotate", "text-background-color": "#ffffff", "text-background-opacity": 0.94, "text-background-padding": "2px", "text-border-width": 1, "text-border-color": "#e2e8f0", "text-border-opacity": 0.95, "text-wrap": "ellipsis", "text-max-width": "120px", width: 1, "line-color": "#94a3b8", "target-arrow-color": "#94a3b8", "target-arrow-shape": "triangle", "arrow-scale": 0.65, "curve-style": "unbundled-bezier", "control-point-distance": 30, "control-point-weight": 0.5 } },
         { selector: ".selected", style: { "background-color": "#2563eb", "line-color": "#2563eb", "target-arrow-color": "#2563eb", "border-width": 3, "border-color": "#bfdbfe" } },
       ],
-      layout: { name: "cose", animate: false, fit: true, padding: 24 },
+      layout: { name: "preset", animate: false, fit: false, padding: 24 },
     });
+    cy.fit(cy.elements(), 24);
     cy.on("tap", "node", (event) => {
       cy.nodes().removeClass("selected");
       event.target.addClass("selected");
@@ -174,7 +192,7 @@ export default function TemporalReplayPage() {
     });
     cyRef.current = cy;
     return () => { cy.destroy(); cyRef.current = null; };
-  }, [graph]);
+  }, [graph, showRelationshipLabels]);
 
   const control = async (action: string) => {
     if (!replayId) return;
@@ -254,7 +272,7 @@ export default function TemporalReplayPage() {
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">{[["源记录", replay.source_rows], ["选中记录", replay.selected_rows], ["已规范化", replay.normalized_rows], ["已提交批次", metrics.committed_batches || 0], ["节点写入", metrics.nodes_written || 0], ["关系写入", metrics.edges_written || 0], ["问题", metrics.issues || 0], ["图中节点", graph?.total_instances || 0]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{fmt(value)}</p></div>)}</section>
       <section className="grid gap-5 xl:grid-cols-[390px_minmax(0,1fr)_310px]">
         <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="flex items-center justify-between"><h3 className="font-medium">最近到达的原始记录</h3><span className="text-xs text-slate-500">每批最多 20 行</span></div><div className="mt-3 max-h-[560px] overflow-auto rounded border"><table className="w-full text-[11px]"><thead className="sticky top-0 bg-slate-50"><tr>{columns.map((column) => <th key={column} className="whitespace-nowrap px-2 py-2 text-left">{column}</th>)}</tr></thead><tbody>{(replay.latest_rows || []).map((row, index) => <tr key={index} className="border-t">{columns.map((column) => <td key={column} className="max-w-[130px] truncate whitespace-nowrap px-2 py-2">{fmt(row[column])}</td>)}</tr>)}</tbody></table>{!(replay.latest_rows || []).length && <p className="p-4 text-xs text-slate-500">尚未提交批次</p>}</div></div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium">增长中的数据模型</h3><p className="mt-1 text-xs text-slate-500">画布只渲染已提交数据；节点数量可调整，全部模式按 500 个一页加载。</p></div><div className="flex items-center gap-2"><select value={graphLimit} onChange={(e) => setGraphLimit(e.target.value)} className="rounded border px-2 py-1 text-xs"><option value="50">50 个</option><option value="100">100 个</option><option value="200">200 个</option><option value="500">500 个</option><option value="1000">1000 个</option><option value="custom">自定义</option><option value="all">全部（分页）</option></select>{graphLimit === "custom" && <input type="number" min="1" max="100000" value={customGraphLimit} onChange={(e) => setCustomGraphLimit(e.target.value)} className="w-20 rounded border px-2 py-1 text-xs" />}{loadingGraph && <button type="button" onClick={cancelGraphLoad} className="rounded border border-red-200 px-2 py-1 text-xs text-red-700">停止加载</button>}</div></div><div ref={canvasRef} className="mt-3 h-[520px] rounded-lg bg-slate-50" />{loadingGraph && <p className="mt-2 text-xs text-slate-500">正在加载数据模型…</p>}{graph && !graph.available && <p className="mt-2 text-xs text-red-600">FalkorDB 当前不可用，已保留任务状态，启动后可刷新查看。</p>}</div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium">增长中的数据模型</h3><p className="mt-1 text-xs text-slate-500">画布只渲染已提交数据；节点数量可调整，全部模式按 500 个一页加载。{showRelationshipLabels ? "关系文字已显示" : "关系文字已隐藏"}</p></div><div className="flex flex-wrap items-center gap-2"><select value={graphLimit} onChange={(e) => setGraphLimit(e.target.value)} className="rounded border px-2 py-1 text-xs"><option value="50">50 个</option><option value="100">100 个</option><option value="200">200 个</option><option value="500">500 个</option><option value="1000">1000 个</option><option value="custom">自定义</option><option value="all">全部（分页）</option></select><button type="button" onClick={() => setShowRelationshipLabels(value => !value)} className={`rounded border px-2 py-1 text-xs ${showRelationshipLabels ? "border-slate-300 bg-white text-slate-700" : "border-slate-800 bg-slate-800 text-white"}`} aria-pressed={showRelationshipLabels} data-testid="toggle-temporal-relationship-labels">{showRelationshipLabels ? "隐藏关系文字" : "显示关系文字"}</button>{graphLimit === "custom" && <input type="number" min="1" max="100000" value={customGraphLimit} onChange={(e) => setCustomGraphLimit(e.target.value)} className="w-20 rounded border px-2 py-1 text-xs" />}{loadingGraph && <button type="button" onClick={cancelGraphLoad} className="rounded border border-red-200 px-2 py-1 text-xs text-red-700">停止加载</button>}</div></div><div ref={canvasRef} className="mt-3 h-[520px] rounded-lg bg-slate-50" />{loadingGraph && <p className="mt-2 text-xs text-slate-500">正在加载数据模型…</p>}{graph && !graph.available && <p className="mt-2 text-xs text-red-600">FalkorDB 当前不可用，已保留任务状态，启动后可刷新查看。</p>}</div>
         <div className="space-y-5"><div className="rounded-xl border border-slate-200 bg-white p-4"><h3 className="font-medium">选中节点</h3>{selectedNode ? <div className="mt-3 space-y-2 text-xs"><p className="break-all font-mono text-slate-600">{selectedNode.id}</p><p>类型：{selectedNode.entity_type}</p>{Object.entries(selectedNode.properties || {}).slice(0, 18).map(([key, value]) => <div key={key} className="flex justify-between gap-2 border-t pt-1"><span className="text-slate-500">{key}</span><span className="max-w-[170px] truncate text-right">{fmt(value)}</span></div>)}</div> : <p className="mt-3 text-xs text-slate-500">点击画布中的节点查看属性和 time_s。</p>}</div><div className="rounded-xl border border-slate-200 bg-white p-4"><h3 className="font-medium">批次时间轴</h3><div className="mt-3 max-h-80 space-y-1 overflow-auto">{batches.map((batch) => <div key={batch.id} className={`rounded border px-2 py-2 text-xs ${batch.status === "completed" ? "border-emerald-200 bg-emerald-50" : batch.status === "failed" ? "border-red-200 bg-red-50" : "border-slate-200"}`}><div className="flex justify-between"><span>#{batch.batch_no + 1}</span><span>{batch.status}</span></div><div className="mt-1 text-slate-500">{fmt(batch.time_from)} → {fmt(batch.time_to)} · {batch.normalized_rows || 0} 行</div></div>)}</div></div></div>
       </section>
       <section className="rounded-xl border border-slate-200 bg-white p-5">

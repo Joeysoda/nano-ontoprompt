@@ -6,7 +6,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_editor
 from app.models.ontology import OntologyProject
 from app.models.user import User
 from app.models.v2.security import OntologySecurityPolicy
@@ -66,7 +66,7 @@ def list_policies(ontology_id: str, limit: int = Query(200, ge=1, le=500), db: S
 
 
 @router.post("/{ontology_id}/security/policies")
-def create_policy(ontology_id: str, body: SecurityPolicyRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_policy(ontology_id: str, body: SecurityPolicyRequest, db: Session = Depends(get_db), user: User = Depends(require_editor)):
     body = body.model_dump(exclude_none=True) if hasattr(body, "model_dump") else dict(body)
     project = _project_or_404(db, ontology_id)
     if not _can_manage(project, user):
@@ -88,7 +88,7 @@ def create_policy(ontology_id: str, body: SecurityPolicyRequest, db: Session = D
 
 
 @router.patch("/{ontology_id}/security/policies/{policy_id}")
-def update_policy(ontology_id: str, policy_id: str, body: SecurityPolicyPatch, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def update_policy(ontology_id: str, policy_id: str, body: SecurityPolicyPatch, db: Session = Depends(get_db), user: User = Depends(require_editor)):
     body = body.model_dump(exclude_none=True) if hasattr(body, "model_dump") else dict(body)
     project = _project_or_404(db, ontology_id)
     if not _can_manage(project, user):
@@ -117,7 +117,7 @@ def update_policy(ontology_id: str, policy_id: str, body: SecurityPolicyPatch, d
 
 
 @router.delete("/{ontology_id}/security/policies/{policy_id}")
-def delete_policy(ontology_id: str, policy_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def delete_policy(ontology_id: str, policy_id: str, db: Session = Depends(get_db), user: User = Depends(require_editor)):
     project = _project_or_404(db, ontology_id)
     if not _can_manage(project, user):
         raise _http_error(403, "POLICY_ADMIN_REQUIRED", "只有管理员或本体所有者可以修改数据权限", "请本体所有者或管理员操作")
