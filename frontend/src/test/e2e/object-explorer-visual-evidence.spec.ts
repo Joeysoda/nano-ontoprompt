@@ -112,12 +112,12 @@ test('captures the default Results workspace and save controls', async ({ page }
   await mount(page);
   await expect(page.getByRole('button', { name: 'ORD-1042' })).toBeVisible();
   await capture(page, 'plan_b_current_results_save_2026-10-05.png');
-  await page.getByRole('button', { name: /Columns/ }).click();
+  await page.getByRole('button', { name: '字段' }).click();
   await expect(page.getByRole('region', { name: '配置结果列' })).toBeVisible();
   await capture(page, 'plan_b_current_results_columns_2026-10-05.png');
   await page.getByRole('button', { name: '关闭列配置' }).click();
-  await page.getByRole('button', { name: '保存 Exploration' }).click();
-  await expect(page.getByRole('dialog', { name: '保存 Exploration' })).toBeVisible();
+  await page.getByRole('button', { name: '保存动态查询' }).click();
+  await expect(page.getByRole('dialog', { name: '保存动态查询' })).toBeVisible();
   await capture(page, 'plan_b_current_save_modal_2026-10-05.png');
 });
 
@@ -228,9 +228,9 @@ test('captures Action modal preview before live commit', async ({ page }) => {
   }));
   await mount(page);
   await page.getByRole('button', { name: 'ORD-1042' }).click();
-  await page.getByRole('button', { name: 'Actions' }).click();
-  const dialog = page.getByRole('dialog', { name: '执行对象 Action' });
-  await dialog.getByRole('combobox', { name: 'Action' }).selectOption('approve');
+  await page.getByRole('button', { name: '操作', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '执行对象操作' });
+  await dialog.getByRole('combobox', { name: '操作' }).selectOption('approve');
   await dialog.getByRole('textbox', { name: 'status' }).fill('approved');
   await dialog.getByRole('textbox', { name: 'review_note' }).fill('Capacity verified');
   await dialog.getByRole('button', { name: '预览' }).click();
@@ -238,7 +238,7 @@ test('captures Action modal preview before live commit', async ({ page }) => {
   await capture(page, 'plan_b_current_action_modal_2026-10-05.png');
   await dialog.getByRole('button', { name: '确认提交' }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole('status').filter({ hasText: 'Action 已提交到 live。' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '操作已提交到正式数据。' })).toBeVisible();
   await capture(page, 'plan_b_current_action_success_2026-10-05.png');
 });
 
@@ -267,9 +267,9 @@ test('captures actionable Action conflict feedback', async ({ page }) => {
   }));
   await mount(page);
   await page.getByRole('button', { name: 'ORD-1042' }).click();
-  await page.getByRole('button', { name: 'Actions' }).click();
-  const dialog = page.getByRole('dialog', { name: '执行对象 Action' });
-  await dialog.getByRole('combobox', { name: 'Action' }).selectOption('approve');
+  await page.getByRole('button', { name: '操作', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '执行对象操作' });
+  await dialog.getByRole('combobox', { name: '操作' }).selectOption('approve');
   await dialog.getByRole('button', { name: '预览' }).click();
   await dialog.getByRole('button', { name: '确认提交' }).click();
   await expect(dialog.getByRole('alert')).toContainText('status 已被其他用户修改，请刷新对象后重试');
