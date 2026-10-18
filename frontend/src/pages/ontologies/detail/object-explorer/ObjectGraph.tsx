@@ -2,18 +2,21 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import cytoscape from 'cytoscape';
 import { apiClientV2, getApiErrorStatus } from '@/api/client';
+import { compactRelationshipLabel, curveClassName, curveStyleRules, deterministicGraphPositions, parallelCurveOffsets } from '@/lib/relationshipGraph';
 import ObjectPanel, { type ObjectPanelRecord } from './ObjectPanel';
 import type { ExplorerContext } from './ExplorerOperations';
 import { explorerError } from './runtime';
 import type { ObjectSetExpression } from './contract';
 
 type Identity = { object_type: string; object_id: string };
-type Graph = { objects: ObjectPanelRecord[]; edges: Array<{ source: Identity; target: Identity; relation_type: string }> };
+type Edge = { source: Identity; target: Identity; relation_type: string };
+type Graph = { objects: ObjectPanelRecord[]; edges: Edge[] };
 type Catalog = { links: Array<{ api_name: string; source_type: string; target_type: string }> };
 type Layer = { color: string; visible: boolean };
 type Saved = { id: string; head_version: number };
 
 const key = (item: Identity) => JSON.stringify([item.object_type, item.object_id]);
+const edgeKey = (edge: Edge) => `${key(edge.source)}|${edge.relation_type}|${key(edge.target)}`;
 const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#4b5563'];
 const stamp = (item: ObjectPanelRecord) => typeof item.properties.start_timestamp === 'string' ? Date.parse(item.properties.start_timestamp) : NaN;
 
@@ -28,6 +31,7 @@ export default function ObjectGraph({ ontologyId, expression, context }: { ontol
   const [selected, setSelected] = useState<ObjectPanelRecord | null>(null);
   const [layerOverrides, setLayerOverrides] = useState<Record<string, Partial<Layer>>>({});
   const [cursor, setCursor] = useState<number | null>(null);
+  const [showRelationshipLabels, setShowRelationshipLabels] = useState(true);
   const [saved, setSaved] = useState<Saved | null>(null);
   const [name, setName] = useState('');
   const [notice, setNotice] = useState('');
@@ -49,19 +53,38 @@ export default function ObjectGraph({ ontologyId, expression, context }: { ontol
   useEffect(() => {
     if (!ref.current || !result.data) return;
     const objects = new Map(visible.map(item => [key(item), item]));
+    // Deterministic order and positions: the same cohort always lays out the same way.
+    const orderedObjects = [...visible].sort((left, right) => key(left).localeCompare(key(right)));
+    const orderedEdges = result.data.edges.filter(edge => objects.has(key(edge.source)) && objects.has(key(edge.target)))
+      .sort((left, right) => edgeKey(left).localeCompare(edgeKey(right)));
+    const positions = deterministicGraphPositions(orderedObjects, orderedEdges, key, edge => key(edge.source), edge => key(edge.target));
+    const curveOffsets = parallelCurveOffsets(orderedEdges, (_edge, index) => `edge:${index}`, edge => key(edge.source), edge => key(edge.target));
     const cy = cytoscape({ container: ref.current,
-      elements: [...visible.map(item => ({ data: { id: key(item), label: `${item.object_type} · ${item.object_id}`, color: layers[item.object_type]?.color ?? '#2563eb' } })),
-        ...result.data.edges.filter(edge => objects.has(key(edge.source)) && objects.has(key(edge.target)))
-          .map((edge, index) => ({ data: { id: `edge:${index}`, source: key(edge.source), target: key(edge.target), label: edge.relation_type } }))],
-      layout: { name: 'cose', animate: false },
-      style: [{ selector: 'node', style: { label: 'data(label)', 'background-color': 'data(color)', 'font-size': 10 } },
-        { selector: 'edge', style: { label: 'data(label)', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'font-size': 9 } }],
+      elements: [...orderedObjects.map(item => ({ data: { id: key(item), label: `${item.object_type} · ${item.object_id}`, color: layers[item.object_type]?.color ?? '#2563eb' },
+                                                   position: positions.get(key(item)) })),
+        ...orderedEdges.map((edge, index) => {
+          const id = `edge:${index}`;
+          return { data: { id, source: key(edge.source), target: key(edge.target), label: compactRelationshipLabel(edge.relation_type) },
+                   classes: curveClassName(curveOffsets.get(id) || 0) };
+        })],
+      layout: { name: 'preset', fit: false, padding: 35 },
+      style: [{ selector: 'node', style: { label: 'data(label)', 'background-color': 'data(color)', color: '#334155', 'font-size': 8, 'text-valign': 'bottom',
+                                           'text-halign': 'center', 'text-margin-y': 5, width: 24, height: 24, shape: 'ellipse', 'text-wrap': 'wrap',
+                                           'text-max-width': '116px', 'border-width': 1, 'border-color': '#ffffff' } },
+        { selector: 'edge', style: {
+          label: showRelationshipLabels ? 'data(label)' : '', color: '#475569', 'font-size': 7, 'font-weight': 500, 'text-rotation': 'autorotate',
+          'text-background-color': '#ffffff', 'text-background-opacity': 0.94, 'text-background-padding': '2px', 'text-border-width': 1,
+          'text-border-color': '#e2e8f0', 'text-border-opacity': 0.95, 'text-wrap': 'ellipsis', 'text-max-width': '96px', width: 1,
+          'line-color': '#94a3b8', 'target-arrow-color': '#94a3b8', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.65,
+          'curve-style': 'unbundled-bezier', 'control-point-distance': 0, 'control-point-weight': 0.5 } },
+        ...curveStyleRules(curveOffsets.values())],
     });
     cyRef.current = cy;
+    cy.fit(cy.elements(), 42);
     cy.on('tap', 'node', event => setSelected(objects.get(event.target.id()) ?? null));
-    const observer = new ResizeObserver(() => cy.resize()); observer.observe(ref.current);
+    const observer = new ResizeObserver(() => { cy.resize(); cy.fit(cy.elements(), 42); }); observer.observe(ref.current);
     return () => { observer.disconnect(); cy.destroy(); cyRef.current = null; };
-  }, [result.data, visible, layers]);
+  }, [result.data, visible, layers, showRelationshipLabels]);
 
   const aroundOptions = selected ? (catalog.data?.links ?? []).flatMap(link => [
     ...(link.source_type === selected.object_type ? [{ link: link.api_name, direction: 'out' as const, label: `${link.api_name} → ${link.target_type}` }] : []),
@@ -105,6 +128,10 @@ export default function ObjectGraph({ ontologyId, expression, context }: { ontol
                onChange={event => setCursor(Number(event.target.value))} />
         <time>{effectiveCursor !== null ? new Date(effectiveCursor).toISOString().slice(0, 16).replace('T', ' ') : ''}</time></label>}
       {extra.base === base && extra.sets.length > 0 && <button type="button" onClick={() => setExtra({ base, sets: extra.sets.slice(0, -1) })}>撤销上一步 Search Around</button>}
+      <button type="button" onClick={() => setShowRelationshipLabels(value => !value)}
+              className={`rounded-lg border px-3 py-1.5 text-xs ${showRelationshipLabels ? 'border-slate-300 bg-white text-slate-700' : 'border-slate-800 bg-slate-800 text-white'}`}
+              title={showRelationshipLabels ? '隐藏关系文字，保留关系线' : '显示关系文字'} aria-pressed={showRelationshipLabels}
+              data-testid="toggle-object-relationship-labels">{showRelationshipLabels ? '隐藏关系文字' : '显示关系文字'}</button>
       {!saved && <input aria-label="图名称" placeholder="图名称" value={name} onChange={event => setName(event.target.value)} />}
       <button type="button" disabled={!saved && !name.trim()} onClick={() => void save()}>{saved ? `保存新版本（当前 v${saved.head_version}）` : '保存图'}</button>
       {notice && <span role="status">{notice}</span>}

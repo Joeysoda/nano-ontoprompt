@@ -167,6 +167,23 @@ def _latest_version(db: Session, dataset: Dataset | None) -> DatasetVersion | No
     return version or db.query(DatasetVersion).filter(DatasetVersion.dataset_id == dataset.id).order_by(DatasetVersion.version_no.desc()).first()
 
 
+def _storage_object_available(version: DatasetVersion | None) -> bool:
+    """A metadata row is not an installed source until its object exists.
+
+    PostgreSQL can retain a DatasetVersion after a fresh or replaced MinIO
+    volume.  Treating the row alone as ``installed`` makes the source catalog
+    offer an action that will immediately fail with ``NoSuchBucket`` or
+    ``NoSuchKey``.  Keep this check read-only and let the installer/repair
+    flow restore the object when it is absent.
+    """
+    if not version or not version.storage_uri:
+        return False
+    try:
+        return get_storage_service().object_exists(version.storage_uri)
+    except Exception:
+        return False
+
+
 def _source_item(db: Session, source_id: str) -> dict[str, Any]:
     if source_id == FACTORYNET_SOURCE_ID:
         dataset = find_factorynet_dataset(db)
@@ -176,7 +193,7 @@ def _source_item(db: Session, source_id: str) -> dict[str, Any]:
             "id": FACTORYNET_SOURCE_ID,
             "name": FACTORYNET_DATASET_NAME,
             "kind": "temporal",
-            "installed": bool(dataset and version),
+            "installed": _storage_object_available(version),
             "privacy_level": dataset.privacy_level if dataset else "standard",
             "dataset_id": dataset.id if dataset else None,
             "version_id": version.id if version else None,
@@ -202,7 +219,7 @@ def _source_item(db: Session, source_id: str) -> dict[str, Any]:
                 columns = [key for key in (rows[0].keys() if rows else []) if not str(key).startswith("_")]
             except Exception:
                 columns = []
-        ready = bool(sensor and equipment and version and equipment_version and version.storage_uri and equipment_version.storage_uri)
+        ready = bool(sensor and equipment and _storage_object_available(version) and _storage_object_available(equipment_version))
         return {
             "id": CMAPSS_SOURCE_ID,
             "name": CMAPSS_DATASET_NAME,
@@ -229,6 +246,7 @@ def _source_item(db: Session, source_id: str) -> dict[str, Any]:
         dataset = find_icews_dataset(db)
         manifest = dict(dataset.schema_json or {}) if dataset else {}
         summary = manifest.get("summary") or {}
+        version = _latest_version(db, dataset)
         return {
             "id": ICEWS_SOURCE_ID,
             "name": ICEWS_DATASET_NAME,
@@ -240,7 +258,7 @@ def _source_item(db: Session, source_id: str) -> dict[str, Any]:
             "doi": ICEWS_DOI,
             "file_id": ICEWS_FILE_ID,
             "sha256": ICEWS_SHA256,
-            "installed": bool(dataset),
+            "installed": _storage_object_available(version),
             "privacy_level": dataset.privacy_level if dataset else "standard",
             "dataset_id": dataset.id if dataset else None,
             "records": summary.get("rows") if dataset else None,
@@ -268,7 +286,7 @@ def _source_item(db: Session, source_id: str) -> dict[str, Any]:
                     columns = []
             return {
                 "id": source_id, "name": dataset.name, "kind": "existing_dataset",
-                "installed": bool(version), "dataset_id": dataset.id,
+                "installed": _storage_object_available(version), "dataset_id": dataset.id,
                 "privacy_level": dataset.privacy_level or "standard",
                 "records": version.rowcount if version else None,
                 "columns": columns, "supports": ["instant", "ordinal", "interval"],
@@ -372,7 +390,7 @@ def install_factorynet(_admin=Depends(require_admin), db: Session = Depends(get_
 
 
 @router.post("/sources/upload", status_code=201)
-async def upload_temporal_source(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_temporal_source(file: UploadFile = File(...), db: Session = Depends(get_db), _user: User = Depends(require_editor)):
     filename = file.filename or "temporal-upload"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     allowed = {"csv", "tsv", "json", "jsonl", "xlsx", "xls", "parquet"}
@@ -410,7 +428,7 @@ async def upload_temporal_source(file: UploadFile = File(...), db: Session = Dep
 
 
 @router.post("/sources/{source_id}/analyses", status_code=202)
-def create_temporal_analysis(source_id: str, body: TemporalAnalysisRequest | None = None, background: BackgroundTasks = None, db: Session = Depends(get_db)):
+def create_temporal_analysis(source_id: str, body: TemporalAnalysisRequest | None = None, background: BackgroundTasks = None, db: Session = Depends(get_db), _user: User = Depends(require_editor)):
     dataset_id = source_id.split(":", 1)[1] if source_id.startswith("dataset:") else None
     if source_id == FACTORYNET_SOURCE_ID:
         dataset = find_factorynet_dataset(db)
@@ -759,7 +777,7 @@ def create_temporal_run_atomic(body: TemporalAtomicRunCreate, background: Backgr
 
 
 @router.post("/ontologies/{ontology_id}/runs", status_code=202)
-def create_temporal_run_legacy(ontology_id: str, body: TemporalRunCreate, background: BackgroundTasks, db: Session = Depends(get_db)):
+def create_temporal_run_legacy(ontology_id: str, body: TemporalRunCreate, background: BackgroundTasks, db: Session = Depends(get_db), _user: User = Depends(require_editor)):
     return create_temporal_run(ontology_id, body, background, db)
 
 
@@ -801,7 +819,7 @@ def temporal_run_graph(
 
 
 @ontology_router.post("/runs", status_code=202)
-def create_temporal_run_alias(ontology_id: str, body: TemporalRunCreate, background: BackgroundTasks, db: Session = Depends(get_db)):
+def create_temporal_run_alias(ontology_id: str, body: TemporalRunCreate, background: BackgroundTasks, db: Session = Depends(get_db), _user: User = Depends(require_editor)):
     return create_temporal_run(ontology_id, body, background, db)
 
 

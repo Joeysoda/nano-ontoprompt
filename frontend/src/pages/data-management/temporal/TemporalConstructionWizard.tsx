@@ -505,7 +505,7 @@ export default function TemporalConstructionWizard() {
       <div className="wb-page-header">
         <div>
           <button
-            onClick={() => navigate("/data/temporal")}
+            onClick={() => navigate("/data")}
             className="text-xs text-gray-500 flex gap-1 items-center mb-2"
           >
             <ArrowLeft size={13} />
@@ -1343,7 +1343,7 @@ export default function TemporalConstructionWizard() {
       <div className="flex justify-between">
         <button
           onClick={() =>
-            step ? setStep(step - 1) : navigate("/data/temporal")
+            step ? setStep(step - 1) : navigate("/data")
           }
           className="border rounded-lg px-4 py-2 text-sm"
         >

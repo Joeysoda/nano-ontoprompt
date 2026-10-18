@@ -66,10 +66,10 @@ function StepIndicator({ current }: { current: 0 | 1 | 2 }) {
       {labels.map((s, i) => (
         <div key={s} className="flex items-center gap-1.5">
           <span className={`w-5 h-5 rounded-full flex items-center justify-center font-medium
-            ${i < current ? 'bg-green-500 text-white' : i === current ? 'bg-black text-white' : 'bg-gray-100 text-gray-400'}`}>
+            ${i < current ? 'bg-green-500 text-white' : i === current ? 'bg-[var(--pku-red)] text-white' : 'bg-gray-100 text-gray-400'}`}>
             {i + 1}
           </span>
-          <span className={i === current ? 'text-black' : 'text-gray-400'}>{s}</span>
+          <span className={i === current ? 'text-[var(--pku-red)]' : 'text-gray-400'}>{s}</span>
           {i < 2 && <span className="text-gray-300 mx-1">›</span>}
         </div>
       ))}
@@ -295,31 +295,31 @@ export default function OntologyCreateWizard() {
 
   if (step === 'select_mode') return (
     <div>
-      <button onClick={() => navigate('/ontologies')} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-black mb-6">
+      <button onClick={() => navigate('/ontologies')} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-[var(--pku-red)] mb-6">
         <ArrowLeft size={14} /> {t('ontology.back')}
       </button>
       <h2 className="text-xl font-semibold mb-2">新建本体</h2>
       <p className="text-sm text-gray-500 mb-8">选择构建方式</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
         <button onClick={() => { setMode('simple_llm'); setStep('fill_info') }}
-          className="group text-left p-6 rounded-xl border-2 transition-all hover:border-black hover:shadow-md border-gray-200">
+          className="group text-left p-6 rounded-xl border-2 transition-all hover:border-[var(--pku-red-action)] hover:shadow-md border-gray-200">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center"><Zap size={20} className="text-amber-600" /></div>
             <span className="font-semibold">简易 LLM 提取</span>
           </div>
           <p className="text-sm text-gray-600 mb-4">上传文件，选择模型和提示词，LLM 一键提取。</p>
           <ul className="text-xs text-gray-500 space-y-1"><li>✓ 快速原型验证</li><li>✓ 少量文档</li><li>✓ 探索性分析</li></ul>
-          <div className="mt-4 flex items-center gap-1 text-sm font-medium text-black">选择此方式 <ArrowRight size={14} /></div>
+          <div className="mt-4 flex items-center gap-1 text-sm font-medium text-[var(--pku-red)]">选择此方式 <ArrowRight size={14} /></div>
         </button>
         <button onClick={() => { setMode('pipeline_mapping'); setStep('fill_info') }}
-          className="group text-left p-6 rounded-xl border-2 transition-all hover:border-black hover:shadow-md border-gray-200">
+          className="group text-left p-6 rounded-xl border-2 transition-all hover:border-[var(--pku-red-action)] hover:shadow-md border-gray-200">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><GitBranch size={20} className="text-blue-600" /></div>
             <span className="font-semibold">数据管道映射</span>
           </div>
           <p className="text-sm text-gray-600 mb-4">从已审批的 Curated Datasets 映射生成本体。</p>
           <ul className="text-xs text-gray-500 space-y-1"><li>✓ 结构化/半结构化数据</li><li>✓ 精细化建模</li><li>✓ 企业级大规模数据</li></ul>
-          <div className="mt-4 flex items-center gap-1 text-sm font-medium text-black">选择此方式 <ArrowRight size={14} /></div>
+          <div className="mt-4 flex items-center gap-1 text-sm font-medium text-[var(--pku-red)]">选择此方式 <ArrowRight size={14} /></div>
         </button>
       </div>
     </div>
@@ -327,7 +327,7 @@ export default function OntologyCreateWizard() {
 
   if (step === 'fill_info') return (
     <div className="max-w-xl">
-      <button onClick={() => setStep('select_mode')} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-black mb-6">
+      <button onClick={() => setStep('select_mode')} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-[var(--pku-red)] mb-6">
         <ArrowLeft size={14} /> 返回选择方式
       </button>
       <h2 className="text-xl font-semibold mb-1">新建本体</h2>
@@ -353,7 +353,7 @@ export default function OntologyCreateWizard() {
         <div className="flex justify-between pt-2">
           <button onClick={() => setStep('select_mode')} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">上一步</button>
           <button onClick={() => createMut.mutate()} disabled={!name || createMut.isPending}
-            className="px-5 py-2 bg-black text-white rounded-lg text-sm disabled:opacity-40 flex items-center gap-2">
+            className="px-5 py-2 bg-[var(--pku-red-action)] text-white rounded-lg text-sm disabled:opacity-40 flex items-center gap-2 hover:bg-[var(--pku-red)]">
             {createMut.isPending && <Loader2 size={14} className="animate-spin" />}
             {mode === 'pipeline_mapping' ? '下一步' : '创建本体'}
           </button>
@@ -383,7 +383,7 @@ export default function OntologyCreateWizard() {
             )}
             <button
               onClick={() => setStep('approve_data')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--pku-red-action)] text-white text-sm rounded-lg hover:bg-[var(--pku-red)]"
             >
               <CheckCircle size={14} /> 前往审批结构化数据
             </button>
@@ -431,7 +431,7 @@ export default function OntologyCreateWizard() {
                       <th className="w-8 px-3 py-2">
                         <button onClick={toggleSelectAll} className="flex items-center justify-center mx-auto">
                           {allFilteredSelected
-                            ? <CheckSquare size={14} className="text-black" />
+                            ? <CheckSquare size={14} className="text-[var(--pku-red)]" />
                             : <Square size={14} className="text-gray-300" />}
                         </button>
                       </th>
@@ -453,7 +453,7 @@ export default function OntologyCreateWizard() {
                         >
                           <td className="px-3 py-2.5 text-center">
                             {selected
-                              ? <CheckSquare size={14} className="text-black mx-auto" />
+                              ? <CheckSquare size={14} className="text-[var(--pku-red)] mx-auto" />
                               : <Square size={14} className="text-gray-300 mx-auto" />}
                           </td>
                           <td className="px-3 py-2.5 font-mono text-gray-400" title={row.pipelineId}>
@@ -482,7 +482,7 @@ export default function OntologyCreateWizard() {
           <button
             onClick={handleGetSuggestions}
             disabled={selectedDatasetIds.size === 0 || suggestionsLoading}
-            className="px-5 py-2 bg-black text-white rounded-lg text-sm disabled:opacity-40 flex items-center gap-2"
+            className="px-5 py-2 bg-[var(--pku-red-action)] text-white rounded-lg text-sm disabled:opacity-40 flex items-center gap-2 hover:bg-[var(--pku-red)]"
           >
             {suggestionsLoading && <Loader2 size={14} className="animate-spin" />}
             下一步：映射配置
@@ -496,7 +496,7 @@ export default function OntologyCreateWizard() {
     <div>
       <button
         onClick={() => { loadDatasets(); setStep('select_datasets') }}
-        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-black mb-5"
+        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-[var(--pku-red)] mb-5"
       >
         <ArrowLeft size={14} /> 返回选择数据集
       </button>
@@ -562,7 +562,7 @@ export default function OntologyCreateWizard() {
       <div className="mt-4 flex justify-end">
         <button
           onClick={() => { loadDatasets(); setStep('select_datasets') }}
-          className="px-5 py-2 bg-black text-white rounded-lg text-sm flex items-center gap-2"
+          className="px-5 py-2 bg-[var(--pku-red-action)] text-white rounded-lg text-sm flex items-center gap-2 hover:bg-[var(--pku-red)]"
         >
           <ArrowLeft size={14} /> 返回选择数据集
         </button>
@@ -628,7 +628,7 @@ export default function OntologyCreateWizard() {
           <button onClick={() => setStep('select_datasets')} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">
             <ArrowLeft size={14} className="inline mr-1" /> 上一步
           </button>
-          <button onClick={handleStartBuild} className="px-6 py-2 bg-black text-white rounded-lg text-sm flex items-center gap-2 hover:bg-gray-800">
+          <button onClick={handleStartBuild} className="px-6 py-2 bg-[var(--pku-red-action)] text-white rounded-lg text-sm flex items-center gap-2 hover:bg-[var(--pku-red)]">
             <Zap size={14} /> 开始构建
           </button>
         </div>
@@ -645,7 +645,7 @@ export default function OntologyCreateWizard() {
         <div className="mb-6">
           <div className="flex justify-between text-xs text-gray-500 mb-1"><span>进度</span><span>{pct}%</span></div>
           <div className="w-full bg-gray-100 rounded-full h-2.5">
-            <div className="bg-black h-2.5 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+            <div className="bg-[var(--pku-red-action)] h-2.5 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
           </div>
         </div>
         <div className="space-y-2">
@@ -695,7 +695,7 @@ export default function OntologyCreateWizard() {
             )}
             <button
               onClick={() => navigate(`/ontologies/${createdOntologyId}`)}
-              className="w-full px-4 py-2.5 bg-black text-white rounded-lg text-sm font-medium hover:bg-gray-800 flex items-center justify-center gap-2"
+              className="w-full px-4 py-2.5 bg-[var(--pku-red-action)] text-white rounded-lg text-sm font-medium hover:bg-[var(--pku-red)] flex items-center justify-center gap-2"
             >
               进入本体详情 <ArrowRight size={14} />
             </button>

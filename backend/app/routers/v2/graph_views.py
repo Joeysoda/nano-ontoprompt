@@ -9,11 +9,11 @@ from pydantic import Field, StringConstraints
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user, get_db
-from app.models.ontology import OntologyProject
 from app.models.v2.graph_view import GraphView, GraphViewVersion
 from app.routers.v2.object_sets import http_error
 from app.schemas.v2.object_query import ObjectSetExpr, StrictModel
 from app.schemas.v2.object_set import ObjectSetDefinition
+from app.services.v2.object_query.authorization import require_ontology_access
 from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.object_query.metadata import load_sql_metadata
 from app.services.v2.object_query.normalize import stable_hash
@@ -49,10 +49,11 @@ class SaveVersion(StrictModel):
     comment: str = Field(default="", max_length=2000)
 
 
-def _authorize(ontology_id: str, db: Session, user) -> None:
-    item = db.get(OntologyProject, ontology_id)
-    if item is None or (user.role != "admin" and item.created_by != user.id):
-        raise HTTPException(status_code=404, detail="Ontology not found or inaccessible")
+def _authorize(ontology_id: str, db: Session, user):
+    try:
+        return require_ontology_access(db, ontology_id, str(user.id), user.role)
+    except ObjectQueryError as exc:
+        raise HTTPException(status_code=404, detail="Ontology not found or inaccessible") from exc
 
 
 def _validated(db, ontology_id, user, definition: GraphDefinition) -> dict:

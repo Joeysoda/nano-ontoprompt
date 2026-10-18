@@ -25,18 +25,63 @@ def get_db():
         db.close()
 
 
+def _dataset_storage_ready(db: Session, dataset: Dataset) -> bool:
+    """Do not advertise a dataset whose backing object was lost.
+
+    The database and MinIO use separate volumes.  A fresh object-storage
+    volume can therefore leave perfectly valid metadata pointing at a missing
+    object.  History and the integrity endpoint still expose those records so
+    an operator can repair them, but normal source pickers must not offer a
+    guaranteed-to-fail preview/build action.
+    """
+    version = None
+    if dataset.latest_version_id:
+        version = db.query(DatasetVersion).filter(DatasetVersion.id == dataset.latest_version_id).first()
+    if version is None:
+        version = db.query(DatasetVersion).filter(
+            DatasetVersion.dataset_id == dataset.id
+        ).order_by(DatasetVersion.version_no.desc()).first()
+    if not version or not version.storage_uri:
+        return False
+    storage = get_storage_service()
+    try:
+        if not storage.object_exists(version.storage_uri):
+            return False
+        media_items = db.query(MediaItem).filter(MediaItem.dataset_version_id == version.id).all()
+        return all(storage.object_exists(item.storage_uri) for item in media_items)
+    except Exception:
+        return False
+
+
 @data_sources_router.get("/data-sources")
 def unified_data_sources(include_history: bool = Query(False), db: Session = Depends(get_db)):
     """One source directory for the three construction entry points."""
+    cmapss_demo = db.query(Dataset).filter(
+        Dataset.name.ilike("%C-MAPSS FD001%"), Dataset.data_class == "regular"
+    ).first()
+    factorynet_demo = db.query(Dataset).filter(
+        Dataset.name.ilike("%FactoryNet%"), Dataset.data_class == "temporal"
+    ).first()
+    ibadas_demo = db.query(Dataset).filter(
+        Dataset.name.ilike("%I-BADAS%"), Dataset.data_class == "multimodal",
+        Dataset.readiness == "ready",
+    ).first()
     cases = [
-        {"id": "cmapss_fd001_regular_subset", "name": "NASA C-MAPSS FD001", "data_class": "regular", "input": ["equipment", "sensor_readings", "100 条下采样读数"], "installed": bool(db.query(Dataset.id).filter(Dataset.name.ilike("%C-MAPSS FD001%"), Dataset.data_class == "regular").first())},
-        {"id": "factorynet_cnc", "name": "FactoryNet CNC", "data_class": "temporal", "input": ["Parquet"], "installed": bool(db.query(Dataset.id).filter(Dataset.name.ilike("%FactoryNet%"), Dataset.data_class == "temporal").first())},
-        {"id": "ibadas_12_demo", "name": "I-BADAS RGB-D 12 组", "data_class": "multimodal", "input": ["ZIP + manifest", "RGB", "depth", "mask", "point cloud"], "installed": bool(db.query(Dataset.id).filter(Dataset.name.ilike("%I-BADAS%"), Dataset.data_class == "multimodal", Dataset.readiness == "ready").first())},
+        {"id": "cmapss_fd001_regular_subset", "name": "NASA C-MAPSS FD001", "data_class": "regular", "input": ["equipment", "sensor_readings", "100 条下采样读数"], "installed": _dataset_storage_ready(db, cmapss_demo) if cmapss_demo else False},
+        {"id": "factorynet_cnc", "name": "FactoryNet CNC", "data_class": "temporal", "input": ["Parquet"], "installed": _dataset_storage_ready(db, factorynet_demo) if factorynet_demo else False},
+        {"id": "ibadas_12_demo", "name": "I-BADAS RGB-D 12 组", "data_class": "multimodal", "input": ["ZIP + manifest", "RGB", "depth", "mask", "point cloud"], "installed": _dataset_storage_ready(db, ibadas_demo) if ibadas_demo else False},
     ]
     query = db.query(Dataset)
     if not include_history:
         query = query.filter(Dataset.readiness.in_([None, "ready"]))
-        datasets = [item for item in query.order_by(Dataset.created_at.desc()).all() if not bool((item.schema_json or {}).get("technical")) and not any(token in item.name.lower() for token in ("_pipeline", " curated", "test"))]
+        datasets = [
+            item for item in query.order_by(Dataset.created_at.desc()).all()
+            if _dataset_storage_ready(db, item)
+            and not bool((item.schema_json or {}).get("technical"))
+            and item.name not in {"sensor_readings", "equipment"}
+            and not bool((item.schema_json or {}).get("cmapss_role"))
+            and not any(token in item.name.lower() for token in ("_pipeline", " curated", "test"))
+        ]
     else:
         datasets = query.order_by(Dataset.created_at.desc()).all()
     return {"cases": cases, "datasets": [{"id": item.id, "name": item.name, "data_class": item.data_class, "privacy_level": item.privacy_level, "readiness": item.readiness, "latest_version_id": item.latest_version_id} for item in datasets], "connections": [{"id": item.id, "name": item.name, "kind": item.kind, "status": item.status} for item in db.query(Connection).order_by(Connection.created_at.desc()).all()]}
@@ -163,7 +208,15 @@ def list_datasets(kind: str | None = None, include_history: bool = Query(False),
     svc = DatasetService(db)
     items = svc.list_datasets(kind=kind)
     if not include_history:
-        items = [item for item in items if (getattr(item, "readiness", None) in {None, "ready"}) and not bool((item.schema_json or {}).get("technical")) and not any(token in item.name.lower() for token in ("_pipeline", " curated", "test"))]
+        items = [
+            item for item in items
+            if getattr(item, "readiness", None) in {None, "ready"}
+            and _dataset_storage_ready(db, item)
+            and not bool((item.schema_json or {}).get("technical"))
+            and item.name not in {"sensor_readings", "equipment"}
+            and not bool((item.schema_json or {}).get("cmapss_role"))
+            and not any(token in item.name.lower() for token in ("_pipeline", " curated", "test"))
+        ]
     result = []
     for dataset in items:
         versions = svc.list_versions(dataset.id)

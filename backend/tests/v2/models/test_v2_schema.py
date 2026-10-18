@@ -119,6 +119,7 @@ def test_all_v2_tables_registered():
         "v2_temporal_replay_batches",
         "v2_temporal_stream_events",
         "v2_temporal_facts",
+        "v2_time_series_syncs",
         "v2_data_model_snapshots",
         "v2_semantic_resources",
         "v2_semantic_resource_versions",

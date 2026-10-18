@@ -403,3 +403,27 @@ def test_live_snapshot_schedule_uses_builder(client, auth_headers, db, admin_use
     assert run_due(db, reader=reader, at=at)[0]["status"] == "failed"  # no builder -> explicit failure
     result = run_due(db, reader=reader, live_view_builder=builder, at=at.replace(hour=1))
     assert built and built[0][:2] == (ontology.id, admin_user.id) and result[0]["data_view_id"] == built[0][2]
+
+
+def test_alert_evidence_is_redacted_for_the_viewer(client, auth_headers, db, admin_user, ontology):
+    """Plan A field policy: a viewer without access to `line`/`temp_series` sees the alert, not those values."""
+    from app.models.v2.security import OntologySecurityPolicy
+    editor = User(id=str(uuid.uuid4()), username="viewer", email="v@test.com", password_hash=hash_password("viewer123"), role="editor")
+    db.add(editor)
+    db.add(OntologySecurityPolicy(ontology_id=ontology.id, name="viewer machines without line", subject_kind="user", subject_id=editor.id,
+                                  effect="allow", scope_kind="object_type", scope_id="Machine", conditions_json=[],
+                                  field_allowlist_json=["status"], created_by=admin_user.id))
+    db.commit()
+    rule_id = create_and_approve(client, auth_headers, ontology, series_logic())
+    evaluate(client, auth_headers, ontology, rule_id, make_view(db, ontology, admin_user, {"m1": {"temp_series": "s1", "line": "L1"}}, {"s1": [1, 5, 5]}))
+    owner_view = client.get(f"{base_url(ontology)}/alerts", headers=auth_headers).json()["alerts"][0]
+    assert owner_view["evidence"]["evidence"] == {"line": "L1"} and owner_view["evidence"]["peak"] == 5.0
+    token = client.post("/api/v1/auth/login", json={"username": "viewer", "password": "viewer123"}).json()["data"]["access_token"]
+    viewer = {"Authorization": f"Bearer {token}"}
+    listed = client.get(f"{base_url(ontology)}/alerts", headers=viewer)
+    assert listed.status_code == 200, listed.text
+    alert = listed.json()["alerts"][0]
+    assert alert["evidence"]["evidence"] == {"line": None}
+    assert "peak" not in alert["evidence"] and "series_id" not in alert["evidence"]  # derived from a masked TSP
+    detail = client.get(f"{base_url(ontology)}/alerts/{alert['id']}", headers=viewer).json()["alert"]
+    assert detail["evidence"]["evidence"] == {"line": None}

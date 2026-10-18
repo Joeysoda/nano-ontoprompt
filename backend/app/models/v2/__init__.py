@@ -15,6 +15,7 @@ from app.models.v2.security import OntologySecurityPolicy
 from app.models.v2.schema_migration import SchemaDependency, SchemaMigrationInstruction, SchemaMigrationPlan, SchemaMigrationRun
 from app.models.v2.scenario_study import CaseDefinition, RunPlan, StudyDefinition, StudyVersion
 from app.models.v2.rule_runtime import RuleAlert, RuleAlertEvent, RuleEvaluation, RuleProposal, RuleResource, RuleVersion
+from app.models.v2.time_series import TimeSeriesSync
 
 __all__ = [
     "OntologyChange",
@@ -43,4 +44,5 @@ __all__ = [
     "RuleEvaluation",
     "RuleAlert",
     "RuleAlertEvent",
+    "TimeSeriesSync",
 ]

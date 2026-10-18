@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.deps import get_current_user, get_db, require_editor
 from app.models.user import User
 from app.services.v2.authorization_service import AuthorizationContext, AuthorizationError, redact_link_record, resolve_projection
+from app.services.v2.object_query.authorization import policies_from_projection, require_ontology_access
+from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.dynamic_ontology_service import impact_for_change
 from app.services.v2.semantic_core_service import SemanticCoreError, apply_semantic_change, semantic_change_impact as canonical_change_impact, semantic_schema
 from app.schemas.v2.semantic_core import SemanticChangeRequest, SemanticSchemaContract
@@ -25,6 +27,16 @@ def _raise(exc: Exception) -> None:
 
 def _filter_semantic_schema(db: Session, ontology_id: str, user: User, schema: dict) -> dict:
     """Return only schema resources authorized by one batched projection."""
+    try:
+        access = require_ontology_access(
+            db,
+            ontology_id,
+            str(user.id),
+            user.role,
+            metadata_revision_id=schema.get("revision_id"),
+        )
+    except ObjectQueryError as exc:
+        raise SemanticCoreError("NOT_FOUND", "本体不存在或当前用户无权访问") from exc
     resources = schema.get("resources") or {}
     object_types = list(resources.get("object_type") or [])
     properties = list(resources.get("property") or [])
@@ -49,6 +61,7 @@ def _filter_semantic_schema(db: Session, ontology_id: str, user: User, schema: d
             principal_role=user.role,
             metadata_revision_id=schema.get("revision_id"),
         ),
+        preloaded_policies=policies_from_projection(access),
         records=type_records,
     )
     if projection.unrestricted:

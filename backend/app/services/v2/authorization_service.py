@@ -76,6 +76,17 @@ class AuthorizationProjection:
             and self.allowed_fields is None
             and not self.denied_fields
             and not self.denied_fields_by_object
+            # A broad allow is still not unrestricted when a conditional
+            # object/field/link policy may change what this particular row
+            # can reveal.  This guard is what makes redaction safe for
+            # adapters (search, SQL fallbacks, exports) that do not
+            # materialize the whole object set before returning a result.
+            and not self.object_allow_policies
+            and not self.object_deny_policies
+            and not self.field_allow_policies
+            and not self.field_deny_policies
+            and not self.link_allow_policies
+            and not self.link_deny_policies
         )
 
 
@@ -236,6 +247,10 @@ def _policy_digest(policies: Iterable[OntologySecurityPolicy], context: Authoriz
                 "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                 "effect": row.effect,
                 "scope": [row.scope_kind, row.scope_id],
+                "subject": [row.subject_kind, row.subject_id],
+                "priority": row.priority,
+                "revision_id": row.revision_id,
+                "enabled": bool(row.enabled),
                 "conditions": row.conditions_json or [],
                 "fields": row.field_allowlist_json or [],
             }
@@ -385,7 +400,13 @@ def resolve_projection(
                 denied_fields_by_object[object_id] = field_denies
             if matching_allow and not object_denies:
                 visible_ids.add(object_id)
-        allowed = allowed and bool(visible_ids or not records_list)
+        # A principal can have a valid object-scope grant while the current
+        # snapshot legitimately contains zero matching rows (for example a
+        # department or time-window condition).  Keep that as an authorized
+        # empty result; callers must not turn a legal empty set into a 403.
+        # ``allowed`` remains false only when no object/ontology allow exists
+        # at all, preserving default deny for ordinary principals.
+        allowed = bool(allow)
     projection = AuthorizationProjection(
         context=context, allowed=allowed, visible_object_ids=visible_ids,
         allowed_fields=allowed_fields, allowed_fields_by_object=allowed_fields_by_object,
@@ -513,7 +534,19 @@ def redact_link_record(
         if _scope_matches(policy, None, record, context, projection.resource_aliases, projection.resource_ids_by_api_name)
         and conditions_match(record, policy.conditions_json, projection.resource_aliases)
     ]
-    allows = [policy for policy in scoped if str(policy.effect).lower() == "allow"]
+    # An explicit ontology-wide allow is a complete read projection for the
+    # ontology, not merely permission to enumerate its object types. Treat a
+    # broad ontology allow as a link allow too; otherwise a viewer can see all
+    # entity cards while every relation silently disappears because link
+    # policies are otherwise default-deny. Narrow object/property allows do
+    # not enter this fallback and therefore remain fail-closed.
+    ontology_allows = [
+        policy for policy in projection.object_allow_policies
+        if policy.scope_kind == "ontology"
+        and not _policy_field_names(policy, projection.resource_aliases)
+        and conditions_match(record, policy.conditions_json, projection.resource_aliases)
+    ]
+    allows = [*ontology_allows, *[policy for policy in scoped if str(policy.effect).lower() == "allow"]]
     denies = [policy for policy in scoped if str(policy.effect).lower() == "deny"]
     if any(not _policy_field_names(policy, projection.resource_aliases) for policy in denies):
         return None

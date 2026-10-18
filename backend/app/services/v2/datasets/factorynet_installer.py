@@ -32,15 +32,7 @@ def find_factorynet_dataset(db: Session) -> Dataset | None:
     return next((dataset for dataset in db.query(Dataset).all() if (dataset.schema_json or {}).get("source_id") == FACTORYNET_SOURCE_ID), None)
 
 
-def install_factorynet_dataset(db: Session) -> dict:
-    existing = find_factorynet_dataset(db)
-    if existing and existing.latest_version_id:
-        version = db.query(DatasetVersion).filter(DatasetVersion.id == existing.latest_version_id).first()
-        manifest = dict(existing.schema_json or {})
-        return {"id": FACTORYNET_SOURCE_ID, "dataset_id": existing.id, "version_id": version.id if version else None,
-                "installed": True, "records": version.rowcount if version else manifest.get("records"),
-                "columns": manifest.get("columns", []), "manifest": manifest, "reused": True}
-
+def _download_factorynet() -> tuple[bytes, int, list[str], int, str]:
     request = urllib.request.Request(FACTORYNET_URL, headers={"User-Agent": "Nano-OntoPrompt temporal demo"})
     with urllib.request.urlopen(request, timeout=120) as response:
         raw = response.read()
@@ -50,6 +42,41 @@ def install_factorynet_dataset(db: Session) -> dict:
     records, columns, row_groups = _parquet_summary(raw)
     if records <= 0 or not columns:
         raise ValueError("FactoryNet 文件为空或没有列")
+    return raw, records, columns, row_groups, digest
+
+
+def install_factorynet_dataset(db: Session) -> dict:
+    existing = find_factorynet_dataset(db)
+    if existing and existing.latest_version_id:
+        version = db.query(DatasetVersion).filter(DatasetVersion.id == existing.latest_version_id).first()
+        manifest = dict(existing.schema_json or {})
+        if version and version.storage_uri and get_storage_service().object_exists(version.storage_uri):
+            return {"id": FACTORYNET_SOURCE_ID, "dataset_id": existing.id, "version_id": version.id,
+                    "installed": True, "records": version.rowcount if version else manifest.get("records"),
+                    "columns": manifest.get("columns", []), "manifest": manifest, "reused": True}
+        if version:
+            raw, records, columns, row_groups, digest = _download_factorynet()
+            uri = get_storage_service().put_bytes(
+                "raw-datasets", f"datasets/{existing.id}/v{version.version_no}/data.bin", raw,
+                content_type="application/octet-stream",
+            )
+            version.storage_uri = uri
+            version.rowcount = records
+            version.checksum = digest
+            existing.readiness = "ready"
+            manifest.update({
+                "source_id": FACTORYNET_SOURCE_ID, "source_url": FACTORYNET_URL,
+                "filename": FACTORYNET_FILE, "format": "parquet", "sha256": digest,
+                "records": records, "columns": columns, "row_groups": row_groups,
+                "temporal_source": True, "storage_recovery": "repaired_from_pinned_factorynet_source",
+            })
+            existing.schema_json = manifest
+            db.commit()
+            return {"id": FACTORYNET_SOURCE_ID, "dataset_id": existing.id, "version_id": version.id,
+                    "installed": True, "records": records, "columns": columns,
+                    "manifest": manifest, "reused": True, "repaired": True}
+
+    raw, records, columns, row_groups, digest = _download_factorynet()
 
     svc = DatasetService(db)
     dataset = svc.create_dataset(

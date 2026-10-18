@@ -200,9 +200,9 @@ if [[ "$SEED_DEMO" == true ]]; then
   echo "导入公开 frePPLe 演示数据（幂等操作，不覆盖其他本体）……"
   "${COMPOSE[@]}" cp data/frepple_demo/manufacturing_demo.json backend:/tmp/manufacturing_demo.json
   "${COMPOSE[@]}" cp scripts/import_frepple_demo.py backend:/tmp/import_frepple_demo.py
-  "${COMPOSE[@]}" exec -T backend python /tmp/import_frepple_demo.py /tmp/manufacturing_demo.json
+  "${COMPOSE[@]}" exec -T -e PYTHONPATH=/app backend python /tmp/import_frepple_demo.py /tmp/manufacturing_demo.json
   "${COMPOSE[@]}" cp scripts/verify_frepple_demo.py backend:/tmp/verify_frepple_demo.py
-  "${COMPOSE[@]}" exec -T backend python /tmp/verify_frepple_demo.py /tmp/manufacturing_demo.json
+  "${COMPOSE[@]}" exec -T -e PYTHONPATH=/app backend python /tmp/verify_frepple_demo.py /tmp/manufacturing_demo.json
 fi
 
 echo

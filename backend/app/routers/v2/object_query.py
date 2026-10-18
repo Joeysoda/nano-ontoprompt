@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_editor
 from app.models.ontology import OntologyProject
 from app.schemas.v2.object_query import (
     AggregateObjectSetRequest,
@@ -15,6 +15,8 @@ from app.schemas.v2.object_query import (
 from app.schemas.v2.object_set import ObjectSetDefinition
 from app.services.v2.graph.falkordb_service import FalkorDBService
 from app.services.v2.object_query.core import QueryCore, QueryPolicy, FalkorReadAdapter
+from app.services.v2.object_query.authorization import build_query_policy, policies_from_projection, require_ontology_access
+from app.services.v2.authorization_service import redact_link_record, redact_record, resolve_projection
 from app.services.v2.object_query.resources import ResourceService
 from app.routers.v2.object_sets import http_error
 from app.services.v2.object_query.capabilities import capability_payload
@@ -33,7 +35,7 @@ import os
 router = APIRouter()
 
 
-def _validate_request(ontology_id: str, request: LoadObjectSetRequest, db: Session, user):
+def _validate_request(ontology_id: str, request: LoadObjectSetRequest, db: Session, user, *, authorization_projection=None):
     if request.context.ontology_id != ontology_id:
         raise ObjectQueryError("ontology_context_mismatch", "context.ontology_id", "Path ontology and execution context ontology must match")
     try:
@@ -41,7 +43,13 @@ def _validate_request(ontology_id: str, request: LoadObjectSetRequest, db: Sessi
     except ScenarioError as exc:
         raise ObjectQueryError(exc.code, exc.path, exc.message) from exc
     metadata = load_sql_metadata(db, ontology_id)
-    resource_service = ResourceService(db, ontology_id, user, metadata)
+    resource_service = ResourceService(
+        db,
+        ontology_id,
+        user,
+        metadata,
+        authorization_projection=authorization_projection,
+    )
     definition = ObjectSetDefinition(
         expression=request.expression,
         parameter_schema=request.parameter_schema,
@@ -60,22 +68,116 @@ def _validate_request(ontology_id: str, request: LoadObjectSetRequest, db: Sessi
     )
 
 
-def _authorize(ontology_id: str, db: Session, user) -> None:
-    item = db.get(OntologyProject, ontology_id)
-    if item is None or (user.role != "admin" and item.created_by != user.id):
-        raise HTTPException(status_code=404, detail="Ontology not found or inaccessible")
+def _authorize(ontology_id: str, db: Session, user, *, metadata_revision_id: str | None = None):
+    try:
+        return require_ontology_access(
+            db,
+            ontology_id,
+            str(user.id),
+            user.role,
+            metadata_revision_id=metadata_revision_id,
+        )
+    except ObjectQueryError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "NOT_FOUND",
+                "message": "Ontology not found or inaccessible",
+                "next_action": "检查 ontology_id 或访问策略",
+            },
+        ) from exc
+
+
+def _query_policy(
+    db: Session,
+    ontology_id: str,
+    user,
+    *,
+    metadata_revision_id: str | None = None,
+    requested_fields: tuple[str, ...] = (),
+    access_projection=None,
+) -> QueryPolicy:
+    return build_query_policy(
+        db,
+        ontology_id,
+        str(user.id),
+        user.role,
+        metadata_revision_id=metadata_revision_id,
+        requested_fields=requested_fields,
+        preloaded_policies=policies_from_projection(access_projection) if access_projection is not None else None,
+    )
 
 
 def get_falkordb() -> FalkorDBService:
     return FalkorDBService()
 
 
+def _pin_context_to_view(context, view, revision_id: str | None = None):
+    """Copy the immutable view manifest into the request-scoped context."""
+    return context.model_copy(update={
+        "metadata_digest": context.metadata_digest or view.metadata_digest,
+        "projection_token": context.projection_token or view.source_manifest_digest,
+        "revision_id": context.revision_id or revision_id,
+    })
+
+
 @router.get("/{ontology_id}/object-query/catalog")
 def query_catalog(ontology_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    _authorize(ontology_id, db, user)
+    access = _authorize(ontology_id, db, user)
     from app.services.v2.object_query.core import metadata_digest
     metadata = load_sql_metadata(db, ontology_id)
-    return metadata.catalog() | {"metadata_digest": metadata_digest(metadata)}
+    catalog = metadata.catalog()
+    # Metadata is itself a data-plane read.  Build one synthetic record per
+    # object type so the same object/field projection used by Query Core can
+    # hide unauthorized types and properties before the catalog reaches the
+    # client.  No policy table is read again: the ontology decision already
+    # carries the request's applicable policy rows.
+    type_records = [
+        {
+            "id": str(item["api_name"]),
+            "entity_type": str(item["api_name"]),
+            "properties": {str(prop["api_name"]): None for prop in item.get("properties", [])},
+        }
+        for item in catalog.get("types", [])
+    ]
+    catalog_projection = resolve_projection(
+        db,
+        access.context,
+        preloaded_policies=policies_from_projection(access),
+        records=type_records,
+    )
+    visible_types: list[dict] = []
+    visible_type_names: set[str] = set()
+    for item, record in zip(catalog.get("types", []), type_records):
+        safe = redact_record(catalog_projection, record)
+        if safe is None:
+            continue
+        object_id = str(record["id"])
+        allowed = catalog_projection.allowed_fields_by_object.get(object_id, catalog_projection.allowed_fields)
+        denied = catalog_projection.denied_fields | catalog_projection.denied_fields_by_object.get(object_id, set())
+        properties = [
+            prop for prop in item.get("properties", [])
+            if allowed is None or (str(prop["api_name"]) in allowed and str(prop["api_name"]) not in denied)
+        ]
+        visible_types.append({**item, "properties": properties})
+        visible_type_names.add(str(item["api_name"]))
+    visible_links: list[dict] = []
+    for link in catalog.get("links", []):
+        if link.get("source_type") not in visible_type_names or link.get("target_type") not in visible_type_names:
+            continue
+        safe_link = redact_link_record(
+            catalog_projection,
+            {
+                "id": f"link:{link.get('api_name')}",
+                "link_type_id": link.get("api_name"),
+                "relation_type": link.get("api_name"),
+                "properties": {},
+            },
+            link_type_id=str(link.get("api_name") or ""),
+        )
+        if safe_link is not None:
+            visible_links.append(link)
+    return {"types": visible_types, "links": visible_links, "metadata_digest": metadata_digest(metadata)}
 
 
 @router.get("/{ontology_id}/object-sets/capabilities")
@@ -96,7 +198,7 @@ def load_object_set(
     user=Depends(get_current_user),
     graph_service: FalkorDBService = Depends(get_falkordb),
 ) -> LoadObjectSetResponse:
-    _authorize(ontology_id, db, user)
+    access = _authorize(ontology_id, db, user)
     request = request.model_copy(update={"context": resolve_scenario_context(db, request.context, ontology_id, user)})
     if request.context.ontology_id != ontology_id:
         raise HTTPException(
@@ -120,8 +222,13 @@ def load_object_set(
             graph_ontology_id = view.graph_key
             if request.context.metadata_digest and request.context.metadata_digest != view.metadata_digest:
                 raise ObjectQueryError("metadata_mismatch", "context.metadata_digest", "Data view metadata has changed")
-        core = QueryCore(metadata, FalkorReadAdapter(graph, graph_ontology_id=graph_ontology_id), QueryPolicy(principal=user.id))
-        return core.load(request, ResourceService(db, ontology_id, user, metadata))
+            request = request.model_copy(update={"context": _pin_context_to_view(request.context, view, access.context.metadata_revision_id)})
+        core = QueryCore(
+            metadata,
+            FalkorReadAdapter(graph, graph_ontology_id=graph_ontology_id),
+            _query_policy(db, ontology_id, user, metadata_revision_id=request.context.revision_id, access_projection=access),
+        )
+        return core.load(request, ResourceService(db, ontology_id, user, metadata, authorization_projection=access))
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
 
@@ -133,9 +240,9 @@ def validate_object_query(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ) -> ValidateObjectQueryResponse:
-    _authorize(ontology_id, db, user)
+    access = _authorize(ontology_id, db, user)
     try:
-        return _validate_request(ontology_id, request, db, user)
+        return _validate_request(ontology_id, request, db, user, authorization_projection=access)
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
 
@@ -153,7 +260,7 @@ def load_object_query(
 
 @router.post("/{ontology_id}/object-query/aggregate", response_model=AggregateResult)
 def aggregate_object_query(ontology_id: str, request: AggregateObjectSetRequest, db: Session = Depends(get_db), user=Depends(get_current_user), graph_service: FalkorDBService = Depends(get_falkordb)):
-    _authorize(ontology_id, db, user)
+    access = _authorize(ontology_id, db, user)
     try:
         request = request.model_copy(update={"context": resolve_scenario_context(db, request.context, ontology_id, user)})
         if not request.context.data_view_id:
@@ -162,16 +269,21 @@ def aggregate_object_query(ontology_id: str, request: AggregateObjectSetRequest,
             raise ObjectQueryError("graph_unavailable", "execution", "FalkorDB is unavailable")
         metadata = load_sql_metadata(db, ontology_id)
         view = require_ready(db, request.context.data_view_id, ontology_id, principal_id=user.id, is_admin=user.role == "admin")
+        request = request.model_copy(update={"context": _pin_context_to_view(request.context, view, access.context.metadata_revision_id)})
         graph = graph_service._graph(view.graph_key)
-        core = QueryCore(metadata, FalkorReadAdapter(graph, graph_ontology_id=view.graph_key), QueryPolicy(principal=user.id))
-        return core.aggregate(request, ResourceService(db, ontology_id, user, metadata))
+        core = QueryCore(
+            metadata,
+            FalkorReadAdapter(graph, graph_ontology_id=view.graph_key),
+            _query_policy(db, ontology_id, user, metadata_revision_id=request.context.revision_id, access_projection=access),
+        )
+        return core.aggregate(request, ResourceService(db, ontology_id, user, metadata, authorization_projection=access))
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
 
 
 @router.post("/{ontology_id}/object-query/compare", response_model=CompareResult)
 def compare_object_query(ontology_id: str, request: CompareObjectSetRequest, db: Session = Depends(get_db), user=Depends(get_current_user), graph_service: FalkorDBService = Depends(get_falkordb)):
-    _authorize(ontology_id, db, user)
+    access = _authorize(ontology_id, db, user)
     try:
         request = request.model_copy(update={"baseline_context": resolve_scenario_context(db, request.baseline_context, ontology_id, user), "candidate_context": resolve_scenario_context(db, request.candidate_context, ontology_id, user)})
     except ScenarioError as exc:
@@ -185,10 +297,21 @@ def compare_object_query(ontology_id: str, request: CompareObjectSetRequest, db:
     try:
         metadata = load_sql_metadata(db, ontology_id)
         views = [require_ready(db, ctx.data_view_id, ontology_id, principal_id=user.id, is_admin=user.role == "admin") for ctx in (request.baseline_context, request.candidate_context)]
-        resolver = ResourceService(db, ontology_id, user, metadata)
+        resolver = ResourceService(
+            db,
+            ontology_id,
+            user,
+            metadata,
+            authorization_projection=access,
+        )
         def load_for(view, context):
+            context = _pin_context_to_view(context, view, access.context.metadata_revision_id)
             graph = graph_service._graph(view.graph_key)
-            core = QueryCore(metadata, FalkorReadAdapter(graph, graph_ontology_id=view.graph_key), QueryPolicy(principal=user.id))
+            core = QueryCore(
+                metadata,
+                FalkorReadAdapter(graph, graph_ontology_id=view.graph_key),
+                _query_policy(db, ontology_id, user, metadata_revision_id=context.revision_id, access_projection=access),
+            )
             read = ReadOptions(select=request.select, page_size=200)
             load = LoadObjectSetRequest(expression=request.expression, parameter_schema=request.parameter_schema,
                 parameters=request.parameters, read=read, context=context)
@@ -202,15 +325,39 @@ def compare_object_query(ontology_id: str, request: CompareObjectSetRequest, db:
         retained = [{"object_type": key[0], "object_id": key[1], "baseline": base_map[key].properties, "candidate": cand_map[key].properties}
                     for key in sorted(base_map.keys() & cand_map.keys())]
         return CompareResult(mode=request.mode, added=added, removed=removed, retained=retained,
-            baseline_execution_hash=base_last.execution_hash, candidate_execution_hash=cand_last.execution_hash)
+            baseline_execution_hash=base_last.execution_hash, candidate_execution_hash=cand_last.execution_hash,
+            result_manifests=[item for item in (base_last.result_manifest, cand_last.result_manifest) if item is not None])
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
+
+
+def _induced_edges(access, snapshot, keys):
+    """Edges between visible members, each passed through the link projection."""
+    edges = []
+    for source, relation, target in snapshot.edges:
+        if source not in keys or target not in keys:
+            continue
+        safe_link = redact_link_record(
+            access,
+            {
+                "id": f"{relation}:{source[0]}:{source[1]}:{target[0]}:{target[1]}",
+                "source": {"object_type": source[0], "object_id": source[1]},
+                "target": {"object_type": target[0], "object_id": target[1]},
+                "relation_type": relation,
+                "link_type_id": relation,
+                "properties": {},
+            },
+            link_type_id=str(relation),
+        )
+        if safe_link is not None:
+            edges.append({"source": safe_link["source"], "target": safe_link["target"], "relation_type": safe_link["relation_type"]})
+    return edges
 
 
 @router.post("/{ontology_id}/object-query/graph:multi")
 def graph_multi_set(ontology_id: str, request: MultiSetGraphRequest, db: Session = Depends(get_db), user=Depends(get_current_user), graph_service: FalkorDBService = Depends(get_falkordb)):
     """Induced graph over the union of several typed Object Sets (Vertex Search Around)."""
-    _authorize(ontology_id, db, user)
+    access = _authorize(ontology_id, db, user)
     try:
         if request.context.ontology_id != ontology_id:
             raise ObjectQueryError("ontology_context_mismatch", "context.ontology_id", "Path ontology and execution context ontology must match")
@@ -218,12 +365,13 @@ def graph_multi_set(ontology_id: str, request: MultiSetGraphRequest, db: Session
         if context.consistency != 'snapshot' or not context.data_view_id:
             raise ObjectQueryError('consistency_unavailable', 'context', 'Graph requires a pinned view')
         view = require_ready(db, context.data_view_id, ontology_id, principal_id=user.id, is_admin=user.role == 'admin')
+        context = _pin_context_to_view(context, view, access.context.metadata_revision_id)
         if not graph_service.available:
             raise ObjectQueryError('graph_unavailable', 'execution', 'FalkorDB is unavailable')
         metadata = load_sql_metadata(db, ontology_id)
         adapter = FalkorReadAdapter(graph_service._graph(view.graph_key), graph_ontology_id=view.graph_key)
-        core = QueryCore(metadata, adapter, QueryPolicy(principal=user.id))
-        resources = ResourceService(db, ontology_id, user, metadata)
+        core = QueryCore(metadata, adapter, _query_policy(db, ontology_id, user, metadata_revision_id=context.revision_id, access_projection=access))
+        resources = ResourceService(db, ontology_id, user, metadata, authorization_projection=access)
         objects, hashes = {}, []
         for index, expression in enumerate(request.sets):
             load = LoadObjectSetRequest(expression=expression, context=context)
@@ -236,9 +384,7 @@ def graph_multi_set(ontology_id: str, request: MultiSetGraphRequest, db: Session
                 objects[(item.object_type, item.object_id)] = item
             if len(objects) > 1000:
                 raise ObjectQueryError('query_too_complex', f'sets[{index}]', 'Narrow the graph to at most 1,000 objects')
-        snapshot = adapter.read(ontology_id)
-        edges = [{'source': {'object_type': s[0], 'object_id': s[1]}, 'target': {'object_type': t[0], 'object_id': t[1]}, 'relation_type': r}
-                 for s, r, t in snapshot.edges if s in objects and t in objects]
+        edges = _induced_edges(access, adapter.read(ontology_id), set(objects))
         return {'objects': [objects[k].model_dump(mode='json') for k in sorted(objects)], 'edges': edges,
                 'execution_context': context.model_dump(mode='json'), 'set_execution_hashes': hashes}
     except ObjectQueryError as exc:
@@ -248,27 +394,34 @@ def graph_multi_set(ontology_id: str, request: MultiSetGraphRequest, db: Session
 @router.post("/{ontology_id}/object-query/graph")
 def graph_object_query(ontology_id: str, request: LoadObjectSetRequest, db: Session = Depends(get_db), user=Depends(get_current_user), graph_service: FalkorDBService = Depends(get_falkordb)):
     """An induced instance graph, using exactly the queried object cohort."""
-    _authorize(ontology_id, db, user)
+    access = _authorize(ontology_id, db, user)
     try:
-        _validate_request(ontology_id, request, db, user)
+        _validate_request(ontology_id, request, db, user, authorization_projection=access)
         context = resolve_scenario_context(db, request.context, ontology_id, user)
         if context.consistency != 'snapshot' or not context.data_view_id:
             raise ObjectQueryError('consistency_unavailable', 'context', 'Graph requires a pinned view')
         view = require_ready(db, context.data_view_id, ontology_id, principal_id=user.id, is_admin=user.role == 'admin')
+        context = _pin_context_to_view(context, view, access.context.metadata_revision_id)
         if not graph_service.available:
             raise ObjectQueryError('graph_unavailable', 'execution', 'FalkorDB is unavailable')
         metadata = load_sql_metadata(db, ontology_id)
         adapter = FalkorReadAdapter(graph_service._graph(view.graph_key), graph_ontology_id=view.graph_key)
-        core = QueryCore(metadata, adapter, QueryPolicy(principal=user.id))
-        objects, result = core.materialize(request.model_copy(update={'context': context}), ResourceService(db, ontology_id, user, metadata))
+        core = QueryCore(
+            metadata,
+            adapter,
+            _query_policy(db, ontology_id, user, metadata_revision_id=context.revision_id, access_projection=access),
+        )
+        objects, result = core.materialize(
+            request.model_copy(update={'context': context}),
+            ResourceService(db, ontology_id, user, metadata, authorization_projection=access),
+        )
         if len(objects) > 1000:
             raise ObjectQueryError('query_too_complex', 'expression', 'Narrow the graph to at most 1,000 objects')
         keys = {(item.object_type, item.object_id) for item in objects}
-        snapshot = adapter.read(ontology_id)
-        edges = [{'source': {'object_type': source[0], 'object_id': source[1]}, 'target': {'object_type': target[0], 'object_id': target[1]}, 'relation_type': relation}
-                 for source, relation, target in snapshot.edges if source in keys and target in keys]
+        edges = _induced_edges(access, adapter.read(ontology_id), keys)
         return {'objects': [item.model_dump(mode='json') for item in objects], 'edges': edges,
-                'execution_context': context.model_dump(mode='json'), 'execution_hash': result.execution_hash}
+                'execution_context': context.model_dump(mode='json'), 'execution_hash': result.execution_hash,
+                'result_manifest': result.result_manifest}
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
     except ScenarioError as exc:
@@ -280,10 +433,10 @@ def create_data_view(
     ontology_id: str,
     request: QueryDataViewCreate,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_editor),
     graph_service: FalkorDBService = Depends(get_falkordb),
 ):
-    _authorize(ontology_id, db, user)
+    access = _authorize(ontology_id, db, user)
     if request.source_ontology_id != ontology_id:
         raise HTTPException(status_code=422, detail={"code": "ontology_context_mismatch", "path": "source_ontology_id", "message": "Source ontology must match route ontology", "details": {}})
     if not graph_service.available:
@@ -382,14 +535,14 @@ def _job_response(job: QueryJob) -> QueryJobResponse:
 
 
 @router.post("/{ontology_id}/object-query/jobs", response_model=QueryJobResponse, status_code=202)
-def create_object_query_job(ontology_id: str, request: LoadObjectSetRequest, db: Session = Depends(get_db), user=Depends(get_current_user), graph_service: FalkorDBService = Depends(get_falkordb)):
+def create_object_query_job(ontology_id: str, request: LoadObjectSetRequest, db: Session = Depends(get_db), user=Depends(require_editor), graph_service: FalkorDBService = Depends(get_falkordb)):
     """Run a bounded materialization with durable status/checkpoint semantics.
 
     The API deliberately caps one run at the adapter budget; larger requests must
     be split by a worker in a later deployment rather than looping indefinitely
     inside an HTTP worker.
     """
-    _authorize(ontology_id, db, user)
+    access = _authorize(ontology_id, db, user)
     if request.context.consistency != "snapshot" or not request.context.data_view_id:
         raise HTTPException(status_code=422, detail={"code": "consistency_unavailable", "path": "context.data_view_id", "message": "Jobs require a pinned snapshot data view", "details": {}})
     job = QueryJob(ontology_id=ontology_id, created_by=user.id, kind="materialize", status="queued",
@@ -410,21 +563,36 @@ def create_object_query_job(ontology_id: str, request: LoadObjectSetRequest, db:
     try:
         job.status = "running"
         metadata = load_sql_metadata(db, ontology_id)
-        view = require_ready(db, request.context.data_view_id, ontology_id)
+        view = require_ready(db, request.context.data_view_id, ontology_id, principal_id=user.id, is_admin=user.role == "admin")
+        request = request.model_copy(update={"context": _pin_context_to_view(request.context, view, access.context.metadata_revision_id)})
         graph = graph_service._graph(view.graph_key)
-        core = QueryCore(metadata, FalkorReadAdapter(graph, graph_ontology_id=view.graph_key), QueryPolicy(principal=user.id))
+        core = QueryCore(
+            metadata,
+            FalkorReadAdapter(graph, graph_ontology_id=view.graph_key),
+            _query_policy(db, ontology_id, user, metadata_revision_id=request.context.revision_id, access_projection=access),
+        )
         page_token = None
         records = []
         for page_no in range(50):
             if job.cancel_requested:
                 job.status = "cancelled"; break
             page_request = request.model_copy(update={"read": request.read.model_copy(update={"page_size": 200, "page_token": page_token})})
-            result = core.load(page_request, ResourceService(db, ontology_id, user, metadata))
+            result = core.load(
+                page_request,
+                ResourceService(db, ontology_id, user, metadata, authorization_projection=access),
+            )
             records.extend([obj.model_dump(mode="json") for obj in result.objects])
             job.checkpoint_json = {"pages": page_no + 1, "returned": len(records), "execution_hash": result.execution_hash}
             db.flush()
             if not result.page.has_more or not result.page.next_page_token:
-                job.result_json = {"objects": records, "count": len(records), "definition_hash": result.definition_hash, "execution_hash": result.execution_hash, "completeness": result.completeness}
+                job.result_json = {
+                    "objects": records,
+                    "count": len(records),
+                    "definition_hash": result.definition_hash,
+                    "execution_hash": result.execution_hash,
+                    "completeness": result.completeness,
+                    "result_manifest": result.result_manifest.model_dump(mode="json") if result.result_manifest else None,
+                }
                 job.status = "completed"
                 break
             page_token = result.page.next_page_token
@@ -448,7 +616,7 @@ def get_object_query_job(ontology_id: str, job_id: str, db: Session = Depends(ge
 
 
 @router.post("/{ontology_id}/object-query/jobs/{job_id}:cancel", response_model=QueryJobResponse)
-def cancel_object_query_job(ontology_id: str, job_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def cancel_object_query_job(ontology_id: str, job_id: str, db: Session = Depends(get_db), user=Depends(require_editor)):
     _authorize(ontology_id, db, user)
     job = db.get(QueryJob, job_id)
     if job is None or job.ontology_id != ontology_id or (job.created_by != user.id and user.role != "admin"):

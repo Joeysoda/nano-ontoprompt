@@ -14,7 +14,7 @@ class OntologyRevision(Base):
     __tablename__ = "ontology_revisions"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False)
+    ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False, index=True)
     revision_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     parent_revision_id: Mapped[str | None] = mapped_column(String, ForeignKey("ontology_revisions.id", ondelete="SET NULL"), nullable=True)
     # Kept as an opaque id instead of an ORM FK so revision tooling can be

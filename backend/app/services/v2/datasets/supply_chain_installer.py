@@ -10,12 +10,14 @@ import csv
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.v2.dataset import Dataset
+from app.models.v2.dataset import Dataset, DatasetVersion
+from app.services.storage_service import get_storage_service
 from app.services.v2.dataset_service import DatasetService
 
 
@@ -76,6 +78,41 @@ def _hide_legacy_supply_chain(db: Session) -> None:
         db.commit()
 
 
+def _repair_existing_cmapss_dataset(db: Session, dataset: Dataset, prepared: tuple[list[dict[str, str]], dict[str, Any]]) -> Dataset:
+    """Restore an existing FD001 metadata row after a lost MinIO volume."""
+    rows, provenance = prepared
+    payload = json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    checksum = hashlib.sha256(payload).hexdigest()
+    version = db.query(DatasetVersion).filter(
+        DatasetVersion.dataset_id == dataset.id
+    ).order_by(DatasetVersion.version_no.desc()).first()
+    if version is None:
+        version = DatasetVersion(dataset_id=dataset.id, version_no=1, rowcount=len(rows))
+        db.add(version)
+        db.flush()
+    uri = get_storage_service().put_bytes(
+        "raw-datasets", f"datasets/{dataset.id}/v{version.version_no}/data.bin", payload,
+        content_type="application/json",
+    )
+    version.storage_uri = uri
+    version.rowcount = len(rows)
+    version.checksum = checksum
+    version.source_path = f"{NASA_CMAPSS_URL}#{provenance['source_member']}"
+    dataset.latest_version_id = version.id
+    dataset.readiness = "ready"
+    schema = dict(dataset.schema_json or {})
+    schema.update({
+        "sha256": checksum,
+        "source_sha256": provenance["source_sha256"],
+        "rowcount": len(rows),
+        "recovered_at": datetime.now(timezone.utc).isoformat(),
+        "storage_recovery": "repaired_from_local_fd001_fixture",
+    })
+    dataset.schema_json = schema
+    db.commit()
+    return dataset
+
+
 def ensure_cmapss_fd001_demo(db: Session) -> Dataset | None:
     """Install the verified local subset when its source files are available."""
     _hide_legacy_supply_chain(db)
@@ -87,6 +124,12 @@ def ensure_cmapss_fd001_demo(db: Session) -> Dataset | None:
         if existing.name != CMAPSS_FD001_NAME:
             existing.name = CMAPSS_FD001_NAME; changed = True
         if changed: db.commit()
+        version = db.query(DatasetVersion).filter(DatasetVersion.id == existing.latest_version_id).first() if existing.latest_version_id else None
+        if version and version.storage_uri and get_storage_service().object_exists(version.storage_uri):
+            return existing
+        prepared = _load_rows()
+        if prepared:
+            return _repair_existing_cmapss_dataset(db, existing, prepared)
         return existing
     prepared = _load_rows()
     if not prepared:

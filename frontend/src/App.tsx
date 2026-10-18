@@ -7,6 +7,7 @@ const LoginPage = React.lazy(() => import("@/pages/login/LoginPage"));
 const RegisterPage = React.lazy(() => import("@/pages/register/RegisterPage"));
 const OverviewPage = React.lazy(() => import("@/pages/overview/OverviewPage"));
 const OntologyListPage = React.lazy(() => import("@/pages/ontologies/list/OntologyListPage"));
+const OntologyCreateWizard = React.lazy(() => import("@/pages/ontologies/new/OntologyCreateWizard"));
 const ModelsPage = React.lazy(() => import("@/pages/models/ModelsPage"));
 const SettingsPage = React.lazy(() => import("@/pages/settings/SettingsPage"));
 const PipelinesLayout = React.lazy(() => import("@/pages/pipelines/PipelinesLayout"));
@@ -17,7 +18,7 @@ const DatasetsTab = React.lazy(() => import("@/pages/pipelines/datasets/Datasets
 const TransformsTab = React.lazy(() => import("@/pages/pipelines/transforms/TransformsTab"));
 const CuratedTab = React.lazy(() => import("@/pages/pipelines/curated/CuratedTab"));
 const DataManagementPage = React.lazy(() => import("@/pages/data-management/DataManagementPage"));
-const DatasetOntologyEntryPage = React.lazy(() => import("@/pages/data-management/DatasetOntologyEntryPage"));
+const RegularDataPage = React.lazy(() => import("@/pages/data-management/regular/RegularDataPage"));
 const StructuredDataPage = React.lazy(() => import("@/pages/data-management/structured/StructuredDataPage"));
 const MultimodalDataPage = React.lazy(() => import("@/pages/data-management/multimodal/MultimodalDataPage"));
 const TemporalConstructionWizard = React.lazy(() => import("@/pages/data-management/temporal/TemporalConstructionWizard"));
@@ -115,7 +116,7 @@ export default function App() {
               path="/data/temporal"
               element={
                 <ProtectedRoute>
-                  <DatasetOntologyEntryPage dataClass="temporal" />
+                  <TemporalConstructionWizard />
                 </ProtectedRoute>
               }
             />
@@ -145,17 +146,25 @@ export default function App() {
             />
             <Route
               path="/data/regular"
-              element={<Navigate to="/data" replace />}
+              element={
+                <ProtectedRoute>
+                  <RegularDataPage />
+                </ProtectedRoute>
+              }
             />
             <Route
               path="/data/regular/build"
-              element={<Navigate to="/data" replace />}
+              element={
+                <ProtectedRoute>
+                  <RegularDataPage />
+                </ProtectedRoute>
+              }
             />
             <Route
               path="/data/multimodal"
               element={
                 <ProtectedRoute>
-                  <DatasetOntologyEntryPage dataClass="multimodal" />
+                  <MultimodalDataPage />
                 </ProtectedRoute>
               }
             />
@@ -240,7 +249,7 @@ export default function App() {
               path="/ontologies/new"
               element={
                 <ProtectedRoute>
-                  <Navigate to="/data" replace />
+                  <OntologyCreateWizard />
                 </ProtectedRoute>
               }
             />

@@ -10,7 +10,7 @@ class LogicAsset(Base):
     __tablename__ = "v2_logic_assets"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False)
+    ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False, index=True)
     asset_key: Mapped[str] = mapped_column(String(120), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     kind: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -37,7 +37,7 @@ class LogicAssetRun(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     asset_id: Mapped[str] = mapped_column(String, ForeignKey("v2_logic_assets.id", ondelete="CASCADE"), nullable=False)
-    ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False)
+    ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False, index=True)
     asset_version: Mapped[str] = mapped_column(String(40), nullable=False)
     inputs: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     output: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -52,7 +52,7 @@ class LogicDerivedFact(Base):
     __tablename__ = "v2_logic_derived_facts"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False)
+    ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False, index=True)
     run_id: Mapped[str] = mapped_column(String, ForeignKey("v2_logic_asset_runs.id", ondelete="CASCADE"), nullable=False)
     asset_id: Mapped[str] = mapped_column(String, ForeignKey("v2_logic_assets.id", ondelete="CASCADE"), nullable=False)
     subject_id: Mapped[str | None] = mapped_column(String, nullable=True)

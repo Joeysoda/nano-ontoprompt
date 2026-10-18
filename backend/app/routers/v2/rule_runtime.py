@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user, get_db, require_editor
-from app.models.ontology import OntologyProject
 from app.models.v2.query_view import QueryDataView
 from app.models.v2.rule_runtime import RuleAlert, RuleAlertEvent, RuleEvaluation, RuleProposal, RuleResource, RuleVersion
 from app.models.v2.time_series import TimeSeriesSync
@@ -18,7 +17,9 @@ from app.schemas.v2.rule_runtime import (
     RuleScheduleRequest,
     RuleStatusRequest,
 )
-from app.services.v2.object_query.core import FalkorReadAdapter, QueryCore, QueryPolicy
+from app.services.v2.authorization_service import redact_record
+from app.services.v2.object_query.authorization import build_query_policy, policies_from_projection, require_ontology_access
+from app.services.v2.object_query.core import FalkorReadAdapter, QueryCore
 from app.services.v2.object_query.data_views import require_ready
 from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.object_query.metadata import load_sql_metadata
@@ -32,10 +33,39 @@ def http_error(exc: ObjectQueryError) -> HTTPException:
     return HTTPException(status_code=STATUS.get(exc.code, 422), detail=exc.as_dict())
 
 
-def authorize(ontology_id: str, db: Session, user) -> None:
-    item = db.get(OntologyProject, ontology_id)
-    if item is None or (user.role != "admin" and item.created_by != user.id):
-        raise HTTPException(status_code=404, detail="Ontology not found or inaccessible")
+def authorize(ontology_id: str, db: Session, user):
+    """Plan A ontology/data decision; the same one Object Query terminals use."""
+    try:
+        return require_ontology_access(db, ontology_id, str(user.id), user.role)
+    except ObjectQueryError as exc:
+        raise HTTPException(status_code=404, detail="Ontology not found or inaccessible") from exc
+
+
+def visible_alert(access, alert, series_property: str | None) -> dict | None:
+    """Redact evidence for the viewer; alerts on invisible subjects are hidden."""
+    summary = alert_summary(alert)
+    shown = dict((summary["evidence"] or {}).get("evidence") or {})
+    record = {"id": alert.subject_id, "entity_type": alert.subject_type,
+              "properties": {**shown, **({series_property: summary["evidence"].get("series_id")} if series_property else {})}}
+    safe = redact_record(access, record)
+    if safe is None:
+        return None
+    # Plan A masks denied fields to None (keys stay), so always read the redacted values.
+    safe_props = safe.get("properties") or {}
+    evidence = {**summary["evidence"], "evidence": {k: safe_props.get(k) for k in shown}}
+    if series_property and safe_props.get(series_property) is None:
+        for derived in ("series_id", "peak", "breaching_windows"):
+            evidence.pop(derived, None)
+    return {**summary, "evidence": evidence}
+
+
+def _series_properties(db: Session, alerts) -> dict[str, str | None]:
+    out = {}
+    for version_id in {a.rule_version_id for a in alerts}:
+        logic = (db.get(RuleVersion, version_id).logic or {})
+        block = next((b for b in logic.get("blocks", []) if b.get("kind") == "series_window"), None)
+        out[version_id] = block.get("series_property") if block else None
+    return out
 
 
 def get_graph_reader():
@@ -51,8 +81,9 @@ def get_graph_reader():
 
 
 def svc(ontology_id: str, db: Session, user) -> RuleService:
-    authorize(ontology_id, db, user)
-    return RuleService(db, ontology_id, user, load_sql_metadata(db, ontology_id))
+    service = RuleService(db, ontology_id, user, load_sql_metadata(db, ontology_id))
+    service.access = authorize(ontology_id, db, user)
+    return service
 
 
 @router.get("/{ontology_id}/rules")
@@ -137,7 +168,8 @@ def evaluate(ontology_id: str, rule_id: str, body: EvaluateRuleRequest, db: Sess
             raise ObjectQueryError("consistency_unavailable", "context.data_view_id", "Rule evaluation requires a pinned data view")
         context = context.model_copy(update={"consistency": "snapshot", "scenario_id": scenario_id})
         view = require_ready(db, context.data_view_id, ontology_id, principal_id=user.id, is_admin=user.role == "admin")
-        core = QueryCore(service.metadata, reader(view), QueryPolicy(principal=user.id))
+        policy = build_query_policy(db, ontology_id, str(user.id), user.role, preloaded_policies=policies_from_projection(service.access))
+        core = QueryCore(service.metadata, reader(view), policy)
         request = body.model_copy(update={"context": context})
         return service.evaluate(rule_id, request, core, series_loader(db, view))
     except ObjectQueryError as exc:
@@ -160,24 +192,30 @@ def list_evaluations(ontology_id: str, rule_id: str, limit: int = 50, db: Sessio
 def list_alerts(ontology_id: str, status: str | None = None, subject_type: str | None = None, subject_id: str | None = None,
                 rule_id: str | None = None, limit: int = 100, offset: int = 0,
                 db: Session = Depends(get_db), user=Depends(get_current_user)):
-    authorize(ontology_id, db, user)
+    access = authorize(ontology_id, db, user)
     query = db.query(RuleAlert).filter_by(ontology_id=ontology_id)
     for column, value in (("status", status), ("subject_type", subject_type), ("subject_id", subject_id), ("rule_id", rule_id)):
         if value is not None:
             query = query.filter(getattr(RuleAlert, column) == value)
-    total = query.count()
-    rows = query.order_by(RuleAlert.created_at.desc(), RuleAlert.id).offset(max(0, offset)).limit(max(1, min(limit, 500))).all()
-    return {"alerts": [alert_summary(a) for a in rows], "total": total}
+    rows = query.order_by(RuleAlert.created_at.desc(), RuleAlert.id).all()
+    series = _series_properties(db, rows)
+    visible = [item for item in (visible_alert(access, a, series[a.rule_version_id]) for a in rows) if item is not None]
+    start = max(0, offset)
+    return {"alerts": visible[start:start + max(1, min(limit, 500))], "total": len(visible)}
 
 
 @router.get("/{ontology_id}/alerts/{alert_id}")
 def get_alert(ontology_id: str, alert_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     try:
-        alert = svc(ontology_id, db, user).alert(alert_id)
+        service = svc(ontology_id, db, user)
+        alert = service.alert(alert_id)
     except ObjectQueryError as exc:
         raise http_error(exc) from exc
+    shown = visible_alert(service.access, alert, _series_properties(db, [alert])[alert.rule_version_id])
+    if shown is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Alert not found"})
     events = db.query(RuleAlertEvent).filter_by(alert_id=alert.id).order_by(RuleAlertEvent.created_at).all()
-    return {"alert": alert_summary(alert),
+    return {"alert": shown,
             "events": [{"kind": e.kind, "actor_id": e.actor_id, "detail": e.detail, "evaluation_id": e.evaluation_id,
                         "created_at": e.created_at.isoformat()} for e in events]}
 

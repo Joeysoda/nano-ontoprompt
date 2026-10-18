@@ -39,9 +39,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     {
       to: '/data', icon: Database, label: '数据工具',
       subItems: [
-        { to: '/data/temporal', icon: Activity, label: '时序数据', hint: '直接查看本体' },
+        { to: '/data/temporal', icon: Activity, label: '时序数据构建', hint: '从原始数据开始创建' },
+        { to: '/data/multimodal', icon: Images, label: '多模态数据构建', hint: '从原始数据开始创建' },
         { to: DEFAULT_DYNAMIC_RUN_PATH, icon: Radio, label: '动态数据构建', hint: '开始、暂停与逐事件演示' },
-        { to: '/data/multimodal', icon: Images, label: '多模态数据', hint: '直接查看本体' },
       ],
     },
     { to: '/ontologies', icon: Network, label: '本体库' },

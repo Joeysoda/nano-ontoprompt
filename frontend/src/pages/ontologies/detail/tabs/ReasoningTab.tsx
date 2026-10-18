@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import cytoscape from "cytoscape";
 import { apiClientV2 } from "@/api/client";
+import { deterministicGraphPositions } from "@/lib/relationshipGraph";
 
 type Evidence = { fact: string; source: string; source_file?: string; source_row?: string; source_version?: string; evidence_ref_id?: string; evidence_text?: string; content_hash?: string };
 type Inference = { conclusion: string; rule: string; premises: string[]; evidence: Evidence[] };
@@ -28,6 +29,7 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
   const [selected, setSelected] = useState<Inference | null>(null);
   const [nodeDetails, setNodeDetails] = useState<Record<string, unknown> | null>(null);
   const [derivedOnly, setDerivedOnly] = useState(false);
+  const [showRelationshipLabels, setShowRelationshipLabels] = useState(true);
   const [query, setQuery] = useState("");
   const canvas = useRef<HTMLDivElement>(null);
   const cy = useRef<cytoscape.Core | null>(null);
@@ -116,22 +118,26 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
     const edges = [...persistedEdges, ...previewEdges].filter(e => !derivedOnly || e.properties?.derived);
     const ids = new Set(edges.flatMap(e => [e.source, e.target]));
     const nodes = derivedOnly ? graph.nodes.filter(n => ids.has(n.id)) : graph.nodes;
+    const orderedNodes = [...nodes].sort((left, right) => left.id.localeCompare(right.id));
+    const orderedEdges = [...edges].sort((left, right) => left.id.localeCompare(right.id));
+    const stablePositions = deterministicGraphPositions(orderedNodes, orderedEdges, node => node.id, edge => edge.source, edge => edge.target);
     const instance = cytoscape({
       container: canvas.current,
       elements: [
-        ...nodes.map(n => ({ data: { id: n.id, label: `${n.entity_type}\n${n.id.slice(-8)}`, ...n.properties } })),
-        ...edges.map(e => ({ data: { ...e, derived: Boolean(e.properties?.derived), preview: Boolean(e.properties?.preview) } })),
+        ...orderedNodes.map(n => ({ data: { id: n.id, label: `${n.entity_type}\n${n.id.slice(-8)}`, ...n.properties }, position: stablePositions.get(n.id) })),
+        ...orderedEdges.map(e => ({ data: { ...e, curveOffset: 30, derived: Boolean(e.properties?.derived), preview: Boolean(e.properties?.preview) } })),
       ],
       style: [
-        { selector: "node", style: { label: "data(label)", "font-size": 9, "text-wrap": "wrap", "background-color": "#64748b", width: 20, height: 20 } },
-        { selector: "edge", style: { width: 1, "line-color": "#cbd5e1", "target-arrow-color": "#cbd5e1", "target-arrow-shape": "triangle", "curve-style": "bezier" } },
+        { selector: "node", style: { label: "data(label)", "background-color": "#64748b", color: "#334155", "font-size": 8, "text-valign": "bottom", "text-halign": "center", "text-margin-y": 5, width: 24, height: 24, shape: "ellipse", "text-wrap": "wrap", "text-max-width": "116px", "border-width": 1, "border-color": "#ffffff" } },
+        { selector: "edge", style: { label: showRelationshipLabels ? "data(label)" : "", color: "#475569", "font-size": 8, "font-weight": 500, "text-rotation": "autorotate", "text-background-color": "#ffffff", "text-background-opacity": 0.94, "text-background-padding": "2px", "text-border-width": 1, "text-border-color": "#e2e8f0", "text-border-opacity": 0.95, "text-wrap": "ellipsis", "text-max-width": "120px", width: 1, "line-color": "#94a3b8", "target-arrow-color": "#94a3b8", "target-arrow-shape": "triangle", "arrow-scale": 0.65, "curve-style": "unbundled-bezier", "control-point-distance": 30, "control-point-weight": 0.5 } },
         { selector: "edge[?derived]", style: { width: 2, "line-color": "#7c3aed", "target-arrow-color": "#7c3aed" } },
         { selector: "edge[?preview]", style: { width: 2, "line-color": "#7c3aed", "target-arrow-color": "#7c3aed", "line-style": "dashed", "line-dash-pattern": [8, 5] } },
         { selector: ":selected", style: { "background-color": "#f59e0b", "line-color": "#f59e0b", "target-arrow-color": "#f59e0b", label: "data(label)", "font-size": 10 } },
       ],
-      layout: { name: "cose", animate: false, nodeRepulsion: () => 15000, idealEdgeLength: () => 70 },
+      layout: { name: "preset", fit: false },
       minZoom: 0.05, maxZoom: 4,
     });
+    instance.fit(instance.elements(), 70);
     instance.on("tap", "edge", event => {
       const edge = event.target.data();
       setNodeDetails({ relation: edge.label, source: edge.source, target: edge.target, ...edge.properties });
@@ -140,7 +146,7 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
     instance.on("tap", "node", event => setNodeDetails(event.target.data()));
     cy.current = instance;
     return () => { instance.destroy(); cy.current = null; };
-  }, [graph, derivedOnly, result]);
+  }, [graph, derivedOnly, result, showRelationshipLabels]);
 
   function focus(item: Inference) {
     setSelected(item);
@@ -200,6 +206,7 @@ export default function ReasoningTab({ ontologyId }: { ontologyId: string }) {
         <span data-testid="graph-counts" className="text-sm">{graph?.nodes.length || 0} 个实例 · 已保存 {graph?.edges.filter(e => e.properties?.derived && e.properties.reasoning_run_id === result?.run_id).length || 0} 条 · 预览 {result?.status === "preview" ? result.inferred_facts.filter(f => /^\w+\([^,]+,[^)]*\)$/.test(f.conclusion)).length : 0} 条</span>
         <label className="text-sm"><input type="checkbox" checked={derivedOnly} onChange={e => setDerivedOnly(e.target.checked)} /> 仅派生关系</label>
         <button className={button} onClick={() => cy.current?.fit(undefined, 30)}>显示全图</button>
+        <button className={button} onClick={() => setShowRelationshipLabels(value => !value)} aria-pressed={showRelationshipLabels} data-testid="toggle-reasoning-relationship-labels">{showRelationshipLabels ? "隐藏关系文字" : "显示关系文字"}</button>
       <button className={button} onClick={() => refresh().catch((e: unknown) => setError(message(e)))}>刷新实例图</button>
       </div>
       <p className="my-2 text-xs text-slate-500">灰色为来源关系；紫色虚线为本次运行的临时预览，紫色实线为已保存的派生关系。点击关系查看证据；滚轮缩放、拖拽平移。</p>

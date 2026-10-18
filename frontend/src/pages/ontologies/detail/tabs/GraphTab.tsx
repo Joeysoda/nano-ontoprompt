@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ontologyApi } from '@/api/ontologies'
 import cytoscape from 'cytoscape'
 import { ZoomIn, ZoomOut, Maximize2, Search, X } from 'lucide-react'
+import { deterministicGraphPositions } from '@/lib/relationshipGraph'
 
 // Entity type → node color
 const TYPE_COLORS: Record<string, string> = {
@@ -44,7 +45,7 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
   const cyRef = useRef<cytoscape.Core | null>(null)
   const [selected, setSelected] = useState<{ id: string; source?: string } | null>(null)
   const [info, setInfo] = useState<string>('')
-  const [layout, setLayout] = useState<'cose' | 'breadthfirst' | 'circle'>('cose')
+  const [layout, setLayout] = useState<'preset' | 'breadthfirst' | 'circle'>('preset')
   const [initError, setInitError] = useState<string | null>(null)
   const [searchQ, setSearchQ] = useState('')
   const qc = useQueryClient()
@@ -84,22 +85,18 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
       seenEdgeIds.add(e.data.id)
       return true
     })
+    const orderedNodes = [...nodes].sort((left, right) => left.data.id.localeCompare(right.data.id))
+    const orderedEdges = [...edges].sort((left, right) => left.data.id.localeCompare(right.data.id))
+    const stablePositions = deterministicGraphPositions(orderedNodes, orderedEdges, node => node.data.id, edge => edge.data.source, edge => edge.data.target)
 
     if (cyRef.current) cyRef.current.destroy()
 
     const layoutOptions: Record<string, cytoscape.LayoutOptions> = {
-      cose: {
-        name: 'cose',
+      preset: {
+        name: 'preset',
         animate: false,
         fit: false,
         padding: 60,
-        nodeRepulsion: () => 12000,
-        idealEdgeLength: () => 160,
-        gravity: 1.5,
-        numIter: 1200,
-        initialTemp: 500,
-        coolingFactor: 0.99,
-        componentSpacing: 80,
       },
       breadthfirst: {
         name: 'breadthfirst',
@@ -120,8 +117,8 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
     }
 
     // Compute per-node size based on label length
-    const nodeElements = nodes.map((n) => {
-      const deg = edges.filter((e) =>
+    const nodeElements = orderedNodes.map((n) => {
+      const deg = orderedEdges.filter((e) =>
         e.data.source === n.data.id || e.data.target === n.data.id
       ).length
       const labelLen = (n.data.label || '').length
@@ -133,7 +130,8 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
           degree: deg,
           size,
           textMaxWidth: size - 12,
-        }
+        },
+        position: stablePositions.get(n.data.id),
       }
     })
 
@@ -143,7 +141,7 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
       container,
       elements: [
         ...nodeElements,
-        ...edges.map((e) => ({
+        ...orderedEdges.map((e) => ({
           data: {
             ...e.data,
             edgeColor: edgeColor(e.data.label || e.data.type || ''),
@@ -231,8 +229,10 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
     // Run layout first (animate:false makes it synchronous for cose)
     cy.layout(layoutOptions[layout]).run()
 
-    // After cose layout: reposition isolated nodes into a compact grid below connected subgraph
-    if (layout === 'cose') {
+    // Keep isolated nodes deterministic too. The shared preset already gives
+    // them a stable component position; this only makes the legacy view more
+    // compact when it is explicitly opened.
+    if (layout === 'preset') {
       const isolated = cy.nodes().filter(n => n.degree(false) === 0)
       if (isolated.length > 0) {
         const connected = cy.nodes().filter(n => n.degree(false) > 0)
@@ -354,10 +354,10 @@ export default function GraphTab({ ontologyId }: { ontologyId: string }) {
         {/* Layout selector */}
         <div className="flex items-center gap-1 text-sm border rounded px-2 py-1">
           <span className="text-gray-500 text-xs mr-1">布局</span>
-          {(['cose', 'breadthfirst', 'circle'] as const).map(l => (
+          {(['preset', 'breadthfirst', 'circle'] as const).map(l => (
             <button key={l} onClick={() => setLayout(l)}
               className={`px-2 py-0.5 rounded text-xs ${layout === l ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
-              {l === 'cose' ? '力导向' : l === 'breadthfirst' ? '层级' : '圆形'}
+              {l === 'preset' ? '固定' : l === 'breadthfirst' ? '层级' : '圆形'}
             </button>
           ))}
         </div>

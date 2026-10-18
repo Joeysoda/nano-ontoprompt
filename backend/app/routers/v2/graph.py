@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_editor
 from app.database import SessionLocal
 from app.models.user import User
 from app.models.ontology import OntologyProject
 from app.services.v2.authorization_service import AuthorizationContext, cached_permission_digest, load_applicable_policies, redact_link_record, resolve_projection, redact_record
+from app.services.v2.object_query.authorization import policies_from_projection, require_ontology_access
+from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.data_plane_service import AdapterCapabilities, build_context, make_manifest
 from app.services.v2.semantic_core_service import semantic_schema
 
@@ -26,6 +28,18 @@ def get_neo4j():
 def get_falkordb():
     from app.services.v2.graph.falkordb_service import FalkorDBService
     return FalkorDBService()
+
+
+def _graph_access(db: Session, ontology_id: str, user: User):
+    """Cache the request-scoped ontology decision for all graph terminals."""
+    cache = db.info.setdefault("plan_a_graph_access", {})
+    key = (ontology_id, str(user.id), str(user.role or ""))
+    if key not in cache:
+        try:
+            cache[key] = require_ontology_access(db, ontology_id, str(user.id), user.role)
+        except ObjectQueryError as exc:
+            raise HTTPException(404, "Ontology not found or inaccessible") from exc
+    return cache[key]
 
 
 def _property_definitions(entity: Any) -> list[dict[str, Any]]:
@@ -138,14 +152,12 @@ def _authorize_graph_data(db: Session, ontology_id: str, data: dict[str, Any], u
             "semantic_resource_id": node.get("semantic_resource_id") or props.get("semantic_resource_id") or semantic_id_by_legacy.get(object_type),
             "properties": props,
         })
+    access = db.info.get("plan_a_graph_access", {}).get((ontology_id, str(user.id), str(user.role or "")))
+    access = access or _graph_access(db, ontology_id, user)
     projection = resolve_projection(
         db,
-        AuthorizationContext(
-            ontology_id=ontology_id,
-            principal_id=str(user.id),
-            principal_role=user.role,
-            metadata_revision_id=project.current_revision_id if project else None,
-        ),
+        access.context,
+        preloaded_policies=policies_from_projection(access),
         records=node_records,
     )
     visible_nodes: list[dict[str, Any]] = []
@@ -206,13 +218,9 @@ def _canonical_ontology_data(db: Session, ontology_id: str, *, limit: int = 200,
     shared_policies = None
     type_projection = None
     if isinstance(user, User):
-        shared_context = AuthorizationContext(
-            ontology_id=ontology_id,
-            principal_id=str(user.id),
-            principal_role=user.role,
-            metadata_revision_id=project.current_revision_id if project else None,
-        )
-        shared_policies = load_applicable_policies(db, shared_context)
+        access_projection = _graph_access(db, ontology_id, user)
+        shared_context = access_projection.context
+        shared_policies = policies_from_projection(access_projection)
     entities = (
         db.query(Entity)
         .filter(Entity.ontology_id == ontology_id)
@@ -518,6 +526,8 @@ def get_graph(
         offset = max(0, int(offset))
     except (TypeError, ValueError):
         offset = 0
+    if hasattr(db, "query") and isinstance(user, User):
+        _graph_access(db, ontology_id, user)
     if view == "ontology":
         if not hasattr(db, "query"):
             owned_db = SessionLocal()
@@ -1327,6 +1337,7 @@ def list_entity_instances(
     from app.models.entity_instance import EntityInstance
     from app.models.v2.construction import EvidenceRef
 
+    access = _graph_access(db, ontology_id, user)
     entity = db.query(Entity).filter(Entity.id == entity_id, Entity.ontology_id == ontology_id).first()
     if not entity:
         raise HTTPException(404, "本体实体不存在")
@@ -1351,6 +1362,7 @@ def list_entity_instances(
                 metadata_revision_id=project.current_revision_id if project else None,
                 object_type_id=entity_id,
             ),
+            preloaded_policies=policies_from_projection(access),
             records=records,
         )
         visible = []
@@ -1467,7 +1479,7 @@ def temporal_coverage(ontology_id: str, production_line_id: str):
 
 
 @router.post("/{ontology_id}/graph/temporal/import")
-def import_temporal_rows(ontology_id: str, body: TemporalImportRequest):
+def import_temporal_rows(ontology_id: str, body: TemporalImportRequest, _=Depends(require_editor)):
     """Normalize and import a bounded temporal row batch into FalkorDB.
 
     This is intentionally an explicit, deterministic API: the server never
@@ -1661,7 +1673,7 @@ def top_nodes(ontology_id: str, limit: int = 10):
 
 
 @router.post("/{ontology_id}/graph/sync")
-def sync_graph(ontology_id: str):
+def sync_graph(ontology_id: str, _=Depends(require_editor)):
     """将 SQLite 实体/关系全量同步到 Neo4j"""
     from app.database import SessionLocal
     from app.models.entity import Entity

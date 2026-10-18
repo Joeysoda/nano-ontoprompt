@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+import uuid
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class QueryIssue:
 class ObjectQueryError(ValueError):
     def __init__(self, code: str, path: str, message: str, **details: Any):
         self.issue = QueryIssue(code=code, path=path, message=message, details=details)
+        self.context_id = uuid.uuid4().hex
         super().__init__(message)
 
     @property
@@ -32,4 +34,6 @@ class ObjectQueryError(ValueError):
             "path": self.issue.path,
             "message": self.issue.message,
             "details": self.issue.details,
+            "next_action": "检查请求上下文和数据源状态后重试",
+            "context_id": self.context_id,
         }

@@ -18,7 +18,8 @@ from app.models.v2.query_view import QueryDataView
 from app.models.v2.rule_runtime import RuleResource
 from app.schemas.v2.object_query import ExecutionContext
 from app.schemas.v2.rule_runtime import EvaluateRuleRequest
-from app.services.v2.object_query.core import QueryCore, QueryPolicy
+from app.services.v2.object_query.authorization import build_query_policy, require_ontology_access
+from app.services.v2.object_query.core import QueryCore
 from app.services.v2.object_query.errors import ObjectQueryError
 from app.services.v2.object_query.metadata import load_sql_metadata
 from app.services.v2.rule_runtime import RuleService, series_loader
@@ -64,9 +65,10 @@ def run_due(db: Session, *, reader: Callable, live_view_builder: Callable | None
                 view = latest_view(db, ontology_id, owner, at)
                 if view is None:
                     raise ObjectQueryError("no_ready_view", "schedule", "No ready data view is available to the rule owner")
+            require_ontology_access(db, ontology_id, str(owner.id), owner.role)  # owner may have lost access
             service = RuleService(db, ontology_id, owner, load_sql_metadata(db, ontology_id))
             context = ExecutionContext(ontology_id=ontology_id, consistency="snapshot", data_view_id=view.id)
-            core = QueryCore(service.metadata, reader(view), QueryPolicy(principal=owner.id))
+            core = QueryCore(service.metadata, reader(view), build_query_policy(db, ontology_id, str(owner.id), owner.role))
             summary = service.evaluate(rule_id, EvaluateRuleRequest(context=context, mode="commit"), core, series_loader(db, view))
             outcome.update(status="evaluated", evaluation_id=summary["id"], replayed=summary.get("replayed", False),
                            triggered_count=summary["triggered_count"], data_view_id=view.id)

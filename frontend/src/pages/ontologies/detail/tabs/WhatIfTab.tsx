@@ -54,13 +54,30 @@ function ScenarioGraph({ context, diff }: { context: Context; diff: NonNullable<
   candidateIds.forEach((id) => {
     if (!known.has(id)) sourceNodes.push({ id, entity_type: id.startsWith("scenario:") ? "ToolCondition" : "实体", properties: { value: id.startsWith("scenario:") ? id.split(":").slice(-1)[0] : id } });
   });
-  const nodes = sourceNodes.slice(0, 32);
+  const nodes = sourceNodes
+    .slice(0, 32)
+    .sort((left, right) => left.id.localeCompare(right.id));
   const nodeIds = new Set(nodes.map((node) => node.id));
-  const edges = [...edgeRows.values()].filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)).slice(0, 56);
+  const edges = [...edgeRows.values()]
+    .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+    .sort((left, right) => `${left.predicate}|${left.source}|${left.target}`.localeCompare(`${right.predicate}|${right.source}|${right.target}`))
+    .slice(0, 56);
+  const columns = Math.min(5, Math.max(2, Math.ceil(Math.sqrt(nodes.length || 1))));
+  const rows = Math.max(1, Math.ceil(nodes.length / columns));
+  const canvasWidth = 1040;
+  const canvasHeight = Math.max(440, rows * 138 + 70);
   const positions = new Map(nodes.map((node, index) => {
-    const angle = (Math.PI * 2 * index) / Math.max(nodes.length, 1) - Math.PI / 2;
-    return [node.id, { x: 390 + Math.cos(angle) * 275, y: 190 + Math.sin(angle) * 140 }];
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    return [node.id, { x: 115 + column * ((canvasWidth - 230) / Math.max(columns - 1, 1)), y: 72 + row * 138 }];
   }));
+  const edgeOffsets = new Map<string, number>();
+  edges.forEach((edge, index) => {
+    const pair = edges.filter(item => [item.source, item.target].sort().join('|') === [edge.source, edge.target].sort().join('|'));
+    const pairIndex = pair.findIndex(item => item === edge);
+    const centered = pairIndex - (pair.length - 1) / 2;
+    edgeOffsets.set(`${edge.predicate}|${edge.source}|${edge.target}`, (Math.abs(centered) * 34 + 24) * (index % 2 === 0 ? 1 : -1));
+  });
   const color: Record<DiffStatus, string> = { added: "#059669", removed: "#dc2626", unchanged: "#94a3b8" };
   return <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3" data-testid="what-if-graph">
     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -68,15 +85,21 @@ function ScenarioGraph({ context, diff }: { context: Context; diff: NonNullable<
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-600" />新增</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600" />消失</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-slate-400" />未变化</span></div>
     </div>
     <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-      <svg viewBox="0 0 780 380" className="h-[300px] min-w-[680px] w-full" role="img" aria-label="情景数据模型关系差异">
+      <svg viewBox={`0 0 ${canvasWidth} ${canvasHeight}`} className="h-auto min-h-[300px] min-w-[900px] w-full" role="img" aria-label="情景数据模型关系差异">
         <defs><marker id="what-if-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#64748b" /></marker></defs>
         {edges.map((edge) => {
           const start = positions.get(edge.source); const end = positions.get(edge.target);
           if (!start || !end) return null;
           const stroke = color[edge.status];
-          return <g key={`${edge.predicate}-${edge.source}-${edge.target}`}><line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke={stroke} strokeWidth={edge.status === "unchanged" ? 1.2 : 2.4} strokeDasharray={edge.status === "removed" ? "5 4" : undefined} markerEnd="url(#what-if-arrow)" opacity={edge.status === "unchanged" ? 0.65 : 0.95} /><text x={(start.x + end.x) / 2} y={(start.y + end.y) / 2 - 4} textAnchor="middle" className="fill-slate-500 text-[9px]">{edge.predicate.slice(0, 17)}</text></g>;
+          const offset = edgeOffsets.get(`${edge.predicate}|${edge.source}|${edge.target}`) || 24;
+          const controlX = (start.x + end.x) / 2;
+          const controlY = (start.y + end.y) / 2 - offset;
+          const labelX = (start.x + 2 * controlX + end.x) / 4;
+          const labelY = (start.y + 2 * controlY + end.y) / 4;
+          const label = edge.predicate.slice(0, 22);
+          return <g key={`${edge.predicate}-${edge.source}-${edge.target}`}><path d={`M ${start.x} ${start.y} Q ${controlX} ${controlY} ${end.x} ${end.y}`} fill="none" stroke={stroke} strokeWidth={edge.status === "unchanged" ? 1.5 : 2.6} strokeDasharray={edge.status === "removed" ? "6 4" : undefined} markerEnd="url(#what-if-arrow)" opacity={edge.status === "unchanged" ? 0.7 : 0.96} /><rect x={labelX - label.length * 3.2 - 5} y={labelY - 10} width={label.length * 6.4 + 10} height="18" rx="5" fill="#ffffff" fillOpacity="0.94" stroke="#e2e8f0" /><text x={labelX} y={labelY + 3} textAnchor="middle" className="fill-slate-600 text-[9px]">{label}</text></g>;
         })}
-        {nodes.map((node) => { const point = positions.get(node.id); if (!point) return null; const isTarget = node.id === context.target_instance_id; return <g key={node.id}><circle cx={point.x} cy={point.y} r={isTarget ? 24 : 20} fill={isTarget ? "#1e293b" : "#0f766e"} stroke={isTarget ? "#f59e0b" : "#ffffff"} strokeWidth={isTarget ? 3 : 2} /><text x={point.x} y={point.y + 3} textAnchor="middle" className="fill-white text-[9px] font-medium">{nodeText(node).slice(0, 13)}</text><text x={point.x} y={point.y + 34} textAnchor="middle" className="fill-slate-500 text-[9px]">{String(node.entity_type || "实体").slice(0, 15)}</text></g>; })}
+        {nodes.map((node) => { const point = positions.get(node.id); if (!point) return null; const isTarget = node.id === context.target_instance_id; const title = nodeText(node).slice(0, 18); const kind = String(node.entity_type || "实体").slice(0, 18); return <g key={node.id}><rect x={point.x - 58} y={point.y - 29} width="116" height="58" rx="12" fill={isTarget ? "#1e293b" : "#0f766e"} stroke={isTarget ? "#f59e0b" : "#ffffff"} strokeWidth={isTarget ? 3 : 2} /><text x={point.x} y={point.y - 2} textAnchor="middle" className="fill-white text-[10px] font-medium">{title}</text><text x={point.x} y={point.y + 16} textAnchor="middle" className="fill-white/75 text-[9px]">{kind}</text></g>; })}
       </svg>
     </div>
     {!edges.length && <p className="mt-2 text-[11px] text-slate-400">当前范围没有可绘制的关系</p>}

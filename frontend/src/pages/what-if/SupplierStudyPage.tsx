@@ -3,10 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import cytoscape from 'cytoscape'
 import { apiClientV2 } from '@/api/client'
+import { deterministicGraphPositions } from '@/lib/relationshipGraph'
 import { ScenarioContextProvider } from './scenario-context/ScenarioContextProvider'
 import { type ScenarioContextRef, responseMatchesScenarioContext, useScenarioContext } from './scenario-context/scenarioContext'
 import ObjectPanel from '@/pages/ontologies/detail/object-explorer/ObjectPanel'
 import '@/pages/ontologies/detail/object-explorer/object-explorer.css'
+import { useAuthStore } from '@/stores/authStore'
 
 type Metric = { key: string; label: string; value: number; unit: string; completeness: string }
 type Impact = { object_id: string; demand: string; item: string; customer: string; due: string; promised_date: string; quantity: number; late_days: number; shortages: Record<string, number>; required_wood: Record<string, number>; reason_codes: string[] }
@@ -28,16 +30,20 @@ const statusLabels: Record<string, string> = { queued: '排队中', running: '�
 
 export function WhatIfDemoLandingPage() {
   const navigate = useNavigate()
-  const boot = useMutation({ mutationFn: () => apiClientV2.post<Catalog>('/what-if/demo/bootstrap'), onSuccess: data => navigate(`/ontologies/${data.ontology_id}/what-if?study=${data.study_id}&case=supplier_b`, { replace: true }) })
+  const role = useAuthStore(state => state.user?.role)
+  const canEdit = role === 'admin' || role === 'editor'
+  const boot = useMutation({ mutationFn: () => canEdit ? apiClientV2.post<Catalog>('/what-if/demo/bootstrap') : apiClientV2.get<Catalog>('/what-if/demo/catalog'), onSuccess: data => navigate(`/ontologies/${data.ontology_id}/what-if?study=${data.study_id}&case=supplier_b`, { replace: true }) })
   const start = boot.mutate
   useEffect(() => { start() }, [start])
-  return <div className="min-h-screen bg-[var(--workbench-canvas)] p-8" data-testid="what-if-demo-landing"><div className="wb-surface mx-auto max-w-xl p-8"><p className="wb-eyebrow">已准备好的演示</p><h1 className="wb-page-title mt-2">木材供应韧性演示</h1><p className="wb-page-subtitle mt-3">正在打开固定 frePPLe 基线和三个情景方案。</p>{boot.error && <div role="alert" className="mt-5 text-red-700">演示无法打开，请检查后端、图数据库和样例导入状态。<button className="wb-button-secondary ml-3" onClick={() => boot.mutate()}>重试</button></div>}</div></div>
+  return <div className="min-h-screen bg-[var(--workbench-canvas)] p-8" data-testid="what-if-demo-landing"><div className="wb-surface mx-auto max-w-xl p-8"><p className="wb-eyebrow">已准备好的演示</p><h1 className="wb-page-title mt-2">木材供应韧性演示</h1><p className="wb-page-subtitle mt-3">正在打开固定 frePPLe 基线和三个情景方案。</p><p className="mt-3 text-xs text-slate-500">{canEdit ? '当前账号可编辑情景。' : '当前账号为只读账号，只能查看关系、结果和证据。'}</p>{boot.error && <div role="alert" className="mt-5 text-red-700">演示无法打开，请检查后端、图数据库和样例导入状态。<button className="wb-button-secondary ml-3" onClick={() => boot.mutate()}>重试</button></div>}</div></div>
 }
 
 export default function SupplierStudyPage() {
   const { id: ontologyId = '' } = useParams()
   const [url, setUrl] = useSearchParams()
   const queryClient = useQueryClient()
+  const role = useAuthStore(state => state.user?.role)
+  const canEdit = role === 'admin' || role === 'editor'
   const studyId = url.get('study') ?? ''
   const activeKey = url.get('case') ?? 'supplier_b'
   const drawerNames = ['Summary', 'Compare', 'Impacts', 'Evidence', 'Run details'] as const
@@ -110,10 +116,10 @@ export default function SupplierStudyPage() {
   if (!study.data || !active) return <div className="p-8" data-testid="study-loading">正在加载已准备的供应方案…</div>
   return <ScenarioContextProvider cases={cases} activeKey={activeKey}><div className="min-h-screen bg-[var(--workbench-canvas)] text-slate-800" data-testid="supplier-study">
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3"><div><p className="wb-eyebrow">本体 / 情景工作台</p><h1 className="text-xl font-semibold">{study.data.name}</h1></div><div className="flex items-center gap-3 text-xs text-slate-500"><span>frePPLe 固定样例 · 供应商演示扩展</span><button className="wb-button-secondary" onClick={() => { study.refetch(); compare.refetch(); graph.refetch() }}>刷新</button></div></header>
-    <div className="flex items-center gap-2 border-b bg-white px-5 py-1 text-xs"><button className="text-blue-700" onClick={() => setRenameDraft(study.data.name)}>重命名情景研究</button>{renameDraft !== null && <><input aria-label="研究名称" className="wb-input max-w-xs" value={renameDraft} onChange={event => setRenameDraft(event.target.value)} /><button className="wb-button-secondary" disabled={!renameDraft.trim() || rename.isPending} onClick={() => rename.mutate()}>确认</button><button onClick={() => setRenameDraft(null)}>取消</button></>}</div>
+    {canEdit && <div className="flex items-center gap-2 border-b bg-white px-5 py-1 text-xs"><button className="text-blue-700" onClick={() => setRenameDraft(study.data.name)}>重命名情景研究</button>{renameDraft !== null && <><input aria-label="研究名称" className="wb-input max-w-xs" value={renameDraft} onChange={event => setRenameDraft(event.target.value)} /><button className="wb-button-secondary" disabled={!renameDraft.trim() || rename.isPending} onClick={() => rename.mutate()}>确认</button><button onClick={() => setRenameDraft(null)}>取消</button></>}</div>}
     <div className="grid min-h-[660px] grid-cols-1 xl:grid-cols-[minmax(0,58fr)_minmax(430px,42fr)]" style={{ height: 'min(76vh, 900px)' }}>
       <section className="relative min-h-[360px] overflow-hidden border-r border-slate-200 bg-[#f8fafc]" aria-label="本体关系"><div className="absolute left-4 top-4 z-10 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 shadow-sm"><p className="wb-eyebrow">本体关系</p><p className="text-sm font-semibold">{active.name} · 修订 {active.scenario_revision}</p><p className="text-xs text-slate-500">{graphMatchesContext ? `${graph.data?.nodes.length ?? 0} 个对象 · ${graph.data?.edges.length ?? 0} 条关系` : '正在加载固定关系…'}</p></div><GraphCanvas graph={graphMatchesContext ? graph.data : undefined} selectedId={selectedNode} onSelect={handleNodeSelect} /><SelectionCard key={active.id} node={selected} active={active} profile={active.parameters} result={latestSuccess?.result_manifest} scope={study.data.scope.items} onClose={() => setSelectedNode(null)} /></section>
-      <section className="min-h-0 overflow-y-auto bg-white p-5" aria-label="情景模拟"><div className="flex items-center justify-between"><p className="wb-eyebrow">情景模拟</p><span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700">固定研究</span></div><h2 className="mt-1 text-lg font-semibold">情景研究 · {study.data.name}</h2>
+      <section className={`min-h-0 overflow-y-auto bg-white p-5 ${canEdit ? '' : 'pointer-events-none'}`} aria-label="情景模拟" aria-readonly={!canEdit}><div className="flex items-center justify-between"><p className="wb-eyebrow">情景模拟</p><span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700">{canEdit ? '固定研究' : '只读查看'}</span></div><h2 className="mt-1 text-lg font-semibold">情景研究 · {study.data.name}</h2>
         <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-medium text-slate-500">时间<input aria-label="时间" type="datetime-local" className="wb-input mt-1 w-full" value={localTime || study.data.scenario_time.slice(0, 16)} onChange={event => setLocalTime(event.target.value)} /></label><div><p className="text-xs font-medium text-slate-500">范围</p><p className="mt-1 rounded border border-slate-200 p-2 text-sm">图中对象 · {study.data.scope.items.map(item => itemLabels[item] ?? item).join('、')}</p></div></div>
         <button className="mt-2 text-xs font-medium text-blue-700" onClick={() => setOptionsOpen(!optionsOpen)}>高级选项 {optionsOpen ? '▴' : '▾'}</button>
         {optionsOpen && <div className="mt-2 rounded border border-slate-200 p-3 text-xs"><p>平滑：0 分钟（暂不支持非零值）</p><p className="mt-2 font-semibold">范围对象</p><div className="mt-2 flex gap-4">{itemNames.map(item => <label key={item} className="flex items-center gap-1"><input type="checkbox" checked={(scopeDraft ?? study.data.scope.items).includes(item)} onChange={event => setScopeDraft(current => event.target.checked ? [...new Set([...(current ?? study.data.scope.items), item])] : (current ?? study.data.scope.items).filter(value => value !== item))} />{itemLabels[item] ?? item}</label>)}</div><label className="mt-3 flex items-center gap-2"><input type="checkbox" checked={baselineDraft ?? study.data.run_baseline_sim} onChange={event => setBaselineDraft(event.target.checked)} />运行基线模拟</label><p className="mt-3 font-semibold">显示输入参数</p><div className="mt-2 flex flex-wrap gap-3">{fields.map(field => <label key={field} className="flex items-center gap-1"><input type="checkbox" checked={(projectionDraft ?? study.data.parameter_projection).includes(field)} onChange={event => setProjectionDraft(current => event.target.checked ? [...new Set([...(current ?? study.data.parameter_projection), field])] : (current ?? study.data.parameter_projection).filter(value => value !== field))} />{fieldLabels[field] ?? field}</label>)}</div><p className="mt-2 text-slate-500">修改时间或范围会生成新的兼容组，历史运行仍可追溯。</p><button className="wb-button-secondary mt-2" disabled={options.isPending || !(scopeDraft ?? study.data.scope.items).length} onClick={() => options.mutate()}>保存时间和选项</button></div>}
@@ -168,9 +174,16 @@ function GraphCanvas({ graph, selectedId, onSelect }: { graph?: Graph; selectedI
   const contextGraph = graph && responseMatchesScenarioContext(graph, activeContext) ? graph : undefined
   useEffect(() => {
     if (!host.current || !contextGraph) return
-    const nodes = contextGraph.nodes.filter(node => ['Supplier', 'SupplyOption', 'Item', 'Demand', 'DemandImpact', 'MaterialRequirement', 'Operation'].includes(node.type))
+    const nodes = contextGraph.nodes
+      .filter(node => ['Supplier', 'SupplyOption', 'Item', 'Demand', 'DemandImpact', 'MaterialRequirement', 'Operation'].includes(node.type))
+      .sort((left, right) => left.id.localeCompare(right.id))
     const ids = new Set(nodes.map(node => node.id))
-    const cy = cytoscape({ container: host.current, elements: [...nodes.map(node => ({ data: { id: node.id, label: node.name, kind: node.type } })), ...contextGraph.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target)).map((edge, i) => ({ data: { id: `edge-${i}`, source: edge.source, target: edge.target } }))], style: [{ selector: 'node', style: { label: 'data(label)', 'font-size': 7, 'text-valign': 'bottom', 'background-color': '#64748b', width: 14, height: 14 } }, { selector: 'node[kind = "Supplier"]', style: { 'background-color': '#f97316', width: 24, height: 24 } }, { selector: 'node[kind = "Demand"]', style: { 'background-color': '#3b82f6' } }, { selector: 'node[kind = "Item"]', style: { 'background-color': '#10b981', width: 20, height: 20 } }, { selector: 'edge', style: { width: 1, 'line-color': '#cbd5e1', 'curve-style': 'bezier' } }, { selector: ':selected', style: { 'border-width': 3, 'border-color': '#0f172a' } }], layout: { name: 'cose', animate: false, fit: true, padding: 35, nodeRepulsion: () => 20000 } })
+    const edges = contextGraph.edges
+      .filter(edge => ids.has(edge.source) && ids.has(edge.target))
+      .sort((left, right) => `${left.source}|${left.type}|${left.target}`.localeCompare(`${right.source}|${right.type}|${right.target}`))
+    const stablePositions = deterministicGraphPositions(nodes, edges, node => node.id, edge => edge.source, edge => edge.target)
+    const cy = cytoscape({ container: host.current, elements: [...nodes.map(node => ({ data: { id: node.id, label: node.name, kind: node.type }, position: stablePositions.get(node.id) })), ...edges.map((edge, i) => ({ data: { id: `edge-${i}`, source: edge.source, target: edge.target } }))], style: [{ selector: 'node', style: { label: 'data(label)', 'font-size': 7, 'text-valign': 'bottom', 'background-color': '#64748b', width: 14, height: 14 } }, { selector: 'node[kind = "Supplier"]', style: { 'background-color': '#f97316', width: 24, height: 24 } }, { selector: 'node[kind = "Demand"]', style: { 'background-color': '#3b82f6' } }, { selector: 'node[kind = "Item"]', style: { 'background-color': '#10b981', width: 20, height: 20 } }, { selector: 'edge', style: { width: 1, 'line-color': '#cbd5e1', 'curve-style': 'bezier' } }, { selector: ':selected', style: { 'border-width': 3, 'border-color': '#0f172a' } }], layout: { name: 'preset', fit: false, padding: 35 } })
+    cy.fit(cy.elements(), 35)
     graphRef.current = cy
     cy.on('tap', 'node', event => {
       const id = event.target.id()

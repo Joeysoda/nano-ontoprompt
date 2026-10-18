@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ontologyApi } from '@/api/ontologies'
+import { useAuthStore } from '@/stores/authStore'
 import StatusBadge from '@/components/StatusBadge'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import type { OntologyListItem } from '@/types/ontology'
@@ -17,6 +18,9 @@ export default function OntologyListPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { t, i18n } = useTranslation()
+  const role = useAuthStore(s => s.user?.role)
+  const canEdit = role === 'admin' || role === 'editor'
+  const canDelete = role === 'admin'
 
   const { data, isLoading } = useQuery({
     queryKey: ['ontologies'],
@@ -53,10 +57,10 @@ export default function OntologyListPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold">{t('ontology.title')}</h2>
-        <button onClick={() => navigate('/ontologies/new')}
+        {canEdit && <button onClick={() => navigate('/ontologies/new')}
           className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800">
           <Plus size={14} /> {t('ontology.create')}
-        </button>
+        </button>}
       </div>
 
       {/* Filter bar */}
@@ -126,8 +130,8 @@ export default function OntologyListPage() {
                 <td className="px-4 py-3 space-x-3">
                   <button onClick={() => navigate(`/ontologies/${o.id}`)}
                     className="text-blue-600 hover:underline text-xs">{t('ontology.view')}</button>
-                  <button onClick={() => setDeleteTarget({ id: o.id, name: o.name })}
-                    className="text-red-600 hover:underline text-xs">{t('ontology.delete')}</button>
+                  {canDelete && <button onClick={() => setDeleteTarget({ id: o.id, name: o.name })}
+                    className="text-red-600 hover:underline text-xs">{t('ontology.delete')}</button>}
                 </td>
               </tr>
             ))}

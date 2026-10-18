@@ -8,8 +8,11 @@ from dataclasses import asdict, dataclass, field
 from functools import cmp_to_key
 from time import monotonic
 from datetime import date, datetime, timedelta
+from typing import Any, Callable
 from pydantic import TypeAdapter
 from app.schemas.v2.object_query import ObjectSetExpr, LoadObjectSetResponse, LoadPageInfo, ObjectRecord, AggregateResult
+from app.services.v2.authorization_service import AuthorizationProjection, redact_record
+from app.services.v2.data_plane_service import AdapterCapabilities, build_context, make_manifest
 from .compiler import FalkorObjectQueryCompiler, physical_relation_type
 from .errors import ObjectQueryError
 from .normalize import canonical_data, definition_hash, execution_hash, stable_hash
@@ -23,22 +26,82 @@ def metadata_digest(metadata):
                         'links': sorted([asdict(v) for v in metadata.links], key=lambda v: (v['api_name'], v['source_type'], v['target_type']))})
 
 
-@dataclass(frozen=True)
+@dataclass
 class QueryPolicy:
     principal: str
     revision: str = 'owner-admin-v1'
     # None means the ontology-authorized principal has unrestricted data access.
     object_ids: frozenset[tuple[str, str]] | None = None
     fields: dict[str, frozenset[str]] | None = None
+    # Plan A compiles one authorization projection before terminal execution.
+    # The resolver is intentionally request-scoped: callers preload applicable
+    # policies once, while this callback is allowed to evaluate row conditions
+    # against each bounded graph read without querying the policy table again.
+    projection_resolver: Callable[[list[dict[str, Any]]], AuthorizationProjection] | None = field(
+        default=None, repr=False, compare=False
+    )
+    projection: AuthorizationProjection | None = field(default=None, repr=False, compare=False)
 
     def field_allowed(self, type_name, name):
+        if self.projection is not None:
+            if name in {'_instance_id', '_type'}:
+                return
+            if self.projection.allowed_fields is not None and name not in self.projection.allowed_fields:
+                raise ObjectQueryError('forbidden', 'property', 'Field is not authorized')
+            if name in self.projection.denied_fields:
+                raise ObjectQueryError('forbidden', 'property', 'Field is authorized only for a different row scope')
         if self.fields is not None and name not in self.fields.get(type_name, frozenset()):
             raise ObjectQueryError('forbidden', 'property', 'Field is not authorized')
 
     def digest(self):
+        if self.projection is not None:
+            return self.projection.permission_digest
         return stable_hash({'principal': self.principal, 'revision': self.revision,
             'objects': sorted(self.object_ids) if self.object_ids is not None else None,
             'fields': {k: sorted(v) for k, v in self.fields.items()} if self.fields is not None else None})
+
+    def apply_projection(self, data: 'GraphData') -> 'GraphData':
+        """Apply one compiled Plan A projection to a graph read.
+
+        The graph adapter returns a flat property map and uses ``(_type,
+        _instance_id)`` as its stable identity.  The security service accepts
+        a small record envelope, so this method converts the adapter shape,
+        evaluates the already-loaded policy set once, masks fields, and then
+        gives the query evaluator only visible objects and their visible
+        edges.  This prevents later filters, aggregates, and traversals from
+        operating on unauthorized rows.
+        """
+        if self.projection_resolver is None:
+            return data
+        records: list[dict[str, Any]] = []
+        for (type_name, object_id), properties in data.objects.items():
+            records.append({
+                'id': f'{type_name}:{object_id}',
+                'entity_type': type_name,
+                'properties': {key: value for key, value in properties.items() if not str(key).startswith('_')},
+            })
+        projection = self.projection_resolver(records)
+        self.projection = projection
+        if not projection.allowed and records:
+            raise ObjectQueryError('forbidden', 'execution', 'The requested objects are not authorized')
+
+        visible: dict[tuple[str, str], dict[str, Any]] = {}
+        for key, properties in data.objects.items():
+            type_name, object_id = key
+            record = {
+                'id': f'{type_name}:{object_id}',
+                'entity_type': type_name,
+                'properties': {name: value for name, value in properties.items() if not str(name).startswith('_')},
+            }
+            redacted = redact_record(projection, record)
+            if redacted is None:
+                continue
+            safe_properties = dict(properties)
+            safe_properties.update(redacted.get('properties') or {})
+            visible[key] = safe_properties
+        visible_keys = set(visible)
+        edges = [edge for edge in data.edges if edge[0] in visible_keys and edge[2] in visible_keys]
+        return GraphData(visible, edges)
 
 
 @dataclass
@@ -152,6 +215,55 @@ class QueryCore:
     def __init__(self, metadata, adapter, policy):
         self.metadata, self.adapter, self.policy = metadata, adapter, policy
 
+    def _result_manifest(self, request, metadata_digest_value: str, *, result_count: int | None = None):
+        """Build the common Plan A provenance envelope for query terminals."""
+        requested_mode = request.context.consistency
+        consistency_mode = "snapshot" if requested_mode == "snapshot" else "pinned" if requested_mode == "projection_guarded" else "live"
+        snapshot_id = request.context.data_view_id if consistency_mode == "snapshot" else None
+        projection_context = self.policy.projection.context if self.policy.projection is not None else None
+        revision_id = request.context.revision_id or (projection_context.metadata_revision_id if projection_context else None)
+        context = build_context(
+            request.context.ontology_id,
+            metadata_revision_id=revision_id,
+            metadata_digest=metadata_digest_value,
+            source_manifest_id=request.context.data_view_id,
+            source_version=request.context.projection_token,
+            projection_id=request.context.projection_token,
+            view_id=request.context.data_view_id,
+            snapshot_id=snapshot_id,
+            scenario_id=request.context.scenario_id,
+            permission_digest=self.policy.digest(),
+            consistency={"mode": consistency_mode, "snapshot_id": snapshot_id},
+        )
+        capabilities = AdapterCapabilities(
+            adapter="object-query",
+            adapter_version="v2",
+            supports_live=True,
+            supports_pinned=True,
+            supports_snapshot=True,
+            supports_object_filter=True,
+            supports_field_filter=True,
+            supports_aggregate=True,
+            semantic_fallback_group="falkor-query",
+        )
+        redacted_fields: list[str] = []
+        if self.policy.projection is not None and self.policy.projection.allowed_fields is not None:
+            read_options = getattr(request, "read", None)
+            requested = getattr(read_options, "select", ()) if read_options is not None else ()
+            redacted_fields = sorted(
+                item.api_name
+                for item in requested
+                if item.api_name not in self.policy.projection.allowed_fields
+            )
+        return make_manifest(
+            context,
+            capabilities,
+            status="ready",
+            permission_digest=self.policy.digest(),
+            redacted_fields=redacted_fields,
+            result_count=result_count,
+        ).as_dict()
+
     def load(self, request, resolver=None):
         # Copy before validation/hash/execution, including mutable nested values.
         request = request.model_copy(deep=True)
@@ -179,11 +291,18 @@ class QueryCore:
                 raise ObjectQueryError("total_unavailable", "read.include_total", "Exact totals use aggregate terminal")
         else:
             raise ObjectQueryError("consistency_unavailable", "context.consistency", "Consistency mode is unavailable")
+        # Read the bounded adapter result before compiling the permission
+        # digest.  The Plan A resolver evaluates row conditions once against
+        # this request's graph read, so the digest, cursor, filters,
+        # aggregates, and traversals all use the same projection.
+        data = self.policy.apply_projection(self.adapter.read(request.context.ontology_id))
         digest = metadata_digest(self.metadata)
         if request.context.metadata_digest and request.context.metadata_digest != digest:
             raise ObjectQueryError('metadata_mismatch', 'context.metadata_digest', 'Metadata has changed')
         context = {'ontology_id': request.context.ontology_id, 'consistency': request.context.consistency,
-                   'data_view_id': request.context.data_view_id, 'metadata_digest': digest,
+                   'data_view_id': request.context.data_view_id, 'revision_id': request.context.revision_id,
+                   'metadata_digest': digest, 'source_manifest_id': request.context.data_view_id,
+                   'source_version': request.context.projection_token,
                    'permission_digest': self.policy.digest(), 'references': manifest,
                    'snapshot': request.context.consistency == 'snapshot',
                    'read_digest': stable_hash(request.read.model_dump(mode='python', exclude={'page_token'}))}
@@ -200,10 +319,14 @@ class QueryCore:
         compiler._validate_read(request.read, result_type)
         self._authorize_fields(bound)
         for item in request.read.select:
-            self.policy.field_allowed(result_type.api_name, item.api_name)
+            # Plan A masks unauthorized response fields to ``null``.  Query
+            # predicates and ordering still call ``field_allowed`` below, but
+            # asking to display a restricted field is a redaction operation,
+            # not a reason to expose whether the field exists.
+            if self.policy.projection is None:
+                self.policy.field_allowed(result_type.api_name, item.api_name)
         for item in request.read.order_by:
             self.policy.field_allowed(result_type.api_name, item.property.api_name)
-        data = self.adapter.read(request.context.ontology_id)
         visible = {k: v for k, v in data.objects.items() if self.policy.object_ids is None or k in self.policy.object_ids}
         evaluator = _Evaluator(self.metadata, GraphData(visible, data.edges))
         members = evaluator.evaluate(bound)
@@ -245,12 +368,14 @@ class QueryCore:
         stability = "snapshot_keyset" if request.context.consistency == "snapshot" else "single_page_live"
         if has_more and request.context.consistency == "snapshot" and objects:
             next_page_token = encode_cursor({"execution_hash": current_execution_hash, "last_key": list(rows[request.read.page_size - 1])})
+        result_manifest = self._result_manifest(request, digest, result_count=len(objects))
         return LoadObjectSetResponse(objects=objects,
             page=LoadPageInfo(page_size=request.read.page_size, returned=len(objects), has_more=has_more,
                               next_page_token=next_page_token, stability=stability),
             definition_hash=original_hash, execution_hash=current_execution_hash,
             execution_context=context, completeness=completeness,
-            status=completeness if completeness != 'complete' else 'ok' if objects else 'empty')
+            status=completeness if completeness != 'complete' else 'ok' if objects else 'empty',
+            result_manifest=result_manifest)
 
     def materialize(self, request, resolver=None, max_pages=50):
         """Bounded complete iterator used by compare and SetHandle terminals."""
@@ -281,6 +406,7 @@ class QueryCore:
             expression, manifest = resolver.expand(expression)
         bound, parameters = bind_parameters(expression, request.parameter_schema, request.parameters)
         validation = validate_object_set(bound, self.metadata, terminal="aggregate")
+        data = self.policy.apply_projection(self.adapter.read(request.context.ontology_id))
         digest = metadata_digest(self.metadata)
         if request.context.metadata_digest and request.context.metadata_digest != digest:
             raise ObjectQueryError("metadata_mismatch", "context.metadata_digest", "Metadata has changed")
@@ -303,11 +429,12 @@ class QueryCore:
                     raise ObjectQueryError("property_not_aggregatable", "aggregations.property", "Property is not aggregatable")
                 self.policy.field_allowed(result_type.api_name, spec.property.api_name)
         context = {'ontology_id': request.context.ontology_id, 'consistency': request.context.consistency,
-                   'data_view_id': request.context.data_view_id, 'metadata_digest': digest,
+                   'data_view_id': request.context.data_view_id, 'revision_id': request.context.revision_id,
+                   'metadata_digest': digest, 'source_manifest_id': request.context.data_view_id,
+                   'source_version': request.context.projection_token,
                    'permission_digest': self.policy.digest(), 'references': manifest,
                    'snapshot': request.context.consistency == 'snapshot'}
         current_execution_hash = execution_hash(original_hash, parameters=parameters, **context)
-        data = self.adapter.read(request.context.ontology_id)
         visible = {k: v for k, v in data.objects.items() if self.policy.object_ids is None or k in self.policy.object_ids}
         evaluator = _Evaluator(self.metadata, GraphData(visible, data.edges))
         members = evaluator.evaluate(bound)
@@ -352,10 +479,14 @@ class QueryCore:
                     raise ObjectQueryError("capability_unavailable", "aggregations.op", "Approximate aggregate is not enabled")
             output.append(row)
         context = {"ontology_id": request.context.ontology_id, "data_view_id": request.context.data_view_id,
+                   "revision_id": request.context.revision_id,
+                   "source_manifest_id": request.context.data_view_id,
+                   "source_version": request.context.projection_token,
                    "consistency": "snapshot", "metadata_digest": digest, "permission_digest": self.policy.digest(),
                    "references": manifest, "snapshot": True}
         return AggregateResult(groups=output, exact=True, completeness="complete", definition_hash=original_hash,
-            execution_hash=execution_hash(original_hash, parameters=parameters, **context), execution_context=context)
+            execution_hash=execution_hash(original_hash, parameters=parameters, **context), execution_context=context,
+            result_manifest=self._result_manifest(request, digest, result_count=len(output)))
 
     def _authorize_fields(self, expr):
         kind = expr.kind

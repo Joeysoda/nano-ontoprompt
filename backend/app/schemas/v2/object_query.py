@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.schemas.v2.semantic_core import ResultManifestContract
 
 
 class StrictModel(BaseModel):
@@ -424,6 +425,7 @@ class AggregateResult(StrictModel):
     definition_hash: str
     execution_hash: str
     execution_context: dict[str, Any] = Field(default_factory=dict)
+    result_manifest: ResultManifestContract | None = None
 
 
 class CompareObjectSetRequest(StrictModel):
@@ -444,6 +446,7 @@ class CompareResult(StrictModel):
     retained: list[dict[str, Any]]
     baseline_execution_hash: str
     candidate_execution_hash: str
+    result_manifests: list[ResultManifestContract] = Field(default_factory=list, max_length=2)
 
 
 class MeasurementChannel(StrictModel):
@@ -556,6 +559,7 @@ class LoadObjectSetResponse(StrictModel):
     execution_context: dict[str, Any] = Field(default_factory=dict)
     completeness: Literal["complete", "partial", "incomplete"] = "partial"
     status: Literal["ok", "empty", "partial", "incomplete"] = "partial"
+    result_manifest: ResultManifestContract | None = None
 
 
 class ValidateObjectQueryResponse(StrictModel):
