@@ -42,7 +42,7 @@ export default function ScenarioStudiesPage() {
   const [params, setParams] = useSearchParams()
   const queryClient = useQueryClient()
   const ontologyId = routeOntologyId || params.get('ontology') || ''
-  const studyId = params.get('study') ?? ''
+  const requestedStudyId = params.get('study') ?? ''
   const version = Number(params.get('version') || '0')
   const [studyName, setStudyName] = useState('工艺节拍情景研究')
   const [selectedTemplateId, setSelectedTemplateId] = useState('cycle_time')
@@ -65,6 +65,8 @@ export default function ScenarioStudiesPage() {
   const studies = useQuery({ queryKey: ['scenario-studies', ontologyId], queryFn: () => apiClientV2.get<{ items: Study[] }>(`/ontologies/${ontologyId}/scenario-study-definitions`), enabled: !!ontologyId })
   const studyTemplates = useQuery({ queryKey: ['scenario-study-templates', ontologyId], queryFn: () => apiClientV2.get<{ items: StudyTemplate[] }>(`/ontologies/${ontologyId}/scenario-study-templates`), enabled: !!ontologyId })
   const logicAssets = useQuery({ queryKey: ['study-logic-assets', ontologyId], queryFn: () => apiClientV2.get<{ assets: StudyLogicAsset[] }>(`/ontologies/${ontologyId}/logic-assets`), enabled: !!ontologyId })
+  // Without ?study=, open the latest saved study so saved cases are visible on arrival.
+  const studyId = requestedStudyId || studies.data?.items[0]?.id || ''
   const selectedStudy = studies.data?.items.find(item => item.id === studyId)
   const selectedVersion = version || selectedStudy?.latest_version || 0
   const cases = useQuery({ queryKey: ['scenario-study-cases', ontologyId, studyId, selectedVersion, showArchivedCases], queryFn: () => apiClientV2.get<{ items: Case[] }>(`/ontologies/${ontologyId}/scenario-study-definitions/${studyId}/cases`, { params: { study_version: selectedVersion, include_archived: showArchivedCases } }), enabled: !!ontologyId && !!studyId && selectedVersion > 0 })
@@ -124,7 +126,7 @@ export default function ScenarioStudiesPage() {
     <div className="mx-auto w-full">
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div><p className="wb-eyebrow">Scenario Study</p><h1 className="wb-page-title mt-1">情景研究</h1><p className="wb-page-subtitle mt-2">配置模型 · 调整输入 · 比较情景</p></div>
-        {ontologyId && <nav className="flex gap-2 text-sm"><Link className="wb-button-secondary" to={`/ontologies/${ontologyId}/scenarios`}>对象情景沙箱</Link><Link className="wb-button-secondary" to={`/ontologies/${ontologyId}/what-if`}>供应链示例</Link></nav>}
+        {ontologyId && <nav className="flex gap-2 text-sm"><Link className="wb-button-secondary" to={`/ontologies/${ontologyId}/scenarios`}>对象情景沙箱</Link></nav>}
       </header>
       {!routeOntologyId && <section className="wb-surface mb-5 p-4"><label className="text-sm font-medium">选择本体 <select className="wb-input ml-3 min-w-64" value={ontologyId} onChange={event => setParams(event.target.value ? { ontology: event.target.value } : {})}><option value="">请选择制造业本体</option>{ontologies.data?.items.map(item => <option key={item.id} value={item.id}>{item.name} · {item.domain}</option>)}</select></label></section>}
       {ontologyId && <div className="space-y-4">

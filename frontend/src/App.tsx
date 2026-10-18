@@ -26,8 +26,7 @@ const TemporalWorkbenchPage = React.lazy(() => import("@/pages/data-management/t
 const TemporalReplayPage = React.lazy(() => import("@/pages/data-management/temporal/TemporalReplayPage"));
 const DynamicDataPage = React.lazy(() => import("@/pages/data-management/dynamic/DynamicDataPage"));
 const BenchmarksPage = React.lazy(() => import("@/pages/benchmarks/BenchmarksPage"));
-const WhatIfWorkbenchPage = React.lazy(() => import("@/pages/what-if/SupplierStudyPage"));
-const WhatIfDemoLandingPage = React.lazy(() => import("@/pages/what-if/SupplierStudyPage").then(module => ({ default: module.WhatIfDemoLandingPage })));
+const AppLauncherPage = React.lazy(() => import("@/pages/apps/AppLauncherPage"));
 const GenericScenarioWorkbenchPage = React.lazy(() => import("@/pages/what-if/GenericScenarioWorkbenchPage"));
 const ScenarioCatalogPage = React.lazy(() => import("@/pages/what-if/GenericScenarioWorkbenchPage").then(module => ({ default: module.ScenarioCatalogPage })));
 const ScenarioStudiesPage = React.lazy(() => import("@/pages/what-if/ScenarioStudiesPage"));
@@ -79,6 +78,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 /** Legacy detail links are retained as safe entry points, but the old
  * detail forms are no longer part of the workbench surface. */
+// The supplier demo is now a saved case in the generic study system.
+function OntologyStudiesRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/ontologies/${id}/scenario-studies`} replace />;
+}
+
 function LegacyOntologyRedirect({ tab = "graph" }: { tab?: "graph" | "entities" | "logic" }) {
   const { id } = useParams<{ id: string }>();
   return <Navigate to={id ? `/ontologies/${id}?tab=${tab}` : "/ontologies"} replace />;
@@ -263,7 +268,7 @@ export default function App() {
             />
             <Route
               path="/what-if"
-              element={<ProtectedRoute><WhatIfDemoLandingPage /></ProtectedRoute>}
+              element={<Navigate to="/scenario-studies" replace />}
             />
             <Route
               path="/scenarios"
@@ -283,7 +288,11 @@ export default function App() {
             />
             <Route
               path="/ontologies/:id/what-if"
-              element={<ProtectedRoute><WhatIfWorkbenchPage /></ProtectedRoute>}
+              element={<OntologyStudiesRedirect />}
+            />
+            <Route
+              path="/apps/:app"
+              element={<ProtectedRoute><AppLauncherPage /></ProtectedRoute>}
             />
             <Route
               path="/ontologies/:id/entities/:eid"

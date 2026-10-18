@@ -30,20 +30,33 @@ async function mount(page: Page, path = `/ontologies/${ONT}`) {
     if (p.endsWith('/object-query/catalog')) return json({ metadata_digest: 'm', types: [{ kind: 'object', api_name: 'Machine', properties: [] }], links: [] });
     if (p.endsWith('/object-query/load')) return json({ objects: [], completeness: 'complete', status: 'empty', page: { returned: 0, has_more: false } });
     if (p.endsWith('/object-sets/resources')) return json({ resources: [] });
+    if (p === '/api/v1/ontologies') return json({ data: { items: [{ id: ONT, name: '设备运维', domain: 'manufacturing', entity_count: 4, relation_count: 3 }], total: 1 } });
     return json({ data: [], items: [] });
   });
   await page.goto(path);
   return posts;
 }
 
-test('ontology opens on the Object Explorer with grouped Use / Build / Data navigation', async ({ page }) => {
+test('ontology opens on an overview with Ontology Manager style groups', async ({ page }) => {
   await mount(page);
   const nav = page.getByRole('navigation', { name: '本体导航' });
-  for (const group of ['使用', '构建', '数据与治理']) await expect(nav.getByText(group, { exact: true })).toBeVisible();
-  await expect(nav.getByRole('button', { name: /对象浏览器/ })).toHaveAttribute('aria-current', 'page');
+  for (const group of ['资源', '数据', '应用', '治理']) await expect(nav.getByText(group, { exact: true })).toBeVisible();
+  await expect(nav.getByRole('button', { name: /总览/ })).toHaveAttribute('aria-current', 'page');
   await expect(nav.getByLabel('3 条待处理告警')).toBeVisible();
-  await expect(page.getByRole('heading', { name: '设备运维' })).toBeVisible();
+  const overview = page.getByRole('region', { name: '本体总览' });
+  await expect(overview.getByText('待处理告警')).toBeVisible();
+  await overview.getByRole('button', { name: /Machine/ }).click();
+  await expect(page).toHaveURL(/tab=objects.*objectType=Machine/);
   await page.screenshot({ path: 'test-results/nav-objects.png', fullPage: true });
+});
+
+test('data is added from inside the ontology; wizards open pre-targeted', async ({ page }) => {
+  await mount(page, `/ontologies/${ONT}?tab=sources`);
+  const sources = page.getByRole('region', { name: '数据源' });
+  await expect(sources.getByText('适合当前本体')).toHaveCount(1);
+  await page.screenshot({ path: 'test-results/nav-sources.png', fullPage: true });
+  await sources.getByRole('button', { name: /时序数据/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/data/temporal/build\\?ontology_id=${ONT}`));
 });
 
 test('alert center lists, filters and acknowledges; rules page manages schedule and evaluation', async ({ page }) => {
@@ -67,17 +80,27 @@ test('alert center lists, filters and acknowledges; rules page manages schedule 
 test('old tab links still work and scenario studies open from the Use group', async ({ page }) => {
   await mount(page, `/ontologies/${ONT}?tab=logic-assets`);
   const nav = page.getByRole('navigation', { name: '本体导航' });
-  await expect(nav.getByRole('button', { name: /函数绑定/ })).toHaveAttribute('aria-current', 'page');
+  await expect(nav.getByRole('button', { name: '函数', exact: true })).toHaveAttribute('aria-current', 'page');
   await nav.getByRole('button', { name: /情景研究/ }).click();
   await expect(page).toHaveURL(new RegExp(`/ontologies/${ONT}/scenario-studies`));
 });
 
-test('global sidebar groups pages and merges the three scenario entries', async ({ page }) => {
+test('global sidebar is platform level: home, library, applications, system; no standalone demo or data tool', async ({ page }) => {
   await mount(page);
   const main = page.getByRole('navigation', { name: '主导航' });
-  for (const group of ['工作台', '本体', '数据', '情景决策', '系统']) await expect(main.getByText(group, { exact: true })).toBeVisible();
-  await expect(main.getByRole('link', { name: /情景与推演/ })).toHaveCount(1);
-  await expect(main.getByRole('link', { name: /自定义研究/ })).toHaveCount(0);  // collapsed outside its section
-  await main.getByRole('button', { name: '展开情景与推演菜单' }).click();
-  for (const sub of ['自定义研究', '通用情景', '供应商推演演示']) await expect(main.getByRole('link', { name: new RegExp(sub) })).toBeVisible();
+  for (const group of ['工作台', '应用', '系统']) await expect(main.getByText(group, { exact: true })).toBeVisible();
+  for (const link of ['首页', '本体库', '对象浏览器', '告警中心', '情景研究', '通用情景']) await expect(main.getByRole('link', { name: link, exact: true })).toBeVisible();
+  await expect(main.getByText('供应商推演演示')).toHaveCount(0);
+  await expect(main.getByText('数据工具')).toHaveCount(0);
+  await main.getByRole('link', { name: '告警中心', exact: true }).click();
+  await expect(page).toHaveURL(/\/apps\/alerts/);
+  await page.getByRole('list', { name: '选择本体' }).getByRole('link').first().click();
+  await expect(page).toHaveURL(new RegExp(`/ontologies/${ONT}\\?tab=alerts`));
+});
+
+test('retired supplier demo routes land on the generic study system', async ({ page }) => {
+  await mount(page, '/what-if');
+  await expect(page).toHaveURL(/\/scenario-studies$/);
+  await mount(page, `/ontologies/${ONT}/what-if`);
+  await expect(page).toHaveURL(new RegExp(`/ontologies/${ONT}/scenario-studies`));
 });

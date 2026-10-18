@@ -402,7 +402,8 @@ export default function MultimodalDataPage() {
     point_stats: true,
   });
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
-  const [ontologyId, setOntologyId] = useState("");
+  // Opened from an ontology's 数据源 page: append to that ontology when it is a multimodal one.
+  const [ontologyId, setOntologyId] = useState(() => searchParams.get("ontology_id") || "");
   const [targetMode, setTargetMode] = useState<"create" | "append">("append");
   const [newOntologyName, setNewOntologyName] = useState("I-BADAS 多模态本体");
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);

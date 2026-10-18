@@ -1,25 +1,21 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Activity,
+  BellRing,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Database,
   FileSearch,
-  FlaskConical,
   GitCompareArrows,
-  Images,
   LayoutDashboard,
   LogOut,
   Network,
-  Radio,
   Settings,
   Sparkles,
+  Table2,
 } from 'lucide-react'
 import HelpFAQ from '@/components/HelpFAQ'
 import { useAuthStore } from '@/stores/authStore'
-import { DEFAULT_DYNAMIC_RUN_PATH } from '@/config/demoRoutes'
 
 interface SubItem { to: string; icon: React.ElementType; label: string; hint: string }
 interface NavItem { to: string; icon: React.ElementType; label: string; subItems?: SubItem[] }
@@ -35,26 +31,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // Submenus start collapsed and open for the section you are in; a manual toggle wins.
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
 
-  // Grouped by what the user is doing: build ontologies, bring in data, run decisions, system.
+  // Platform-level navigation, as in Foundry: home, the ontology library and the
+  // applications that run on an ontology. Data is brought in inside an ontology
+  // (数据 → 数据源), not from a separate global tool.
   const navGroups: NavGroup[] = [
-    { label: '工作台', items: [{ to: '/overview', icon: LayoutDashboard, label: '总览' }] },
-    { label: '本体', items: [{ to: '/ontologies', icon: Network, label: '本体库' }] },
-    { label: '数据', items: [{
-      to: '/data', icon: Database, label: '数据工具',
-      subItems: [
-        { to: '/data/temporal', icon: Activity, label: '时序数据构建', hint: '从原始数据开始创建' },
-        { to: '/data/multimodal', icon: Images, label: '多模态数据构建', hint: '从原始数据开始创建' },
-        { to: DEFAULT_DYNAMIC_RUN_PATH, icon: Radio, label: '动态数据构建', hint: '开始、暂停与逐事件演示' },
-      ],
-    }] },
-    { label: '情景决策', items: [{
-      to: '/scenario-studies', icon: FlaskConical, label: '情景与推演',
-      subItems: [
-        { to: '/scenario-studies', icon: Sparkles, label: '自定义研究', hint: '版本化研究、案例与运行' },
-        { to: '/scenarios', icon: GitCompareArrows, label: '通用情景', hint: '隔离编辑、比较与合并' },
-        { to: '/what-if', icon: FlaskConical, label: '供应商推演演示', hint: '预置的供应中断案例' },
-      ],
-    }] },
+    { label: '工作台', items: [
+      { to: '/overview', icon: LayoutDashboard, label: '首页' },
+      { to: '/ontologies', icon: Network, label: '本体库' },
+    ] },
+    { label: '应用', items: [
+      { to: '/apps/objects', icon: Table2, label: '对象浏览器' },
+      { to: '/apps/alerts', icon: BellRing, label: '告警中心' },
+      { to: '/scenario-studies', icon: Sparkles, label: '情景研究' },
+      { to: '/scenarios', icon: GitCompareArrows, label: '通用情景' },
+    ] },
     { label: '系统', items: [
       { to: '/models', icon: FileSearch, label: '模型与审查' },
       { to: '/settings', icon: Settings, label: '设置' },

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   Check,
@@ -156,10 +156,13 @@ export default function TemporalConstructionWizard() {
   const [timeColumn, setTimeColumn] = useState("_event_seq");
   const [fromColumn, setFromColumn] = useState("valid_from");
   const [toColumn, setToColumn] = useState("valid_to");
+  // Opened from an ontology's 数据源 page: add to that ontology by default.
+  const [searchParams] = useSearchParams();
+  const presetOntologyId = searchParams.get("ontology_id") || "";
   const [ontologyMode, setOntologyMode] = useState<"create" | "reuse">(
-    "create",
+    presetOntologyId ? "reuse" : "create",
   );
-  const [ontologyId, setOntologyId] = useState("");
+  const [ontologyId, setOntologyId] = useState(presetOntologyId);
   const [ontologyName, setOntologyName] = useState("FactoryNet CNC 时序本体");
   const [fieldMap, setFieldMap] = useState<
     Record<string, { target: string; role: string }>

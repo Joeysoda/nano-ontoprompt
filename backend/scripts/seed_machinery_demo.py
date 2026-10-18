@@ -112,11 +112,46 @@ def seed_rules(api: str, ontology_id: str, action_id: str, limits: dict[str, flo
             print(f"rule {label}: {result.json()['output_count']} episodes, {result.json()['triggered_count']} alerts")
 
 
+def seed_supplier_study(api: str) -> str:
+    """The supplier-outage demo as a saved Study and Cases in the generic system (no bespoke page)."""
+    with httpx.Client(base_url=api, timeout=120) as client:
+        def ok(response):
+            response.raise_for_status()
+            body = response.json()
+            return body.get("data", body) if isinstance(body, dict) else body
+        ontology = ok(client.post("/api/v1/ontologies", json={"name": "供应链演示（供应中断）", "domain": "供应链",
+                                                             "description": "关键供应商停供的情景研究示例；参数为合成制造数据"}))
+        root = f"/api/v2/ontologies/{ontology['id']}"
+        ok(client.post(f"{root}/logic-assets/seed"))  # studies pin built-in Functions by release
+        view = ok(client.post(f"{root}/object-query/data-views", json={"source_ontology_id": ontology["id"], "source_manifest_digest": "supplier-demo"}))
+        template = next(t for t in ok(client.get(f"{root}/scenario-study-templates"))["items"] if t["template_id"] == "supplier_disruption")
+        study = ok(client.post(f"{root}/scenario-study-definitions", json={
+            "name": "关键供应商停供", "description": template["description"], "draft_spec": template["spec"]}))
+        version = ok(client.post(f"{root}/scenario-study-definitions/{study['id']}:publish",
+                                 json={"expected_etag": study["etag"], "change_note": "演示案例"}))
+        supply = next(p for p in template["spec"]["parameters"] if p["key"] == "supply_options")["default"]
+        cases = [("基线：两家供应商正常供货", "baseline", {}),
+                 ("Supplier-B 停供", "candidate", {"supply_options": [dict(o, quantity=0) if o["supplier"] == "Supplier-B" else o for o in supply]})]
+        for index, (name, kind, overrides) in enumerate(cases):
+            scenario = ok(client.post(f"{root}/scenarios", json={"name": name, "base_view_id": view["view_id"]}))
+            case = ok(client.post(f"{root}/scenario-study-definitions/{study['id']}/cases", json={
+                "study_version": version["version"], "scenario_id": scenario["id"], "name": name, "case_kind": kind, "parameter_overrides": overrides}))
+            ok(client.post(f"{root}/scenario-study-definitions/{study['id']}/cases/{case['id']}/runs",
+                           json={"expected_etag": case["etag"], "client_request_id": f"seed-{index}"}))
+        print(f"supplier study: ontology={ontology['id']} study={study['id']}")
+        return ontology["id"]
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pdm", type=Path, required=True)
+    parser.add_argument("--pdm", type=Path)
     parser.add_argument("--api", default="http://backend:8000")
+    parser.add_argument("--supplier-only", action="store_true", help="only seed the supplier study demo")
     args = parser.parse_args()
+    supplier = seed_supplier_study(args.api)
+    print(f"OPEN /ontologies/{supplier}/scenario-studies")
+    if args.supplier_only:
+        return
     ontology_id, view_id, action_id = seed_data(args.pdm)
     seed_rules(args.api, ontology_id, action_id, thresholds(args.pdm))
     print(f"OPEN /ontologies/{ontology_id}?tab=objects&dataView={view_id}")
