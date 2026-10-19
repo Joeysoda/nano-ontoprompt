@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClientV2, formatApiError } from '@/api/client'
 import { formatStudyValue } from './studyDisplay'
 
@@ -15,7 +15,7 @@ export type MaterialDecisionOutputs = { feasible: boolean; revenue_at_risk: numb
 export type DecisionRunContext = { ontologyId: string; runId: string; scenarioId: string; scenarioRevision: number; nodeKey: string; artifact?: { id: string; content_digest: string } }
 type PackageEdit = { sequence: number; op: string; target?: { concrete_type: string; object_id: string } | null; property?: string | null; value?: unknown; expected_old_value?: unknown; properties?: Record<string, unknown> }
 type PackageAction = { id: string; action_type_id: string; expected_edits: PackageEdit[]; external_effect_class: string; receipt: Record<string, unknown> | null }
-type Package = { id: string; status: string; etag: number; created_by: string; title: string; actions: PackageAction[]; outbox: Array<{ id: string; delivered: boolean; attempts: number }>; events: Array<{ sequence: number; event_type: string; actor_id: string; reason: string }> }
+type Package = { id: string; run_id: string; evidence: Array<{ reference: { candidate_id?: string } }>; status: string; etag: number; created_by: string; title: string; actions: PackageAction[]; outbox: Array<{ id: string; delivered: boolean; attempts: number }>; events: Array<{ sequence: number; event_type: string; actor_id: string; reason: string }> }
 type Delivery = { external_effects: number; delivered: number; status: 'complete' | 'external_effect_partial' }
 const editLabel: Record<string, string> = { set_property: '修改', create_object: '新建', delete_object: '删除', unset_property: '清除' }
 
@@ -25,21 +25,33 @@ const actionLabel: Record<string, string> = { expedite_supply_commitment: '加�
 const externalActions = new Set(['create_purchase_order', 'expedite_supply_commitment'])
 const packageStatus: Record<string, string> = { draft: '草稿', in_review: '审核中', approved: '已批准', rejected: '已驳回', applying: '执行中', applied: '已执行', apply_failed: '执行失败', reverted: '已回滚', superseded: '已替代' }
 
+// Seeded object ids carry an ontology namespace ("5ef77329:ORD-1009"); show the business id.
+const plain = (text: string) => text.replace(/\b[0-9a-f]{8}:/g, '')
+const orderList = (rows: OrderRef[]) => rows.map(order => plain(order.demand_id)).join('、') || '—'
+
 function describe(action: CandidateAction) {
-  return Object.entries(action).filter(([key]) => key !== 'action_type').filter(([, value]) => value !== null && value !== undefined && !(Array.isArray(value) && !value.length)).map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(',') : String(value)}`).join(' · ')
+  return Object.entries(action).filter(([key]) => key !== 'action_type').filter(([, value]) => value !== null && value !== undefined && !(Array.isArray(value) && !value.length)).map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(',') : String(value)}`).join(' · ').replace(/\b[0-9a-f]{8}:/g, '')
 }
 
 function money(value: number) {
-  return formatStudyValue(Math.round(value))
+  return Number.isFinite(value) ? Math.round(value).toLocaleString('en-US') : formatStudyValue(value)
 }
 
 export default function MaterialDecisionWorkspace({ outputs, context }: { outputs: MaterialDecisionOutputs; context?: DecisionRunContext }) {
   const impacts = useMemo(() => [...outputs.demand_impacts].sort((a, b) => Number(b.revenue_at_risk > 0) - Number(a.revenue_at_risk > 0) || a.demand_id.localeCompare(b.demand_id)), [outputs.demand_impacts])
   const [selected, setSelected] = useState(impacts.find(row => row.revenue_at_risk > 0)?.demand_id ?? impacts[0]?.demand_id ?? '')
-  const [candidateId, setCandidateId] = useState(outputs.candidate_actions.find(row => row.applicable)?.id ?? '')
+  const [chosenId, setChosenId] = useState<string | null>(null)
   const [rationale, setRationale] = useState('')
   const [reviewReason, setReviewReason] = useState('')
-  const [pkg, setPkg] = useState<Package | null>(null)
+  // The run's package is server state: it survives refreshes and reflects reviews done by other people.
+  const queryClient = useQueryClient()
+  const packagesKey = ['decision-packages', context?.ontologyId]
+  const packages = useQuery({ queryKey: packagesKey, queryFn: () => apiClientV2.get<{ packages: Package[] }>(`/ontologies/${context!.ontologyId}/decision-packages`), enabled: !!context, refetchInterval: 5000 })
+  const pkg = packages.data?.packages.find(row => row.run_id === context?.runId && row.status !== 'superseded') ?? null
+  const setPkg = (row: Package) => queryClient.setQueryData<{ packages: Package[] }>(packagesKey, current => ({ packages: [row, ...(current?.packages ?? []).filter(item => item.id !== row.id)] }))
+  const packageCandidate = pkg?.evidence.find(row => row.reference.candidate_id)?.reference.candidate_id
+  const candidateId = packageCandidate ?? chosenId ?? outputs.candidate_actions.find(row => row.applicable)?.id ?? ''
+  const setCandidateId = (id: string) => setChosenId(id)
   const [delivery, setDelivery] = useState<Delivery | null>(null)
   const active = impacts.find(row => row.demand_id === selected)
   const candidate = outputs.candidate_actions.find(row => row.id === candidateId)
@@ -80,7 +92,7 @@ export default function MaterialDecisionWorkspace({ outputs, context }: { output
       <aside>
         <h4>订单</h4>
         {impacts.map(row => <button key={row.demand_id} className={selected === row.demand_id ? 'is-selected' : ''} onClick={() => setSelected(row.demand_id)}>
-          <span>{row.demand_id} · {row.item} × {row.quantity}</span>
+          <span>{plain(row.demand_id)} · {row.item} × {row.quantity}</span>
           <strong className={row.revenue_at_risk ? '' : 'is-ok'}>{row.revenue_at_risk ? `${statusLabel[row.status]} · ${money(row.revenue_at_risk)}` : statusLabel[row.status]}</strong>
         </button>)}
       </aside>
@@ -88,7 +100,7 @@ export default function MaterialDecisionWorkspace({ outputs, context }: { output
         <div className="decision-panel">
           <h4>影响路径</h4>
           {active ? <>
-            {paths.length ? paths.map((path, index) => <div className="decision-path" key={index}><span>{active.demand_id}</span>{path.map((node, step) => <span key={`${node}-${step}`}>→ {node}</span>)}</div>) : <p className="decision-muted">该订单在当前时间窗口内按期交付，没有根因路径。</p>}
+            {paths.length ? paths.map((path, index) => <div className="decision-path" key={index}><span>{plain(active.demand_id)}</span>{path.map((node, step) => <span key={`${node}-${step}`}>→ {node}</span>)}</div>) : <p className="decision-muted">该订单在当前时间窗口内按期交付，没有根因路径。</p>}
             <table><thead><tr><th>状态</th><th>交期</th><th>预计完工</th><th>产线</th><th>原因</th><th>缺口</th></tr></thead>
               <tbody><tr><td>{statusLabel[active.status]}{active.late_days ? ` ${active.late_days} 天` : ''}</td><td>{active.due_at?.slice(0, 10)}</td><td>{active.finish_at?.slice(0, 10) ?? '无法完工'}</td><td>{active.resource ?? '—'}</td><td>{active.reason_codes.map(code => reasonLabel[code] ?? code).join('、') || '—'}</td><td>{active.shortages.map(row => `${row.item} ${row.quantity}`).join('、') || '—'}</td></tr></tbody>
             </table>
@@ -97,7 +109,7 @@ export default function MaterialDecisionWorkspace({ outputs, context }: { output
         <div className="decision-panel">
           <h4>库存与在途证据</h4>
           {active?.used_sources.length ? <table><thead><tr><th>物料</th><th>来源</th><th>编号</th><th>数量</th><th>地点/供应商</th><th>可用时间</th></tr></thead>
-            <tbody>{active.used_sources.filter(row => active.root_cause_items.includes(row.item) || row.source !== 'inventory').map((row, index) => <tr key={`${row.source_id}-${row.item}-${index}`} className={active.root_cause_items.includes(row.item) ? 'is-root' : ''}><td>{row.item}</td><td>{row.source}</td><td>{row.source_id}</td><td>{row.quantity}</td><td>{row.location ?? row.supplier ?? ''}</td><td>{row.available_at.slice(0, 10)}</td></tr>)}</tbody>
+            <tbody>{active.used_sources.filter(row => active.root_cause_items.includes(row.item) || row.source !== 'inventory').map((row, index) => <tr key={`${row.source_id}-${row.item}-${index}`} className={active.root_cause_items.includes(row.item) ? 'is-root' : ''}><td>{row.item}</td><td>{row.source}</td><td>{plain(row.source_id)}</td><td>{row.quantity}</td><td>{row.location ?? row.supplier ?? ''}</td><td>{row.available_at.slice(0, 10)}</td></tr>)}</tbody>
           </table> : <p className="decision-muted">{active?.status === 'blocked' ? '缺件订单不占用任何物料，已回退的分配可供其他订单使用。' : '仅使用现有自由库存。'}</p>}
         </div>
         <div className="decision-panel">
@@ -106,10 +118,10 @@ export default function MaterialDecisionWorkspace({ outputs, context }: { output
             <tbody>
               <tr className="is-baseline"><td></td><td>基线（不采取动作）</td><td>{money(outputs.revenue_at_risk)}</td><td>—</td><td>—</td><td>—</td><td>0</td><td>—</td></tr>
               {outputs.candidate_actions.map(row => <tr key={row.id} className={candidateId === row.id ? 'is-selected' : ''} onClick={() => !pkg && setCandidateId(row.id)}>
-                <td><input type="radio" name="candidate" aria-label={row.label} checked={candidateId === row.id} disabled={!!pkg} onChange={() => setCandidateId(row.id)} /></td>
-                <td>{row.label}</td><td>{money(row.revenue_at_risk)}</td><td className={row.revenue_protected > 0 ? 'is-gain' : ''}>{money(row.revenue_protected)}</td>
-                <td>{row.protected_orders.map(order => order.demand_id).join('、') || '—'}</td>
-                <td className={row.harmed_orders.length ? 'is-loss' : ''}>{row.harmed_orders.map(order => order.demand_id).join('、') || '—'}</td>
+                <td><input type="radio" name="candidate" aria-label={plain(row.label)} checked={candidateId === row.id} disabled={!!pkg} onChange={() => setCandidateId(row.id)} /></td>
+                <td>{plain(row.label)}</td><td>{money(row.revenue_at_risk)}</td><td className={row.revenue_protected > 0 ? 'is-gain' : ''}>{money(row.revenue_protected)}</td>
+                <td>{orderList(row.protected_orders)}</td>
+                <td className={row.harmed_orders.length ? 'is-loss' : ''}>{orderList(row.harmed_orders)}</td>
                 <td>{money(row.incremental_cost)}</td>
                 <td>{row.applicable ? '满足' : <em>{row.hard_constraints.map(item => item.code).join('、')}</em>}</td>
               </tr>)}
@@ -119,9 +131,9 @@ export default function MaterialDecisionWorkspace({ outputs, context }: { output
       <aside className="candidate-rail">
         <h4>变更预览</h4>
         {candidate ? <>
-          <p className="candidate-title">{candidate.label}</p>
+          <p className="candidate-title">{plain(candidate.label)}</p>
           {!candidate.applicable && <p className="candidate-warning">硬约束未满足，只能作为参考，不能提交执行。</p>}
-          {candidate.harmed_orders.length > 0 && <p className="candidate-warning">将使 {candidate.harmed_orders.map(order => order.demand_id).join('、')} 失去按期交付（{money(candidate.harmed_orders.reduce((sum, order) => sum + order.revenue, 0))}）。</p>}
+          {candidate.harmed_orders.length > 0 && <p className="candidate-warning">将使 {orderList(candidate.harmed_orders)} 失去按期交付（{money(candidate.harmed_orders.reduce((sum, order) => sum + order.revenue, 0))}）。</p>}
           <ol className="candidate-actions">{candidate.actions.map((action, index) => <li key={index}><strong>{actionLabel[action.action_type] ?? action.action_type}{externalActions.has(action.action_type) ? ' · 外部不可逆' : ''}</strong><small>{describe(action)}</small></li>)}</ol>
           {!pkg ? <>
             <label className="candidate-field">决策理由<textarea value={rationale} onChange={event => setRationale(event.target.value)} rows={3} placeholder="为什么选择这个方案，以及接受哪些代价" /></label>
@@ -130,7 +142,7 @@ export default function MaterialDecisionWorkspace({ outputs, context }: { output
           </> : <div className="package-panel" data-testid="decision-package">
             <p><strong>{packageStatus[pkg.status] ?? pkg.status}</strong> · 版本 {pkg.etag}</p>
             <p className="candidate-note">服务端编译的本体变更（{edits.length} 项，执行时会重新编译并核对摘要）：</p>
-            <ol className="candidate-actions" data-testid="package-edits">{edits.map(({ action, edit }) => <li key={edit.sequence}><strong>{editLabel[edit.op] ?? edit.op} · {edit.target?.concrete_type} {edit.target?.object_id}</strong><small>{edit.property ? `${edit.property}: ${String(edit.expected_old_value ?? '空')} → ${String(edit.value ?? '空')}` : describe({ action_type: action.action_type_id, ...edit.properties })}</small></li>)}</ol>
+            <ol className="candidate-actions" data-testid="package-edits">{edits.map(({ action, edit }) => <li key={edit.sequence}><strong>{editLabel[edit.op] ?? edit.op} · {edit.target?.concrete_type} {plain(edit.target?.object_id ?? '')}</strong><small>{edit.property ? plain(`${edit.property}: ${String(edit.expected_old_value ?? '空')} → ${String(edit.value ?? '空')}`) : describe({ action_type: action.action_type_id, ...edit.properties })}</small></li>)}</ol>
             {pkg.status === 'draft' && <button className="wb-button-primary" disabled={transition.isPending} onClick={() => transition.mutate('submit')}>提交审核</button>}
             {pkg.status === 'in_review' && <>
               <label className="candidate-field">审核意见<textarea value={reviewReason} onChange={event => setReviewReason(event.target.value)} rows={2} placeholder="驳回时必填" /></label>

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -40,10 +41,14 @@ def main():
             body = response.json()
             return body.get("data", body) if isinstance(body, dict) else body
 
-        ontology = ok(client.post("/api/v1/ontologies", json={"name": NAME, "domain": "制造",
-            "description": "3 个产品、12 个订单、28 个物料的缺件与收入保护决策；数据为合成数据"}))
+        body = {"name": NAME, "domain": "制造", "description": "3 个产品、12 个订单、28 个物料的缺件与收入保护决策；数据为合成数据"}
+        created = client.post("/api/v1/ontologies", json=body)
+        if created.status_code == 409:  # names are unique; each seed gets its own ontology
+            created = client.post("/api/v1/ontologies", json={**body, "name": f"{NAME} · {datetime.now():%m%d-%H%M%S}"})
+        ontology = ok(created)
         with SessionLocal() as db:
-            nodes = seed_material_shortage_ontology(db, graph, ontology["id"], l3harris_material_shortage_fixture())
+            nodes = seed_material_shortage_ontology(db, graph, ontology["id"], l3harris_material_shortage_fixture(),
+                                                    id_prefix=f"{ontology['id'][:8]}:")
         root = f"/api/v2/ontologies/{ontology['id']}"
         ok(client.post(f"{root}/logic-assets/seed"))
         view = ok(client.post(f"{root}/object-query/data-views", json={"source_ontology_id": ontology["id"], "source_manifest_digest": "l3-demo"}))

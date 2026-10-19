@@ -462,4 +462,12 @@ npm run test:e2e -- scenario-studies.spec.ts decision-workspace.spec.ts
 - 修复：`/transition` 不再接受 `begin_apply/apply_succeeded/revert`，执行只能走真正合并的 `:apply`。
 - 并发审核测试经变异验证：去掉行锁后两人同时批准都成功（`['ok','ok']`），加锁后恰好一个成功。
 
-未完成：Playwright 浏览器完整链（`scripts/seed_material_shortage_demo.py` 已写但未在运行栈执行）；Phase 5 跨案例模板；Phase 6 规模/soak/outage。
+
+### 12.2 浏览器完整链
+
+- `frontend/src/test/e2e/decision-workspace.spec.ts` 在真实验证栈（PostgreSQL + Redis/Celery + FalkorDB + Vite）通过：收入风险 → 订单 → BOM 根因 → 候选对比（含受损订单、硬约束）→ 服务端变更预览 → 提交 → 自审被拒 → 第二人批准 → 刷新 → 执行与回执 → 刷新 → 回滚与不可逆提示。截图保存在 `test-results/`。
+- 第二审核人由 `scripts/review_package_as_second_user.py` 模拟：本地单用户模式只有一个身份，这是模拟手段，不是生产审核路径。
+- 本轮修复：决策包改为服务端状态（刷新/他人审核后可恢复）；带 `run` 的链接直接打开情景模拟页；对象 ID 全局唯一导致第二次播种冲突 → 播种按本体加命名空间；1280px 下候选表被截断 → 变更预览移至下方；读数节点折叠到“高级”。
+- 验证栈已从 0040 升级到 0041 并重启 backend/celery/frontend（Windows 挂载下 Vite 不感知文件变化，改前端后需重启前端容器）。
+
+未完成：Phase 5 跨案例模板；Phase 6 规模/soak/outage；键盘路径与移动窄屏未专门测试。

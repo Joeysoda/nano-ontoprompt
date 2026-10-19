@@ -59,7 +59,8 @@ export default function ScenarioStudiesPage() {
   const runId = params.get('run') ?? ''
   const [changeNote, setChangeNote] = useState('首个可复现版本')
   const [notice, setNotice] = useState('')
-  const [mode, setMode] = useState<'design' | 'simulation'>('design')
+  // A shared link that names a run should land on its results, not on the model editor.
+  const [mode, setMode] = useState<'design' | 'simulation'>(() => params.get('run') ? 'simulation' : 'design')
 
   const ontologies = useQuery({ queryKey: ['study-ontologies'], queryFn: () => apiClient.get<{ items: OntologyListItem[] }>('/ontologies', { params: { page_size: 100 } }), enabled: !routeOntologyId })
   const studies = useQuery({ queryKey: ['scenario-studies', ontologyId], queryFn: () => apiClientV2.get<{ items: Study[] }>(`/ontologies/${ontologyId}/scenario-study-definitions`), enabled: !!ontologyId })

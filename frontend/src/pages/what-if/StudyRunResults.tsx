@@ -19,5 +19,14 @@ export type StudyRunContext = Omit<DecisionRunContext, 'nodeKey' | 'artifact'> &
 const isMaterialDecision = (outputs: Record<string, unknown>) => !!outputs.impact_path && !!outputs.kpis && Array.isArray(outputs.demand_impacts) && Array.isArray(outputs.candidate_actions)
 
 export default function StudyRunResults({ nodes, context }: { nodes: Record<string, StudyNodeResult>; context?: StudyRunContext }) {
+  const decisions = Object.entries(nodes).filter(([, node]) => isMaterialDecision(node.outputs))
+  if (decisions.length) {
+    // Business users start from the decision; data-loading and other nodes stay one click away.
+    const others = Object.fromEntries(Object.entries(nodes).filter(([, node]) => !isMaterialDecision(node.outputs)))
+    return <div className="mt-4 space-y-3">
+      {decisions.map(([key, node]) => <MaterialDecisionWorkspace key={key} outputs={node.outputs as MaterialDecisionOutputs} context={context && { ...context, nodeKey: key, artifact: context.artifacts?.find(item => item.artifact_type === `node:${key}`) }} />)}
+      {Object.keys(others).length > 0 && <details className="decision-advanced"><summary>高级：其他节点原始结果（{Object.keys(others).length}）</summary><StudyRunResults nodes={others} /></details>}
+    </div>
+  }
   return <div className="mt-4 space-y-3">{Object.entries(nodes).map(([key, node]) => isMaterialDecision(node.outputs) ? <MaterialDecisionWorkspace key={key} outputs={node.outputs as MaterialDecisionOutputs} context={context && { ...context, nodeKey: key, artifact: context.artifacts?.find(item => item.artifact_type === `node:${key}`) }} /> : <details key={key} className="border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-medium">节点计算结果 · {key}</summary><div className="mt-3 space-y-3">{Object.entries(node.outputs).map(([port, value]) => port === 'result' ? <details key={port}><summary className="cursor-pointer text-xs">完整原始结果 JSON</summary><pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-all bg-slate-50 p-2 text-xs">{JSON.stringify(value, null, 2)}</pre></details> : <div key={port}><p className="mb-1 text-xs font-medium text-slate-500">{port === 'schedule' ? '工序排程' : port === 'demand_impacts' ? '订单影响与交付' : port === 'shortages' ? '缺料与影响路径' : port === 'alternatives' ? '可用替代来源' : port}</p><StructuredValue port={port} value={value} /></div>)}</div></details>)}</div>
 }

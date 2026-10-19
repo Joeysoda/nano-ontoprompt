@@ -30,13 +30,21 @@ INPUT_TYPES = {"demands": "CustomerOrder", "boms": "BOMLine", "inventory": "Inve
 EXTERNAL_ACTIONS = {"expedite_supply_commitment", "create_purchase_order"}
 
 
-def fixture_objects(fixture: dict) -> list[dict]:
-    """Turn a fixture into graph instances ({id, entity_type, properties})."""
+def fixture_objects(fixture: dict, *, id_prefix: str) -> list[dict]:
+    """Turn a fixture into graph instances ({id, entity_type, properties}).
+
+    Instance ids are global across ontologies, so every object id (and the one
+    property that references an object id, Reservation.demand_id) gets
+    ``id_prefix``.  Item codes are business keys and stay unprefixed.
+    """
     nodes = []
     for key, kind in INPUT_TYPES.items():
         for index, row in enumerate(fixture.get(key, [])):
-            object_id = row.get("id") or (f"BOM-{row['parent_item']}-{row['component_item']}" if kind == "BOMLine" else f"{kind}-{index}")
+            local_id = row.get("id") or (f"BOM-{row['parent_item']}-{row['component_item']}" if kind == "BOMLine" else f"{kind}-{index}")
+            object_id = f"{id_prefix}{local_id}"
             props = {name: value for name, value in row.items() if name != "id" and value is not None}
+            if kind == "Reservation":
+                props["demand_id"] = f"{id_prefix}{props['demand_id']}"
             unknown = set(props) - set(OBJECT_TYPES[kind])
             if unknown:
                 raise ValueError(f"{kind} fixture has undeclared properties {sorted(unknown)}")
@@ -44,7 +52,7 @@ def fixture_objects(fixture: dict) -> list[dict]:
     return nodes
 
 
-def seed_material_shortage_ontology(db, graph_service, ontology_id: str, fixture: dict) -> list[dict]:
+def seed_material_shortage_ontology(db, graph_service, ontology_id: str, fixture: dict, *, id_prefix: str) -> list[dict]:
     """Create object types, SQL instances and their graph projection."""
     from app.models.entity import Entity
     from app.models.entity_instance import EntityInstance
@@ -58,7 +66,7 @@ def seed_material_shortage_ontology(db, graph_service, ontology_id: str, fixture
             db.add(entity)
             db.flush()
         entities[name] = entity
-    nodes = fixture_objects(fixture)
+    nodes = fixture_objects(fixture, id_prefix=id_prefix)
     for node in nodes:
         db.add(EntityInstance(id=node["id"], entity_id=entities[node["entity_type"]].id, ontology_id=ontology_id,
                               row_identity=node["id"], row_data=dict(node["properties"])))

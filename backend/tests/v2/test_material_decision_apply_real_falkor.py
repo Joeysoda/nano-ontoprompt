@@ -38,7 +38,8 @@ def plant(client, auth_headers, db, admin_user):
                       implementation=definition["implementation"], version="1.0.0", input_schema=definition["input_schema"],
                       output_schema=definition["output_schema"], bindings=definition["bindings"], status="published"))
     db.commit()
-    seed_material_shortage_ontology(db, graph, ontology.id, l3harris_material_shortage_fixture())
+    # The test ontology is alone in its database, so ids stay readable.
+    seed_material_shortage_ontology(db, graph, ontology.id, l3harris_material_shortage_fixture(), id_prefix="")
     api = f"/api/v2/ontologies/{ontology.id}"
     spec = next(row for row in templates() if row["template_id"] == "material_shortage_decision_objects")["spec"]
     study = client.post(f"{api}/scenario-study-definitions", headers=auth_headers, json={"name": "L3 objects", "draft_spec": spec}).json()
