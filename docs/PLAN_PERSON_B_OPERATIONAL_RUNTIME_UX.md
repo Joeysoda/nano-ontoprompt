@@ -4,6 +4,7 @@
 > 负责人：人员 B
 > 基准日期：2026-09-25
 > 上游审计：`docs/PALANTIR_ONTOLOGY_GAP_AUDIT_2026_09_23.md`
+> 2026-10-18 范围修订：同时参考 `docs/PALANTIR_ONTOLOGY_PLATFORM_GAP_AUDIT_2026_10_18.md`。暂缓 Machinery、Dynamic Scheduling、Foundry Rules 的完整专业 UI，不再等同于暂缓其共用运行时；时间序列/streaming、事件/告警、约束/solver/schedule edit batch、通用规则运行时纳入人员 B 的实现与验收范围。Map 与地理空间能力本轮明确延期。
 
 ## 1. 目标与不做事项
 
@@ -18,8 +19,9 @@
 5. 统一 Scenario execution context、比较和合并体验；
 6. 扩展图页为关系/事件/时间/Scenario 可协作的 Vertex 式工作台；
 7. 建立真实用户和 Agent 的未预演问题验证。
+8. 把专业产品暴露的共用运行时沉入平台：Time Series/Event/stream、Alert lifecycle、Constraint/Solver/Schedule edit batch 和 typed Rule runtime。
 
-本计划不负责重新定义 canonical metadata、对象/字段授权计算或底层 projection identity；这些由人员 A 提供共享合同。人员 B 不能在前端或执行器里复制一套临时类型/权限规则来绕过依赖。
+本计划不负责重新定义 canonical metadata、对象/字段授权计算或底层 projection identity；这些由人员 A 提供共享合同。人员 B 不能在前端或执行器里复制一套临时类型/权限规则来绕过依赖。本计划不复刻 Machinery、Dynamic Scheduling、Foundry Rules 的完整专业产品界面，但必须实现并验证它们共享的运行时合同。Map 与所有地理空间类型、查询、索引和 UI 均不在本轮范围。
 
 ## 2. 当前仓库事实与详细差距
 
@@ -245,6 +247,9 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 11. Ingestion event、internal temporal fact、published checkpoint 与 Scenario overlay 是不同层资源；任何 UI 或 API 不得把 replay 进度、历史时点和 scenario revision 混成同一个“版本”。
 12. 合并后的正式 API 不依赖 FactoryNet 私有字段、按名称猜 ontology 或 service 私有函数；demo adapter 必须与通用 contract 分层。
 13. 对外 temporal ontology 只暴露标准 Event Object、link、TSP/sensor/time-series capability；内部 `TemporalFact` 不绕过 Object Query、Object View、Action 和授权合同。
+14. Alert 是版本化 rule/monitor evaluation 的业务状态，具有 dedupe、severity、acknowledgement、resolution、evidence 和 Action link；UI badge 只是其投影。
+15. Constraint evaluation、solver Function 和 schedule edit batch 分层：solver 读取 pinned Object Set/Scenario，返回 feasibility、objective、provenance 和 typed edits；只有 Scenario/Action commit 可以落地排程。
+16. 通用规则运行时拥有 typed trigger、condition AST、window/state、evaluation evidence、idempotency、version pin 和 Action binding；Foundry Rules UI 暂缓不影响这些合同交付。
 
 ## 4. Design corrections
 
@@ -261,6 +266,9 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 | 远端 What-if 可与当前 Scenario 并列上线 | Joey 的实现未 present/验收；两者都有 scenario/run/base revision，却使用不同表、API、执行器和 UI；当前实现的治理、Action 和 merge 更完整 | 当前 `v2_scenarios` 为唯一产品 catalog；远端 router/tab 默认不注册，只迁移其固定 revision reasoning diff | 需要算法提取与 model/table 退役，不创建第三套 UI | converge |
 | Dynamic Data demo 就是通用实时接入 | 它按 FactoryNet 实体集合猜 ontology、可自动建 schema，并调用私有 helper | 保留为 demo adapter；正式 API 显式声明 source/mapping/revision/time policy/auth | router/service 分层并补 contract tests | preserve + isolate |
 | “信息架构参考”足以指导 Explorer UI | 92 张官方截图给出明确布局、密度、控件位置和状态反馈 | 默认高保真复刻，偏离必须有记录和理由 | `ObjectQueryTab` 需要按 reference screenshot 进行视觉验收 | replace UI shell |
+| Machinery/Scheduling/Rules 属于独立应用，可整体排除 | 它们分别暴露 time-series/stream/event/alert、constraint/solver/schedule edit、rule trigger/evaluation 等共用平台需求 | 只延期完整专业 UI；共用 runtime 接入 Query/Function/Action/Scenario | 扩展运行时、Explorer/Graph adapter 和综合验收 | extend platform / defer UI |
+| 告警可以由前端临时计算 | 重复窗口、重启、权限、ack/resolution 和 Action trigger 需要持久状态与审计 | 建 Alert lifecycle/evaluation contract；前端只负责呈现与操作 | 新 rule/alert runtime、审计和 ObjectPanel widget | replace |
+| solver 输出一张 schedule 表即可 | 复杂调度必须区分 input snapshot、constraints、release、feasible/optimal/timeout 和待提交 edits | solver Function 返回 result manifest + typed schedule edit batch，由 Scenario/Action 预览和提交 | Logic Asset、Scenario compare、Action compiler 扩展 | refactor |
 
 ## 5. 目标边界（简要行动建议）
 
@@ -271,6 +279,9 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 4. 提取 standard `ObjectView` 与 `ObjectPanel`；Explorer、Graph、Scenario、Dynamic Evolution 先复用 panel，再做 configured views。
 5. 让统一 `ExecutionContext` 贯穿 Query/Function/Action/View/Graph；实现 Tracking/Pinned 两种 Scenario，并让 Pinned 显式引用 published temporal snapshot。
 6. 在已合并 temporal data plane 上补通用 source/time/late-event contract，并 materialize/adapter 到 Event Object、TSP/sensor/time-series sync，再扩展 Vertex 式 events/time/layers/version 和开展盲测。
+7. 增加通用 rule runtime：object/event/time-window/stream triggers、typed condition AST、state/window、dedupe/idempotency、evaluation evidence、Alert lifecycle 和 Action binding；先提供资源/API/运行记录与 ObjectPanel/Explorer 消费，不复刻完整 Foundry Rules 管理应用。
+8. 将 constraint/solver/schedule 纳入 Function + Scenario + Action 主链：pinned input、bounded solver execution、feasibility/timeout/partial/optimal、objective/provenance、typed schedule edit batch、preview/compare/commit/revert；完整 Dynamic Scheduling 甘特图和专业编辑器后置。
+9. 为 Machinery 用例提供 time-series chart、event/alert panel 和 maintenance Action 路径；不建设完整设备运营工作台。
 
 ### 5.1 开源组件决策矩阵（第一阶段前置审查）
 
@@ -283,6 +294,8 @@ Integration merge 的完成定义不是“Git 无冲突”，而是：应用能�
 | Apache ECharts | Explore charts、aggregate card、time-series plot、compare overlays | **adopt narrow role**，只负责渲染 | 聚合语义、数据权限、时间范围、scenario context、loading/partial/degraded 状态和 Palantir card layout | Apache-2.0；官方仓库和许可证说明其为浏览器可视化库：[repo](https://github.com/apache/echarts)、[license](https://github.com/apache/echarts/blob/master/LICENSE) |
 | JSON Forms | Configured Object View 的 JSON Schema + UI schema runtime；自定义 renderer 可承载 ObjectPanel widget | **spike first**，不在第一阶段引入 | canonical view schema、Object/Object Set/Action binding、权限和版本兼容；完整 low-code builder 不由 JSON Forms 自动提供 | MIT；官方仓库说明支持 React/Angular/Vue、JSON Schema 和自定义 renderer：[repo](https://github.com/eclipsesource/jsonforms)、[React API](https://jsonforms.io/api/react/) |
 | Cytoscape.js / XYFlow | 现有 Graph/Vertex 原型的布局、selection、关系交互 | **preserve**，不更换引擎 | Search Around、Object Panel、Event Object/TSP、Scenario overlay、授权和图资源保存 | 已在当前仓库使用；组件只提供图交互，不拥有 Ontology 语义 |
+| OR-Tools / HiGHS | constraint/solver Function 的 reference executors | **spike first，随后可用于 bounded validation** | Constraint Set、input snapshot、objective、provenance、edit batch、权限与业务解释 | 用同一 fixture 比较可行性、确定性、许可、timeout/cancel；solver 不是 Ontology truth |
+| Durable Rules / Drools 类规则引擎 | 通用规则运行时候选 | **reference only，暂不采用** | typed trigger/condition/window/idempotency/evidence/Action binding | 先证明现有合同存在表达或吞吐瓶颈；禁止引擎 DSL 成为公共 API |
 | Temporal.io | 长任务、重试、取消、恢复、补偿和跨服务 durable execution 的候选 | **defer / threshold-gated**；第一阶段继续 Celery | Action transaction、edit batch、权限、审计和 Scenario merge；引入会增加独立服务和 worker 运维 | MIT server；官方仓库定位为 durable execution，但不能替代领域编排：[repo](https://github.com/temporalio/temporal)、[official site](https://temporal.io/) |
 | OpenFGA | relationship-based authorization 的参考或人员 A 的受控 spike | **reference / person A owns**，B 不直接接入 | 当前 ontology/object/property projection、field masking、Action criteria 与 permission 分离；不能把 FGA tuple 当完整权限合同 | Apache-2.0 SDK/模型生态；官方概念是 relationship tuple + authorization model：[concepts](https://openfga.dev/docs/concepts) |
 
@@ -358,6 +371,7 @@ Scenario study 的选中对象现在直接复用 Object Explorer 的 `ObjectPane
 - `frontend/src/pages/what-if/GenericScenarioWorkbenchPage.tsx`
 - Graph/Object View/Explorer 新共享组件及其 Playwright tests
 - temporal replay/stream 的运行时呈现、snapshot 与 Scenario/Object Query/Graph 的集成 adapter；不拥有 canonical ontology schema editor
+- rule trigger/evaluation runtime、Alert lifecycle、solver Function orchestration、schedule edit-batch preview/compare/commit，以及 Time Series/Event 在 Explorer/Graph/ObjectPanel 的通用消费；不拥有对应专业产品的完整 UI
 
 ### 从人员 A 消费，不自行复制
 
@@ -382,6 +396,10 @@ Scenario study 的选中对象现在直接复用 Object Explorer 的 `ObjectPane
 | Graph/Scenario | 同一 Object Set 在 live 与两个 scenario 中结果可比较；Graph selection 使用共享 panel；多步 traversal 与保存/恢复一致。 |
 | Temporal integration | `alembic heads` 单 head；空库与两条旧 head 均可升级；file/push 相同事件产生相同 snapshot hash；重复事件幂等；late event 得到明确政策结果；snapshot ID 可被 Pinned Scenario、Object Query 和 Graph history 一致引用。 |
 | Palantir temporal surface | Event 至少有 start/end timestamp 并作为标准 Object Type 被查询；TSP 通过 series ID + sync 解析，sensor link/default TSP/unit/interpolation 可发现；内部 TemporalFact 不能成为 UI 的专用旁路。 |
+| Event/alert runtime | duplicate/out-of-order/late/correction 事件经过 watermark 后得到可重复 evaluation；相同 dedupe key 不重复告警；ack/resolution、severity、evidence、Action trigger 跨重启一致且受权限裁剪。 |
+| Rule runtime | object change、event、time window 与 stream trigger 使用同一 typed rule version；preview/live/scenario evaluation 一致；失败或越权不触发 Action；evidence 可审计但不泄露隐藏字段。 |
+| Solver/scheduling | 关键供应商停供和订单翻倍两条端到端链固定 input snapshot/Scenario、Constraint Set 和 solver release；区分 infeasible/timeout/partial/optimal；typed schedule edit batch 只有 Action/Scenario commit 后可见并可回滚。 |
+| Machinery acceptance | Time Series Property、streaming indexing、Event/Alert、maintenance Function/Action 在同一设备对象页和 trace 中贯通；不以完成 Machinery 全套 UI 为验收条件。 |
 | Product validation | 10–15 个未预演问题，由新用户、领域用户、Agent 分别完成；记录答案、选择路径、耗时、困惑、求助和错误类型。 |
 | Performance/soak | 记录 Explorer load/pivot/compare 和 Action preview/submit 的 p50/p95/p99、请求 fan-out、内存、取消与恢复；无重复请求和无界 trace。 |
 | Static gates | `frontend`: `npm run lint:src`、`npm run lint:scripts`、`npm run build`、相关 `npm run test:e2e`；changed files 零 error/零 warning。Backend 执行相关 pytest contract/integration suites。 |
@@ -397,6 +415,8 @@ Scenario study 的选中对象现在直接复用 Object Explorer 的 `ObjectPane
 - Vertex 时间/事件能力已在 `origin/factorynet-temporal-workbench` 存在；首要风险是双 Alembic head、9 个重叠注册/UI 文件、双 Scenario catalog 和 FactoryNet demo 泄漏进通用 API，禁止另造第二套模型。
 - Palantir Scenarios 仍是 Beta；实现其 Tracking 模式时要记录 2026-09-24 契约，同时保留 Pinned 作为明确扩展，避免把扩展伪装成 Palantir 行为。
 - UI 大改容易与工作区现有未提交修改冲突，实施时必须按文件确认 ownership 并避免覆盖用户改动。
+- Foundry Rules 与 Dynamic Scheduling 的公开产品行为会继续变化；本计划固定通用 runtime contract，不把某一版页面或 solver DSL 固化成平台 API。
+- 流式和求解能力可能引入 stream processor 或 solver dependencies；必须先用真实数据和 SLO 做 narrow spike，并保留 adapter/替换边界。
 
 ## 9. 差距参考文档
 
@@ -441,6 +461,9 @@ Scenario study 的选中对象现在直接复用 Object Explorer 的 `ObjectPane
 - [Time series overview](https://www.palantir.com/docs/foundry/time-series/time-series-overview/)
 - [Time series properties](https://www.palantir.com/docs/foundry/time-series/time-series-properties/)
 - [Time series concepts glossary](https://www.palantir.com/docs/foundry/time-series/time-series-concepts-glossary/)
+- [Machinery overview](https://www.palantir.com/docs/foundry/machinery/overview/)：抽取 sensor/time-series/event/alert/Action 运行时要求。
+- [Dynamic Scheduling overview](https://www.palantir.com/docs/foundry/dynamic-scheduling/overview/)：抽取 constraint、solver、Scenario 与 schedule edit 提交边界。
+- [Foundry Rules overview](https://www.palantir.com/docs/foundry/rules/overview/)：抽取 trigger、condition、evaluation、monitoring、Alert 与 Action binding。
 - [Ontology design validation](https://www.palantir.com/docs/foundry/ontology/ontology-design-validation/)
 
 ### Palantir 官方公开源码
@@ -483,6 +506,7 @@ Scenario study 的选中对象现在直接复用 Object Explorer 的 `ObjectPane
 
 - **保留：** Object Query/Object Set 后端、Scenario immutable revision/data view、Logic Asset contracts/runs/traces、现有图组件，以及 Joey 的 temporal ingestion/replay/checkpoint 底座；内部 temporal fact 不等于 canonical Ontology 时间表面。
 - **实施前必须改变：** Action 只能有一个 compiler/edit batch 语义；Function edit 必须经 Action；Explorer/View/Graph 不得各自解释类型和权限。
+- **跨产品运行时必须纳入：** Time Series/streaming/Event/Alert、Constraint/Solver/Schedule edit batch 和 typed Rule runtime；只暂缓对应完整专业 UI。Map 与地理空间能力整体延期。
 - **视觉决定：** Object Explorer 默认高保真复刻 Palantir 官方截图；保持本项目品牌、中文、可访问性和响应式，所有其他偏离都需记录。
 - **组件决定：** 继续采用 React Query、Cytoscape/XYFlow、Playwright 的现有角色；低代码 builder 在稳定配置 runtime 后独立立项，不引入新的图数据库产品。
 - **Integration gate：** 当前工作区形成可回滚提交后，把 `origin/factorynet-temporal-workbench` 以保留历史的 `--no-ff` 方式选择性集成；解决双 migration head、重叠注册/UI 文件和双 Scenario catalog，只启用符合 Palantir 资源边界的入口，并通过 temporal + Scenario 联合验证。

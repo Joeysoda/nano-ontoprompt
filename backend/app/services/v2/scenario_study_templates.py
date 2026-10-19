@@ -2,6 +2,29 @@
 
 
 def templates() -> list[dict]:
+    from .l3harris_fixture import l3harris_material_shortage_fixture
+    l3 = l3harris_material_shortage_fixture()
+    material_shortage = {
+        "spec_version": "scenario-study/v1",
+        "context_policy": {"scenario_mode": "pinned_on_run", "time_required": True},
+        "parameters": [
+            {"key": "demands", "label": "客户订单", "type": "json", "default": l3["demands"]},
+            {"key": "boms", "label": "多级 BOM", "type": "json", "default": l3["boms"]},
+            {"key": "inventory", "label": "分地点库存", "type": "json", "default": l3["inventory"]},
+            {"key": "reservations", "label": "有效预留", "type": "json", "default": l3["reservations"]},
+            {"key": "supply_commitments", "label": "在途与供应承诺", "type": "json", "default": l3["supply_commitments"]},
+            {"key": "supply_options", "label": "替代供应来源", "type": "json", "default": l3["supply_options"]},
+            {"key": "fixed_tasks", "label": "固定任务与产线占用", "type": "json", "default": l3["fixed_tasks"]},
+            {"key": "scenario_time", "label": "情景基准时间", "type": "datetime", "default": "2026-01-01T00:00:00Z"},
+        ],
+        "nodes": [{"key": "decision", "kind": "function", "implementation": {"key": "material_shortage_decision_v1", "version": "1.0.0"},
+                   "inputs": {key: {"parameter": key} for key in ("demands", "boms", "inventory", "reservations", "supply_commitments", "supply_options", "fixed_tasks", "scenario_time")},
+                   "outputs": {"feasible": "feasible", "shortages": "shortages", "demand_impacts": "demand_impacts", "allocations": "allocations", "schedule": "schedule", "candidate_actions": "candidate_actions", "revenue_at_risk": "revenue_at_risk", "kpis": "kpis", "stranded_inventory": "stranded_inventory", "impact_path": "impact_path", "completeness": "completeness"}}],
+        "edges": [],
+        "metrics": [{"key": "revenue_at_risk", "label": "风险收入", "type": "decimal", "direction": "minimize", "unit": "currency", "source": "decision.revenue_at_risk"}],
+        "constraints": [{"key": "material_feasible", "expression_ref": "decision.feasible", "severity": "hard", "config": {"operator": "eq", "value": True}}],
+        "budgets": {"max_nodes": 50, "max_objects": 100000, "max_wall_seconds": 900, "max_artifact_bytes": 52428800},
+    }
     cycle = {
         "spec_version": "scenario-study/v1",
         "context_policy": {"scenario_mode": "pinned_on_run", "time_required": False},
@@ -107,6 +130,7 @@ def templates() -> list[dict]:
         "budgets": {},
     }
     return [
+        {"template_id": "material_shortage_decision", "name": "缺件影响与收入保护", "description": "从客户订单逐层钻取到多级 BOM、预留、库存、在途承诺和替代供应，并生成可审计影响路径与候选动作。示例数据为合成数据。", "spec": material_shortage},
         {"template_id": "supply_chain_reasoning", "name": "供应停供到订单交付推理", "description": "多级 BOM、合格替代来源、库存、到货时间、生产资源和订单交付的端到端情景推理。示例数据为合成数据，结果不声称全局最优。", "spec": supply_chain},
         {"template_id": "supplier_disruption", "name": "供应中断与缺料影响", "description": "改变供应商供给、停供比例或订单需求，计算剩余缺口。参数样例为合成制造数据。", "spec": supplier},
         {"template_id": "capacity_replan", "name": "产能与设备变化", "description": "调整工序时长和可用产能，查看计划工时、逾期工序和可行状态。参数样例为合成制造数据。", "spec": capacity},

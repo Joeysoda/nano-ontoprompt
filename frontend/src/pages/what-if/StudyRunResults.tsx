@@ -1,4 +1,5 @@
 import { formatStudyValue } from './studyDisplay'
+import MaterialDecisionWorkspace, { type DecisionRunContext, type MaterialDecisionOutputs } from './MaterialDecisionWorkspace'
 
 export type StudyNodeResult = { kind: string; outputs: Record<string, unknown> }
 type ScheduleRow = { task_id?: string; demand_id?: string; resource?: string; start?: unknown; end?: unknown; finish?: unknown }
@@ -13,6 +14,10 @@ function StructuredValue({ port, value }: { port: string; value: unknown }) {
   return <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-all rounded bg-slate-50 p-2 text-xs">{typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : formatStudyValue(value)}</pre>
 }
 
-export default function StudyRunResults({ nodes }: { nodes: Record<string, StudyNodeResult> }) {
-  return <div className="mt-4 space-y-3">{Object.entries(nodes).map(([key, node]) => <details key={key} className="border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-medium">节点计算结果 · {key}</summary><div className="mt-3 space-y-3">{Object.entries(node.outputs).map(([port, value]) => port === 'result' ? <details key={port}><summary className="cursor-pointer text-xs">完整原始结果 JSON</summary><pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-all bg-slate-50 p-2 text-xs">{JSON.stringify(value, null, 2)}</pre></details> : <div key={port}><p className="mb-1 text-xs font-medium text-slate-500">{port === 'schedule' ? '工序排程' : port === 'demand_impacts' ? '订单影响与交付' : port === 'shortages' ? '缺料与影响路径' : port === 'alternatives' ? '可用替代来源' : port}</p><StructuredValue port={port} value={value} /></div>)}</div></details>)}</div>
+export type StudyRunContext = Omit<DecisionRunContext, 'nodeKey' | 'artifact'> & { artifacts?: Array<{ id: string; artifact_type: string; content_digest: string }> }
+// Runs produced before candidate evaluation existed have no kpis; they fall back to the generic node view.
+const isMaterialDecision = (outputs: Record<string, unknown>) => !!outputs.impact_path && !!outputs.kpis && Array.isArray(outputs.demand_impacts) && Array.isArray(outputs.candidate_actions)
+
+export default function StudyRunResults({ nodes, context }: { nodes: Record<string, StudyNodeResult>; context?: StudyRunContext }) {
+  return <div className="mt-4 space-y-3">{Object.entries(nodes).map(([key, node]) => isMaterialDecision(node.outputs) ? <MaterialDecisionWorkspace key={key} outputs={node.outputs as MaterialDecisionOutputs} context={context && { ...context, nodeKey: key, artifact: context.artifacts?.find(item => item.artifact_type === `node:${key}`) }} /> : <details key={key} className="border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-medium">节点计算结果 · {key}</summary><div className="mt-3 space-y-3">{Object.entries(node.outputs).map(([port, value]) => port === 'result' ? <details key={port}><summary className="cursor-pointer text-xs">完整原始结果 JSON</summary><pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-all bg-slate-50 p-2 text-xs">{JSON.stringify(value, null, 2)}</pre></details> : <div key={port}><p className="mb-1 text-xs font-medium text-slate-500">{port === 'schedule' ? '工序排程' : port === 'demand_impacts' ? '订单影响与交付' : port === 'shortages' ? '缺料与影响路径' : port === 'alternatives' ? '可用替代来源' : port}</p><StructuredValue port={port} value={value} /></div>)}</div></details>)}</div>
 }

@@ -31,8 +31,10 @@ limiter.enabled = False
 _db_fd, _db_path = tempfile.mkstemp(prefix="ontoprompt_test_", suffix=".db")
 os.close(_db_fd)
 
-TEST_DB = f"sqlite:///{_db_path}"
-engine = create_engine(TEST_DB, connect_args={"check_same_thread": False})
+# Opt-in real-database runs: point TEST_DATABASE_URL at a throwaway PostgreSQL
+# database. Every test creates and drops all tables in it.
+TEST_DB = os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{_db_path}"
+engine = create_engine(TEST_DB, connect_args={"check_same_thread": False} if TEST_DB.startswith("sqlite") else {})
 TestSession = sessionmaker(bind=engine)
 
 

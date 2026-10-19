@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from app.deps import get_db, require_editor
 from app.models.v2.scenario_study import CaseDefinition, RunPlan, StudyDefinition, StudyVersion
-from app.models.v2.scenario import ScenarioAudit, ScenarioRun, ScenarioRunStage
+from app.models.v2.scenario import ScenarioAudit, ScenarioRun, ScenarioRunArtifact, ScenarioRunStage
 from app.schemas.v2.scenario_study import (
     CreateCaseRequest,
     CreateStudyRequest,
@@ -332,9 +332,12 @@ def start_case_run(ontology_id: str, study_id: str, case_id: str, request: Start
 
 def _run_summary(db, run: ScenarioRun):
     stages = db.query(ScenarioRunStage).filter_by(run_id=run.id).order_by(ScenarioRunStage.sequence).all()
+    artifacts = db.query(ScenarioRunArtifact).filter_by(run_id=run.id).order_by(ScenarioRunArtifact.artifact_type).all()
     return {
         "id": run.id,
         "scenario_id": run.scenario_id,
+        "scenario_revision": run.revision,
+        "artifacts": [{"id": item.id, "artifact_type": item.artifact_type, "content_digest": item.content_digest} for item in artifacts],
         "case_id": run.case_id,
         "run_plan_id": run.run_plan_id,
         "status": run.status,
