@@ -496,22 +496,37 @@ def merge_scenario(ontology_id: str, scenario_id: str, body: MergeCommand,
             raise ScenarioError("protected_scenario", "Prepared demo Scenarios cannot be merged", 403)
         if scenario.head_revision != body.expected_revision:
             raise ScenarioError("revision_conflict", "Scenario changed; review the merge again", 409)
-        result, edits = _merge_state(service, scenario)
-        if not result["can_merge"]:
-            raise ScenarioError("merge_conflict", "Merge preview contains conflicts or no supported edits", 409)
-        from app.services.v2.live_edits import apply_live_edits
-        typed_edits = [Edit.model_validate(item) for item in edits]
-        _, _, _, restore_graph = apply_live_edits(db, ontology_id, typed_edits, service.graph)
-        try:
-            db.add(ScenarioAudit(scenario_id=scenario.id, revision=scenario.head_revision,
-                                 actor_id=user.id, operation="merge",
-                                 summary={"applied_edits": len(edits), "base_view_id": scenario.base_view_id}))
-            db.commit()
-        except Exception:
-            db.rollback()
-            restore_graph()
-            raise
+        applied, _ = merge_head(db, ontology_id, service, scenario, user)
         return {"scenario_id": scenario.id, "revision": scenario.head_revision,
-                "status": "merged", "applied_edits": len(edits)}
+                "status": "merged", "applied_edits": applied}
     except ScenarioError as exc:
         _http(exc)
+
+
+def merge_head(db, ontology_id, service, scenario, user, *, summary_extra=None, before_commit=None):
+    """Apply the Scenario head revision to live data as one compensated unit.
+
+    ``before_commit`` lets callers add their own rows (e.g. Decision Package
+    events) to the same SQL transaction; the graph is restored if the commit
+    fails.
+    Returns the applied edit count and the before-snapshot used for revert.
+    """
+    result, edits = _merge_state(service, scenario)
+    if not result["can_merge"]:
+        raise ScenarioError("merge_conflict", "Merge preview contains conflicts or no supported edits", 409)
+    from app.services.v2.live_edits import apply_live_edits
+    typed_edits = [Edit.model_validate(item) for item in edits]
+    before, _, _, restore_graph = apply_live_edits(db, ontology_id, typed_edits, service.graph)
+    try:
+        db.add(ScenarioAudit(scenario_id=scenario.id, revision=scenario.head_revision,
+                             actor_id=user.id, operation="merge",
+                             summary={"applied_edits": len(edits), "base_view_id": scenario.base_view_id,
+                                      **(summary_extra or {})}))
+        if before_commit:
+            before_commit(before, edits)
+        db.commit()
+    except Exception:
+        db.rollback()
+        restore_graph()
+        raise
+    return len(edits), before

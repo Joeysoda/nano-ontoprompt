@@ -13,7 +13,11 @@ type Path = { schema: string; nodes: Array<{ id: string; kind: string; label: st
 type Kpis = { revenue_at_risk: number; at_risk_orders: number; blocked_orders: number; late_orders: number; on_time_units: number; demanded_units: number; root_cause_items: string[]; stranded_reserved_quantity: number }
 export type MaterialDecisionOutputs = { feasible: boolean; revenue_at_risk: number; kpis?: Kpis; demand_impacts: Impact[]; shortages: Shortage[]; candidate_actions: Candidate[]; impact_path: Path }
 export type DecisionRunContext = { ontologyId: string; runId: string; scenarioId: string; scenarioRevision: number; nodeKey: string; artifact?: { id: string; content_digest: string } }
-type Package = { id: string; status: string; etag: number; created_by: string; title: string; events: Array<{ sequence: number; event_type: string; actor_id: string; reason: string }> }
+type PackageEdit = { sequence: number; op: string; target?: { concrete_type: string; object_id: string } | null; property?: string | null; value?: unknown; expected_old_value?: unknown; properties?: Record<string, unknown> }
+type PackageAction = { id: string; action_type_id: string; expected_edits: PackageEdit[]; external_effect_class: string; receipt: Record<string, unknown> | null }
+type Package = { id: string; status: string; etag: number; created_by: string; title: string; actions: PackageAction[]; outbox: Array<{ id: string; delivered: boolean; attempts: number }>; events: Array<{ sequence: number; event_type: string; actor_id: string; reason: string }> }
+type Delivery = { external_effects: number; delivered: number; status: 'complete' | 'external_effect_partial' }
+const editLabel: Record<string, string> = { set_property: '修改', create_object: '新建', delete_object: '删除', unset_property: '清除' }
 
 const statusLabel: Record<Impact['status'], string> = { on_time: '按期', late: '迟交', blocked: '缺件阻塞' }
 const reasonLabel: Record<string, string> = { material_shortage: '缺件', late_material: '物料晚到', capacity_conflict: '产能冲突' }
@@ -36,29 +40,30 @@ export default function MaterialDecisionWorkspace({ outputs, context }: { output
   const [rationale, setRationale] = useState('')
   const [reviewReason, setReviewReason] = useState('')
   const [pkg, setPkg] = useState<Package | null>(null)
+  const [delivery, setDelivery] = useState<Delivery | null>(null)
   const active = impacts.find(row => row.demand_id === selected)
   const candidate = outputs.candidate_actions.find(row => row.id === candidateId)
   const kpis = outputs.kpis
   const paths = active ? (active.shortages.length ? active.shortages.map(row => row.path) : active.used_sources.filter(row => active.root_cause_items.includes(row.item)).map(row => (row as Source & { path?: string[] }).path ?? [row.item])) : []
 
+  const packagesUrl = `/ontologies/${context?.ontologyId}/decision-packages`
+  // The server compiles the candidate into typed edits from the run's pinned data view.
   const createPackage = useMutation({
-    mutationFn: () => {
-      if (!context?.artifact || !candidate) throw new Error('缺少运行产物，无法创建决策包')
-      return apiClientV2.post<Package>(`/ontologies/${context.ontologyId}/decision-packages`, {
-        scenario_id: context.scenarioId, scenario_revision: context.scenarioRevision, run_id: context.runId,
-        title: candidate.label, rationale: rationale.trim(),
-        actions: candidate.actions.map(action => ({ action_type_id: action.action_type, invocation: action, expected_edits: [action], external_effect_class: externalActions.has(action.action_type) ? 'irreversible' : 'none' })),
-        evidence: [{ evidence_type: 'artifact', reference: { artifact_id: context.artifact.id, node_key: context.nodeKey, candidate_id: candidate.id, candidate_digest: candidate.content_digest }, content_digest: context.artifact.content_digest }],
-      })
-    },
+    mutationFn: () => apiClientV2.post<Package>(`/ontologies/${context!.ontologyId}/scenario-study-runs/${context!.runId}/decision-packages`, { candidate_id: candidate!.id, rationale: rationale.trim() }),
     onSuccess: setPkg,
   })
   const transition = useMutation({
-    mutationFn: (event: 'submit' | 'approve' | 'reject' | 'revise') => apiClientV2.post<Package>(`/ontologies/${context!.ontologyId}/decision-packages/${pkg!.id}/transition`, { event, expected_etag: pkg!.etag, request_id: crypto.randomUUID(), reason: reviewReason.trim() }),
+    mutationFn: (event: 'submit' | 'approve' | 'reject' | 'revise') => apiClientV2.post<Package>(`${packagesUrl}/${pkg!.id}/transition`, { event, expected_etag: pkg!.etag, request_id: crypto.randomUUID(), reason: reviewReason.trim() }),
     onSuccess: setPkg,
   })
-  const error = createPackage.error || transition.error
-  const canCreate = !!candidate?.applicable && !!context?.artifact && rationale.trim().length > 0 && !pkg
+  // One request id per click; a retried request is answered from the recorded event.
+  const command = useMutation({
+    mutationFn: (verb: 'apply' | 'revert' | 'deliver-outbox') => apiClientV2.post<{ package: Package; delivery?: Delivery; irreversible_effects?: Array<{ action_type: string; delivered: boolean }> }>(`${packagesUrl}/${pkg!.id}:${verb}`, verb === 'deliver-outbox' ? undefined : { expected_etag: pkg!.etag, request_id: crypto.randomUUID() }),
+    onSuccess: result => { setPkg(result.package); if (result.delivery) setDelivery(result.delivery) },
+  })
+  const error = createPackage.error || transition.error || command.error
+  const canCreate = !!candidate?.applicable && !!context && rationale.trim().length > 0 && !pkg
+  const edits = pkg?.actions.flatMap(action => action.expected_edits.map(edit => ({ action, edit }))) ?? []
 
   return <section className="decision-workspace" data-testid="material-decision-workspace">
     <header className="decision-workspace__header">
@@ -121,16 +126,27 @@ export default function MaterialDecisionWorkspace({ outputs, context }: { output
           {!pkg ? <>
             <label className="candidate-field">决策理由<textarea value={rationale} onChange={event => setRationale(event.target.value)} rows={3} placeholder="为什么选择这个方案，以及接受哪些代价" /></label>
             <button className="wb-button-primary" disabled={!canCreate || createPackage.isPending} onClick={() => createPackage.mutate()}>创建决策包</button>
-            {!context?.artifact && <p className="candidate-note">该运行没有可引用的产物记录，无法创建决策包。</p>}
+            {!context && <p className="candidate-note">运行完成后才能创建决策包。</p>}
           </> : <div className="package-panel" data-testid="decision-package">
             <p><strong>{packageStatus[pkg.status] ?? pkg.status}</strong> · 版本 {pkg.etag}</p>
+            <p className="candidate-note">服务端编译的本体变更（{edits.length} 项，执行时会重新编译并核对摘要）：</p>
+            <ol className="candidate-actions" data-testid="package-edits">{edits.map(({ action, edit }) => <li key={edit.sequence}><strong>{editLabel[edit.op] ?? edit.op} · {edit.target?.concrete_type} {edit.target?.object_id}</strong><small>{edit.property ? `${edit.property}: ${String(edit.expected_old_value ?? '空')} → ${String(edit.value ?? '空')}` : describe({ action_type: action.action_type_id, ...edit.properties })}</small></li>)}</ol>
             {pkg.status === 'draft' && <button className="wb-button-primary" disabled={transition.isPending} onClick={() => transition.mutate('submit')}>提交审核</button>}
             {pkg.status === 'in_review' && <>
               <label className="candidate-field">审核意见<textarea value={reviewReason} onChange={event => setReviewReason(event.target.value)} rows={2} placeholder="驳回时必填" /></label>
               <div className="package-buttons"><button className="wb-button-primary" disabled={transition.isPending} onClick={() => transition.mutate('approve')}>批准</button><button className="wb-button-secondary" disabled={transition.isPending || !reviewReason.trim()} onClick={() => transition.mutate('reject')}>驳回</button></div>
             </>}
             {pkg.status === 'rejected' && <button className="wb-button-secondary" disabled={transition.isPending} onClick={() => transition.mutate('revise')}>退回草稿修改</button>}
-            {pkg.status === 'approved' && <p className="candidate-note">已批准。执行需经 Scenario 合并重新校验，尚未接入此工作区。</p>}
+            {(pkg.status === 'approved' || pkg.status === 'apply_failed') && <button className="wb-button-primary" disabled={command.isPending} onClick={() => command.mutate('apply')}>{pkg.status === 'apply_failed' ? '重试执行' : '执行（合并到本体）'}</button>}
+            {pkg.status === 'applied' && <>
+              <ul className="package-receipts" data-testid="package-receipts">{pkg.actions.filter(action => action.external_effect_class !== 'none').map(action => <li key={action.id}>{actionLabel[action.action_type_id] ?? action.action_type_id} · {action.receipt ? `回执 ${String(action.receipt.external_id)}` : '待发送'}</li>)}</ul>
+              {delivery?.status === 'external_effect_partial' && <p className="candidate-warning">本体变更已合并，但有 {delivery.external_effects - delivery.delivered} 项外部通知未送达。</p>}
+              <div className="package-buttons">
+                {pkg.outbox.some(row => !row.delivered) && <button className="wb-button-secondary" disabled={command.isPending} onClick={() => command.mutate('deliver-outbox')}>重发外部通知</button>}
+                <button className="wb-button-secondary" disabled={command.isPending} onClick={() => command.mutate('revert')}>回滚本体变更</button>
+              </div>
+            </>}
+            {pkg.status === 'reverted' && pkg.actions.some(action => action.receipt) && <p className="candidate-warning">本体变更已回滚；已发送给供应商的加急/采购通知无法自动撤回，需要人工跟进。</p>}
             <ol className="package-events">{pkg.events.map(row => <li key={row.sequence}>{row.event_type} · {row.actor_id.slice(0, 8)}{row.reason ? ` · ${row.reason}` : ''}</li>)}</ol>
           </div>}
           {error && <p role="alert" className="candidate-warning">{formatApiError(error)}</p>}

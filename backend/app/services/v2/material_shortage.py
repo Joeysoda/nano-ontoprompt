@@ -71,9 +71,21 @@ def _earliest_slot(busy: list[tuple[datetime, datetime]], ready: datetime, durat
     return start
 
 
+def _rows(inputs: dict, key: str) -> list[dict]:
+    """Accept plain rows or Object Query records ({object_id, object_type, properties})."""
+    rows = []
+    for row in inputs.get(key) or []:
+        if isinstance(row, dict) and "object_id" in row and isinstance(row.get("properties"), dict):
+            # Object Query returns every selected property; None means "not set", like a missing key.
+            row = {**{k: v for k, v in row["properties"].items() if v is not None}, "id": row["object_id"]}
+        rows.append(row)
+    return rows
+
+
 def _prepare(inputs: dict) -> dict:
     """Validate the input once; simulations only read the prepared structure."""
     anchor = _time(inputs["scenario_time"], "scenario_time")
+    inputs = {key: _rows(inputs, key) if key != "scenario_time" else value for key, value in inputs.items()}
     demands = list(inputs.get("demands", []))
     boms = list(inputs.get("boms", []))
     if len(demands) > 500 or len(boms) > 2_000:
@@ -189,6 +201,7 @@ def _prepare(inputs: dict) -> dict:
             "id": demand_id, "item": product, "quantity": quantity,
             "due": _at(due, anchor, "demand due date") if due is not None else anchor + timedelta(days=9999),
             "priority": float(demand.get("priority", 0)), "revenue": revenue,
+            "rank": float(demand["allocation_rank"]) if demand.get("allocation_rank") is not None else inf,
             "duration": timedelta(days=_number(demand.get("processing_days", 1), "processing_days")),
             "resources": [resource] + [str(value) for value in demand.get("alternate_resources", []) if str(value) != resource],
             "requirements": explode(product, quantity),
@@ -237,7 +250,8 @@ def _simulate(prepared: dict, policy: dict | None = None) -> dict:
     density_item = policy.get("reallocate_item")
 
     def order_key(demand: dict) -> tuple:
-        base = (demand["due"], -demand["priority"], demand["id"])
+        # A planner-approved allocation_rank (persisted by an applied reallocation) wins over due date.
+        base = (demand["rank"], demand["due"], -demand["priority"], demand["id"])
         if not density_item:
             return base
         need = item_need(demand, density_item)
@@ -248,6 +262,7 @@ def _simulate(prepared: dict, policy: dict | None = None) -> dict:
         busy[task["resource"]].append((task["start"], task["finish"]))
 
     impacts, shortages, allocations, schedule = [], [], [], []
+    sequence = [demand["id"] for demand in sorted(prepared["demands"], key=order_key)]
     for demand in sorted(prepared["demands"], key=order_key):
         mutable = stock + [row for rows in sources.values() for row in rows] + \
                   [row for key, rows in reserved_for.items() if key[1] == demand["id"] for row in rows]
@@ -327,6 +342,7 @@ def _simulate(prepared: dict, policy: dict | None = None) -> dict:
     expedite_cost = sum(row["quantity"] * row["expedite_unit_premium"] for row in prepared["commitments"]
                         if row["id"] in expedite and row["expedite_available_at"] is not None)
     return {"impacts": impacts, "shortages": shortages, "allocations": allocations, "schedule": schedule, "stranded": stranded,
+            "sequence": sequence,
             "revenue_at_risk": round(sum(row["revenue_at_risk"] for row in impacts), 6),
             "incremental_cost": round(purchase_cost + expedite_cost, 6)}
 
@@ -428,6 +444,9 @@ def _evaluate(prepared: dict, baseline: dict, spec: dict) -> dict:
     for row in actions:
         if row["action_type"] == "create_purchase_order":
             row["quantity"] = round(sum(a["quantity"] for a in result["allocations"] if a["source_id"] == row["option_id"]), 6)
+    for row in actions:
+        if row["action_type"] == "reprioritize_allocation":
+            row["ranked_demands"] = result["sequence"]
     if spec["policy"].get("replan"):
         actions.extend({"action_type": "reassign_work_order", "demand_id": row["demand_id"], "from_resource": row["reassigned_from"],
                         "to_resource": row["resource"]} for row in result["schedule"] if row["reassigned_from"])

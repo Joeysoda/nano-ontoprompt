@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user, require_editor
 from app.models.ontology import OntologyProject
 from app.models.v2.decision import (DecisionRecord, DecisionLink, DecisionPackage,
-    DecisionPackageAction, DecisionPackageEvidence, DecisionPackageEvent)
+    DecisionPackageAction, DecisionPackageEvidence, DecisionPackageEvent, DecisionOutbox)
 from app.models.v2.scenario import ScenarioResource, ScenarioRun, ScenarioRunArtifact
+from app.services.v2 import decision_packages as package_service
 from app.services.v2.decision_packages import DecisionPackageError, package_digest, stable_digest, transition
 from app.models.v2.reasoning import ReasoningRun
 from app.services.v2.graph.falkordb_service import FalkorDBService
@@ -105,8 +106,21 @@ class PackageCreateInput(BaseModel):
     evidence: list[PackageEvidenceInput] = Field(min_length=1, max_length=100)
 
 
+class PackageFromRunInput(BaseModel):
+    candidate_id: str = Field(min_length=1, max_length=200)
+    title: str | None = Field(default=None, max_length=200)
+    rationale: str = Field(min_length=1, max_length=10000)
+
+
+class PackageCommandInput(BaseModel):
+    expected_etag: int = Field(ge=1)
+    request_id: str = Field(min_length=1, max_length=200)
+
+
 class PackageTransitionInput(BaseModel):
-    event: Literal["submit", "approve", "reject", "revise", "begin_apply", "apply_succeeded", "apply_failed", "retry_apply", "revert", "supersede"]
+    # Apply and revert are not plain transitions: they run through :apply / :revert,
+    # which perform the Scenario merge, so a package cannot be marked applied by hand.
+    event: Literal["submit", "approve", "reject", "revise", "supersede"]
     expected_etag: int = Field(ge=1)
     request_id: str = Field(min_length=1, max_length=200)
     reason: str = Field(default="", max_length=4000)
@@ -116,10 +130,12 @@ def package_json(db, item):
     actions = db.query(DecisionPackageAction).filter_by(package_id=item.id).order_by(DecisionPackageAction.sequence).all()
     evidence = db.query(DecisionPackageEvidence).filter_by(package_id=item.id).all()
     events = db.query(DecisionPackageEvent).filter_by(package_id=item.id).order_by(DecisionPackageEvent.sequence).all()
+    outbox = db.query(DecisionOutbox).filter_by(package_id=item.id).all()
     return {"id": item.id, "scenario_id": item.scenario_id, "scenario_revision": item.scenario_revision,
             "run_id": item.run_id, "title": item.title, "rationale": item.rationale, "status": item.status,
             "content_digest": item.content_digest, "preview_digest": item.preview_digest, "etag": item.etag,
-            "created_by": item.created_by, "reviewed_by": item.reviewed_by,
+            "created_by": item.created_by, "reviewed_by": item.reviewed_by, "applied_decision_id": item.applied_decision_id,
+            "outbox": [{"id": row.id, "action_id": row.action_id, "delivered": row.delivered, "attempts": row.attempts} for row in outbox],
             "actions": [{"id": row.id, "sequence": row.sequence, "action_type_id": row.action_type_id,
                          "invocation": row.invocation, "expected_edits": row.expected_edits,
                          "external_effect_class": row.external_effect_class, "receipt": row.receipt} for row in actions],
@@ -150,22 +166,97 @@ def create_package(oid: str, body: PackageCreateInput, db: Session = Depends(get
             artifact_id = str(evidence.reference.get("artifact_id", ""))
             if artifact_id not in artifacts or artifacts[artifact_id].content_digest.removeprefix("sha256:") != evidence.content_digest:
                 raise HTTPException(422, "Evidence artifact or digest is invalid")
-    action_payload = [row.model_dump(mode="json") for row in body.actions]
-    evidence_payload = [row.model_dump(mode="json") for row in body.evidence]
-    digest = package_digest(ontology_id=oid, scenario_id=body.scenario_id, scenario_revision=body.scenario_revision,
-        run_id=body.run_id, title=body.title, rationale=body.rationale, actions=action_payload, evidence=evidence_payload)
-    item = DecisionPackage(ontology_id=oid, scenario_id=body.scenario_id, scenario_revision=body.scenario_revision,
-        run_id=body.run_id, title=body.title, rationale=body.rationale, content_digest=digest,
-        preview_digest=stable_digest([row.expected_edits for row in body.actions]), created_by=user.id)
+    return _insert_package(db, oid, user, scenario_id=body.scenario_id, scenario_revision=body.scenario_revision, run_id=body.run_id,
+                           title=body.title, rationale=body.rationale, actions=[row.model_dump(mode="json") for row in body.actions],
+                           evidence=[row.model_dump(mode="json") for row in body.evidence])
+
+
+def _insert_package(db, oid, user, *, scenario_id, scenario_revision, run_id, title, rationale, actions, evidence):
+    digest = package_digest(ontology_id=oid, scenario_id=scenario_id, scenario_revision=scenario_revision,
+        run_id=run_id, title=title, rationale=rationale, actions=actions, evidence=evidence)
+    item = DecisionPackage(ontology_id=oid, scenario_id=scenario_id, scenario_revision=scenario_revision,
+        run_id=run_id, title=title, rationale=rationale, content_digest=digest,
+        preview_digest=stable_digest([row["expected_edits"] for row in actions]), created_by=user.id)
     db.add(item); db.flush()
-    for sequence, row in enumerate(body.actions):
-        db.add(DecisionPackageAction(package_id=item.id, sequence=sequence, **row.model_dump()))
-    for row in body.evidence:
-        db.add(DecisionPackageEvidence(package_id=item.id, **row.model_dump()))
+    for sequence, row in enumerate(actions):
+        db.add(DecisionPackageAction(package_id=item.id, sequence=sequence, **row))
+    for row in evidence:
+        db.add(DecisionPackageEvidence(package_id=item.id, **row))
     db.add(DecisionPackageEvent(package_id=item.id, sequence=0, event_type="created", actor_id=user.id,
         reason="", request_id=f"create:{item.id}", after_digest=digest))
     db.commit()
     return package_json(db, item)
+
+
+def _package_error(exc: DecisionPackageError):
+    raise HTTPException(exc.status_code, {"code": exc.code, "message": str(exc)}) from exc
+
+
+@router.post('/{oid}/scenario-study-runs/{run_id}/decision-packages')
+def create_package_from_run(oid: str, run_id: str, body: PackageFromRunInput, db: Session = Depends(get_db), user=Depends(require_editor)):
+    """Create a draft whose edits the server compiles from the run's pinned data view."""
+    scope(db, oid, user)
+    run = db.get(ScenarioRun, run_id)
+    scenario = db.query(ScenarioResource).filter_by(id=run.scenario_id, ontology_id=oid).first() if run else None
+    if not run or not scenario:
+        raise HTTPException(404, {"code": "run_not_found", "message": "Run not found"})
+    if run.status != "completed":
+        raise HTTPException(409, {"code": "run_not_complete", "message": "Run is not complete"})
+    if scenario.head_revision != run.revision:
+        raise HTTPException(409, {"code": "stale_scenario_revision", "message": "Scenario changed after this run"})
+    try:
+        node_key, artifact, candidate, actions = package_service.compile_package_actions(db, run, oid, body.candidate_id)
+    except DecisionPackageError as exc:
+        _package_error(exc)
+    outputs = run.result_manifest["nodes"][node_key]["outputs"]
+    evidence = [{"evidence_type": "artifact", "content_digest": artifact.content_digest.removeprefix("sha256:"),
+                 "reference": {"artifact_id": artifact.id, "node_key": node_key, "candidate_id": candidate["id"]}},
+                {"evidence_type": "impact_path", "content_digest": outputs["impact_path"]["content_digest"],
+                 "reference": {"artifact_id": artifact.id, "path": f"nodes.{node_key}.outputs.impact_path"}},
+                {"evidence_type": "metric", "content_digest": candidate["content_digest"],
+                 "reference": {"candidate_id": candidate["id"], "revenue_at_risk_before": outputs["revenue_at_risk"],
+                               "revenue_at_risk_after": candidate["revenue_at_risk"], "incremental_cost": candidate["incremental_cost"],
+                               "harmed_orders": [row["demand_id"] for row in candidate["harmed_orders"]]}}]
+    return _insert_package(db, oid, user, scenario_id=scenario.id, scenario_revision=run.revision, run_id=run.id,
+                           title=body.title or candidate["label"], rationale=body.rationale, actions=actions, evidence=evidence)
+
+
+def _locked_package(db, oid, package_id):
+    item = db.query(DecisionPackage).filter_by(id=package_id, ontology_id=oid).with_for_update().first()
+    if not item:
+        raise HTTPException(404, "Decision package not found")
+    return item
+
+
+@router.post('/{oid}/decision-packages/{package_id}:apply')
+def apply_package(oid: str, package_id: str, body: PackageCommandInput, db: Session = Depends(get_db), user=Depends(require_editor)):
+    scope(db, oid, user)
+    item = _locked_package(db, oid, package_id)
+    try:
+        delivery = package_service.apply_package(db, item, user, expected_etag=body.expected_etag, request_id=body.request_id)
+    except DecisionPackageError as exc:
+        _package_error(exc)
+    return {"package": package_json(db, db.get(DecisionPackage, package_id)), "delivery": delivery}
+
+
+@router.post('/{oid}/decision-packages/{package_id}:deliver-outbox')
+def deliver_package_outbox(oid: str, package_id: str, db: Session = Depends(get_db), user=Depends(require_editor)):
+    scope(db, oid, user)
+    item = _locked_package(db, oid, package_id)
+    if item.status != "applied":
+        raise HTTPException(409, {"code": "invalid_transition", "message": "Only applied packages have external effects"})
+    return {"package": package_json(db, item), "delivery": package_service.deliver_outbox(db, item)}
+
+
+@router.post('/{oid}/decision-packages/{package_id}:revert')
+def revert_package(oid: str, package_id: str, body: PackageCommandInput, db: Session = Depends(get_db), user=Depends(require_editor)):
+    scope(db, oid, user)
+    item = _locked_package(db, oid, package_id)
+    try:
+        result = package_service.revert_package(db, item, user, expected_etag=body.expected_etag, request_id=body.request_id)
+    except DecisionPackageError as exc:
+        _package_error(exc)
+    return {"package": package_json(db, db.get(DecisionPackage, package_id)), **result}
 
 
 @router.post('/{oid}/decision-packages/{package_id}/transition')
@@ -177,10 +268,6 @@ def transition_package(oid: str, package_id: str, body: PackageTransitionInput, 
     duplicate = db.query(DecisionPackageEvent).filter_by(package_id=item.id, request_id=body.request_id).first()
     if duplicate:
         return package_json(db, item)
-    if body.event in {"begin_apply", "apply_succeeded"}:
-        scenario = db.get(ScenarioResource, item.scenario_id)
-        if not scenario or scenario.head_revision != item.scenario_revision:
-            raise HTTPException(409, "Scenario revision changed after review")
     try:
         before, target = transition(item, body.event, user.id, expected_etag=body.expected_etag, reason=body.reason)
     except DecisionPackageError as exc:

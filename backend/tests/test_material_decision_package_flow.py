@@ -3,8 +3,12 @@
 Uses the real Study compiler, the real executor with contract validation, the
 real run-summary API and the real Decision Package router.
 """
+import os
+import threading
 import uuid
 from time import monotonic
+
+import pytest
 
 from app.services.auth_service import hash_password
 from app.models.user import User
@@ -104,7 +108,71 @@ def test_l3_run_feeds_governed_decision_package(client, auth_headers, ontology, 
     db.refresh(scenario)
     scenario.head_revision = 1
     db.commit()
-    stale = move(package, "begin_apply", reviewer_headers)
-    assert stale.status_code == 409
+    # Apply cannot be faked through a plain transition; it must go through :apply.
+    assert move(package, "begin_apply", reviewer_headers).status_code == 422
+    stale = client.post(f"{packages}/{package['id']}:apply", headers=reviewer_headers,
+                        json={"expected_etag": package["etag"], "request_id": "apply-1"})
+    assert stale.status_code == 409 and stale.json()["detail"]["code"] == "stale_scenario_revision"
     events = client.get(packages, headers=auth_headers).json()["packages"][0]["events"]
     assert [row["event_type"] for row in events] == ["created", "submit", "approve"]
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL", "").startswith("postgresql"), reason="row locks need real PostgreSQL")
+def test_concurrent_reviews_have_exactly_one_winner(client, auth_headers, ontology, db, admin_user):
+    from fastapi import HTTPException
+    from sqlalchemy.orm import sessionmaker
+    from app.routers.v2 import decisions
+    from app.routers.v2.decisions import PackageTransitionInput, transition_package
+
+    ontology_id = ontology["id"]
+    scenario, run = _completed_run(client, auth_headers, ontology_id, db, admin_user)
+    summary = client.get(f"/api/v2/ontologies/{ontology_id}/scenario-study-runs/{run.id}", headers=auth_headers).json()
+    artifact = next(row for row in summary["artifacts"] if row["artifact_type"] == "node:decision")
+    candidate = summary["result_manifest"]["nodes"]["decision"]["outputs"]["candidate_actions"][0]
+    packages = f"/api/v2/ontologies/{ontology_id}/decision-packages"
+    package = client.post(packages, headers=auth_headers, json={
+        "scenario_id": scenario.id, "scenario_revision": 0, "run_id": run.id, "title": "t", "rationale": "r",
+        "actions": [{"action_type_id": row["action_type"], "invocation": row} for row in candidate["actions"]],
+        "evidence": [{"evidence_type": "artifact", "reference": {"artifact_id": artifact["id"]}, "content_digest": artifact["content_digest"]}]}).json()
+    package = client.post(f"{packages}/{package['id']}/transition", headers=auth_headers,
+                          json={"event": "submit", "expected_etag": package["etag"], "request_id": "submit"}).json()
+    reviewers = [User(id=str(uuid.uuid4()), username=f"r{i}", email=f"r{i}@t.com", password_hash="x", role="admin") for i in range(2)]
+    db.add_all(reviewers)
+    db.commit()
+
+    TestSession = sessionmaker(bind=db.get_bind())
+    barrier, results = threading.Barrier(2), []
+
+    def review(user):
+        session = TestSession()
+        try:
+            barrier.wait()
+            transition_package(ontology_id, package["id"], PackageTransitionInput(
+                event="approve", expected_etag=package["etag"], request_id=f"approve-{user.username}"), db=session, user=session.get(User, user.id))
+            results.append("ok")
+        except HTTPException as exc:
+            results.append(exc.detail["code"])
+        except Exception as exc:  # e.g. a unique-constraint race without the lock
+            results.append(type(exc).__name__)
+        finally:
+            session.close()
+
+    # Hold each request just after it has read the package, so both would see the
+    # same ETag unless the row lock makes the second wait for the first commit.
+    overlap, real_transition = threading.Barrier(2), decisions.transition
+
+    def held_transition(*args, **kwargs):
+        try:
+            overlap.wait(timeout=2)
+        except threading.BrokenBarrierError:
+            pass
+        return real_transition(*args, **kwargs)
+
+    decisions.transition = held_transition
+    threads = [threading.Thread(target=review, args=(user,)) for user in reviewers]
+    [thread.start() for thread in threads]
+    [thread.join(30) for thread in threads]
+    decisions.transition = real_transition
+    assert sorted(results) == ["ok", "stale_etag"]
+    final = client.get(packages, headers=auth_headers).json()["packages"][0]
+    assert final["status"] == "approved" and [row["event_type"] for row in final["events"]].count("approve") == 1

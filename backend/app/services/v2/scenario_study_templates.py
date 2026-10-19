@@ -25,6 +25,19 @@ def templates() -> list[dict]:
         "constraints": [{"key": "material_feasible", "expression_ref": "decision.feasible", "severity": "hard", "config": {"operator": "eq", "value": True}}],
         "budgets": {"max_nodes": 50, "max_objects": 100000, "max_wall_seconds": 900, "max_artifact_bytes": 52428800},
     }
+    from .material_shortage_objects import INPUT_TYPES, OBJECT_TYPES
+    # Same decision, but every input is read from pinned Ontology objects so an
+    # approved Decision Package can be merged back as typed edits.
+    material_shortage_objects = {
+        **material_shortage,
+        "parameters": [{"key": "scenario_time", "label": "情景基准时间", "type": "datetime", "default": "2026-01-01T00:00:00Z"}],
+        "nodes": [{"key": f"read_{key}", "kind": "object_query", "outputs": {"objects": "object_set"},
+                   "config": {"type": kind, "select": sorted(OBJECT_TYPES[kind])}} for key, kind in INPUT_TYPES.items()] + [
+            {**material_shortage["nodes"][0],
+             "inputs": {"scenario_time": {"parameter": "scenario_time"},
+                        **{key: {"from": f"read_{key}.objects"} for key in INPUT_TYPES}}}],
+        "edges": [{"source": f"read_{key}.objects", "target": f"decision.{key}"} for key in INPUT_TYPES],
+    }
     cycle = {
         "spec_version": "scenario-study/v1",
         "context_policy": {"scenario_mode": "pinned_on_run", "time_required": False},
@@ -131,6 +144,7 @@ def templates() -> list[dict]:
     }
     return [
         {"template_id": "material_shortage_decision", "name": "缺件影响与收入保护", "description": "从客户订单逐层钻取到多级 BOM、预留、库存、在途承诺和替代供应，并生成可审计影响路径与候选动作。示例数据为合成数据。", "spec": material_shortage},
+        {"template_id": "material_shortage_decision_objects", "name": "缺件影响与收入保护（读取本体对象）", "description": "与“缺件影响与收入保护”相同的决策模型，但订单、BOM、库存、预留、供应承诺、替代来源和固定任务全部从固定数据视图的本体对象读取；批准的决策包可作为类型化编辑合并回本体。", "spec": material_shortage_objects},
         {"template_id": "supply_chain_reasoning", "name": "供应停供到订单交付推理", "description": "多级 BOM、合格替代来源、库存、到货时间、生产资源和订单交付的端到端情景推理。示例数据为合成数据，结果不声称全局最优。", "spec": supply_chain},
         {"template_id": "supplier_disruption", "name": "供应中断与缺料影响", "description": "改变供应商供给、停供比例或订单需求，计算剩余缺口。参数样例为合成制造数据。", "spec": supplier},
         {"template_id": "capacity_replan", "name": "产能与设备变化", "description": "调整工序时长和可用产能，查看计划工时、逾期工序和可行状态。参数样例为合成制造数据。", "spec": capacity},

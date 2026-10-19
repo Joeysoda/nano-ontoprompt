@@ -440,8 +440,8 @@ npm run test:e2e -- scenario-studies.spec.ts decision-workspace.spec.ts
 | 阶段 | 状态 | 证据 |
 |---|---|---|
 | Phase 1 类型化影响与库存语义 | 核心完成 | `material_shortage.py`；`test_material_shortage_decision.py` |
-| Phase 2 Decision Package 状态机 | API/状态机完成；**Apply 未接 Scenario merge/outbox** | `decision_packages.py`、`decisions.py`；全新 PG 库 `upgrade head`→`downgrade -1`→`upgrade` 通过，ORM 与迁移后 schema 0 漂移 |
-| Phase 3 Decision Workspace | 第一版：KPI、钻取、证据、候选对比、变更预览、建包/提交/审核 | `MaterialDecisionWorkspace.tsx`；lint/tsc/build 通过；**未做浏览器 E2E** |
+| Phase 2 Decision Package 状态机 | 完成：服务端编译预览、`:apply` 走 Scenario revision + 既有 merge、outbox + 本地 fake ERP 回执、`:revert`、真实 PG 并发审核 | `decision_packages.py`、`decisions.py`；全新 PG 库 `upgrade head`→`downgrade -1`→`upgrade` 通过，ORM 与迁移后 schema 0 漂移 |
+| Phase 3 Decision Workspace | KPI、钻取、证据、候选对比、服务端变更预览、提交/审核/执行/回执/重发/回滚 | `MaterialDecisionWorkspace.tsx`；lint/tsc/build 通过；**未做浏览器 E2E** |
 | Phase 4 L3 同等复杂度 | fixture + 手算已知答案 + Study→Package 全链 API 测试完成 | `l3harris_fixture.py`；`test_l3harris_known_answer.py`；`test_material_decision_package_flow.py`（SQLite 与真实 PostgreSQL 均通过） |
 | Phase 5/6 | 未开始 | — |
 
@@ -453,4 +453,13 @@ npm run test:e2e -- scenario-studies.spec.ts decision-workspace.spec.ts
 
 已知答案（手算，见测试注释）：基线风险收入 550k；加急 PO-LATE 剩 140k（成本 3,200）；合格替代剩 480k（520）；按收入密度重分配剩 420k（受益 1010/1011，受损 1003/1006）；未认证低价来源 140k 但硬约束阻止；加急+合格替代+跨线改排为 0（3,720）。
 
-下一步：Apply 走现有 Scenario merge-preview/merge + outbox 回执与 Revert；并发审核的真实 PG 并发测试；Playwright 完整演示链；Phase 5 跨案例模板。
+
+### 12.1 第二轮（Apply 闭环）
+
+- 新模板 `material_shortage_decision_objects`：7 类本体对象经 Object Query 从固定数据视图读取，替代 JSON 参数。
+- 候选动作编译为**恰好是模型输入**的类型化编辑（加急改 `available_at`、替代采购新建 `SupplyCommitment`、改排改 `resource`、重分配写 `allocation_rank` 并释放预留），每条带 `expected_old_value`。
+- 真实 FalkorDB 验收（`tests/v2/test_material_decision_apply_real_falkor.py`）：Apply 后在新的 live 数据视图重跑，风险收入 = 候选预测值（组合方案 0，重分配 420k）；Revert 后重跑回到 550k；审核后 live 漂移 → `merge_conflict`，无写入、无外部发送；外部回执部分失败 → `external_effect_partial`，重发后完成。
+- 修复：`/transition` 不再接受 `begin_apply/apply_succeeded/revert`，执行只能走真正合并的 `:apply`。
+- 并发审核测试经变异验证：去掉行锁后两人同时批准都成功（`['ok','ok']`），加锁后恰好一个成功。
+
+未完成：Playwright 浏览器完整链（`scripts/seed_material_shortage_demo.py` 已写但未在运行栈执行）；Phase 5 跨案例模板；Phase 6 规模/soak/outage。

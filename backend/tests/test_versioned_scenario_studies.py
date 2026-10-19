@@ -77,7 +77,7 @@ def test_manufacturing_template_library_compiles_and_has_pinned_implementations(
     entries = templates()
     assert {entry["template_id"] for entry in entries} == {
         "supply_chain_reasoning", "supplier_disruption", "capacity_replan", "steel_energy_tariff", "cycle_time",
-        "material_shortage_decision",
+        "material_shortage_decision", "material_shortage_decision_objects",
     }
     for entry in entries:
         spec = StudySpec.model_validate(entry["spec"])
