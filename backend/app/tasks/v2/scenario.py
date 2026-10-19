@@ -257,6 +257,8 @@ def _execute_study_node(db, run, plan, node, inputs, graph_snapshot):
             "input_schema": asset.input_schema,
             "output_schema": asset.output_schema,
             "bindings": asset.bindings or {},
+            "executor_type": asset.executor_type,
+            "config": asset.config or {},
         }
         execution = execute(contract, inputs, ontology_id=asset.ontology_id)
         returned = execution["output"]

@@ -45,6 +45,11 @@ class ScenarioSettings(StrictBody):
     ttl_seconds: int = Field(ge=3600, le=365 * 86400)
 
 
+class ExternalEffect(StrictBody):
+    kind: str = Field(min_length=1, max_length=80, pattern=r"^[a-z][a-z0-9_]*$")
+    description: str = Field(default="", max_length=500)
+
+
 class ActionDefinition(StrictBody):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
@@ -52,6 +57,9 @@ class ActionDefinition(StrictBody):
     rules: list[dict] = Field(default_factory=list, max_length=30)
     # Exactly one of rules or a pinned edit Function (asset_key@major.minor.patch).
     backed_by_function: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]+@\d+\.\d+\.\d+$")
+    # An effect outside the Ontology (e.g. notifying a supplier). Plain Scenario
+    # edits refuse such Actions; a Decision Package delivers them via its outbox.
+    external_effect: ExternalEffect | None = None
 
 
 def _validate_action(parameters, rules, backed_by_function):
@@ -90,7 +98,8 @@ def _http(exc):
 def _action_dict(row):
     return {"id": row.id, "name": row.name, "description": row.description or "",
             "parameters": row.parameters or [], "rules": row.effects or [], "version": row.version,
-            "status": row.status, "enabled": row.enabled, "backed_by_function": row.backed_by_function}
+            "status": row.status, "enabled": row.enabled, "backed_by_function": row.backed_by_function,
+            "external_effect": (row.side_effects or {}).get("external")}
 
 
 def _snapshot(service, view_id):
@@ -182,7 +191,8 @@ def create_action_type(ontology_id: str, body: ActionDefinition, db=Depends(get_
         row = OntologyActionType(ontology_id=ontology_id, name=body.name.strip(),
                                  description=body.description, action_category="scenario",
                                  parameters=body.parameters, effects=body.rules, created_by=user.id,
-                                 backed_by_function=body.backed_by_function, status="draft", version=1)
+                                 backed_by_function=body.backed_by_function, status="draft", version=1,
+                                 side_effects={"external": body.external_effect.model_dump()} if body.external_effect else None)
         db.add(row); db.commit(); db.refresh(row)
         return _action_dict(row)
     except ScenarioError as exc:
@@ -203,6 +213,7 @@ def update_action_type(ontology_id: str, action_type_id: str, body: ActionDefini
         _validate_action(body.parameters, body.rules, body.backed_by_function)
         row.name, row.description = body.name.strip(), body.description
         row.parameters, row.effects, row.backed_by_function = body.parameters, body.rules, body.backed_by_function
+        row.side_effects = {"external": body.external_effect.model_dump()} if body.external_effect else None
         row.version += 1
         row.status = "draft"
         row.updated_at = datetime.now(timezone.utc)

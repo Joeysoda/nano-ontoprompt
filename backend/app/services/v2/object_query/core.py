@@ -155,9 +155,9 @@ class FalkorReadAdapter:
             ).result_set[0][0]
             if object_count > self.max_objects:
                 raise ObjectQueryError('query_too_complex', 'execution', 'Object scan budget exceeded')
-            objects = {}
+            objects, concepts = {}, set()
             after_instance_id = None
-            while len(objects) < object_count:
+            while len(objects) + len(concepts) < object_count:
                 where_after = ' AND n._instance_id > $after' if after_instance_id is not None else ''
                 params = {'ontology': graph_ontology_id, 'limit': 10000}
                 if after_instance_id is not None:
@@ -174,6 +174,11 @@ class FalkorReadAdapter:
                     if not props.get('_instance_id') or not props.get('_type'):
                         raise ObjectQueryError('invalid_projection_record', 'execution', 'Object identity missing')
                     identity = (props['_type'], props['_instance_id'])
+                    if props.get('is_concept') is True:
+                        # Mapping projects each type as a concept node (target of
+                        # INSTANCE_OF); it describes the type, it is not an object.
+                        concepts.add(identity)
+                        continue
                     if identity in objects:
                         raise ObjectQueryError('invalid_projection_record', 'execution', 'Duplicate object identity')
                     objects[identity] = props
@@ -185,9 +190,9 @@ class FalkorReadAdapter:
             ).result_set[0][0]
             if edge_count > self.max_edges:
                 raise ObjectQueryError('query_too_complex', 'execution', 'Edge scan budget exceeded')
-            edges = []
+            edges, scanned_edges = [], 0
             after_relationship_id = None
-            while len(edges) < edge_count:
+            while scanned_edges < edge_count:
                 where_after = ' AND id(r) > $after' if after_relationship_id is not None else ''
                 params = {'ontology': graph_ontology_id, 'limit': 10000}
                 if after_relationship_id is not None:
@@ -201,7 +206,10 @@ class FalkorReadAdapter:
                 )
                 if not result.result_set:
                     raise ObjectQueryError('invalid_projection_record', 'execution', 'Relationship scan ended before its count')
+                scanned_edges += len(result.result_set)
                 for relationship_id, source_type, source_id, relation, target_type, target_id in result.result_set:
+                    if (source_type, source_id) in concepts or (target_type, target_id) in concepts:
+                        continue
                     edges.append(((source_type, source_id), relation, (target_type, target_id)))
                 after_relationship_id = result.result_set[-1][0]
             return GraphData(objects, edges)

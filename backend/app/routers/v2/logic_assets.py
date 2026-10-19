@@ -26,6 +26,18 @@ class FunctionRelease(BaseModel):
     input_schema: dict
     output_schema: dict
     config: dict = Field(default_factory=dict)
+    source: str | None = Field(default=None, max_length=262144)  # user Functions only
+
+
+class UserFunctionCreate(BaseModel):
+    asset_key: str = Field(pattern=r"^[a-z][a-z0-9_]{2,79}$")
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=4000)
+    version: str = "1.0.0"
+    source: str = Field(min_length=1, max_length=262144)
+    input_schema: dict
+    output_schema: dict
+    limits: dict = Field(default_factory=dict)
 
 
 def _execution_arguments(oid, context, db, user):
@@ -127,6 +139,31 @@ def resolve_function(oid: str, asset_key: str, requirement: str, db: Session = D
         raise HTTPException(422, detail={'code': 'function_version_unavailable', 'message': str(exc), 'errors': exc.errors}) from exc
 
 
+@router.post('/{oid}/logic-assets/user-functions', status_code=201)
+def create_user_function(oid: str, body: UserFunctionCreate, db: Session = Depends(get_db), user=Depends(require_editor)):
+    """Publish a user-authored Python Function; it only ever runs in the isolated runner."""
+    from jsonschema import Draft202012Validator, SchemaError
+    from app.services.v2.user_functions import IMPLEMENTATION, UserFunctionError, release_config
+    _authorized(oid, db, user)
+    try:
+        version_tuple(body.version)
+        Draft202012Validator.check_schema(body.input_schema)
+        Draft202012Validator.check_schema(body.output_schema)
+        config = release_config(body.source, body.limits)
+    except UserFunctionError as exc:
+        raise HTTPException(422, detail={'code': exc.code, 'message': exc.message}) from exc
+    except (ContractValidationError, SchemaError) as exc:
+        raise HTTPException(422, detail={'code': 'invalid_contract', 'message': str(exc)}) from exc
+    if db.query(LogicAsset).filter_by(ontology_id=oid, asset_key=body.asset_key).first():
+        raise HTTPException(409, detail={'code': 'function_exists', 'message': 'Publish a new release of the existing Function instead'})
+    row = LogicAsset(ontology_id=oid, asset_key=body.asset_key, name=body.name, description=body.description, kind='user_function',
+                     implementation=IMPLEMENTATION, executor_type=IMPLEMENTATION, interface_key=f'user.{body.asset_key}',
+                     version=body.version, input_schema=body.input_schema, output_schema=body.output_schema, config=config,
+                     bindings={}, status='published', deterministic=True, side_effect=False)
+    db.add(row); db.commit(); db.refresh(row)
+    return _as_dict(row)
+
+
 @router.post('/{oid}/logic-assets/{asset_id}/releases', status_code=201)
 def release_function(oid: str, asset_id: str, body: FunctionRelease, db: Session = Depends(get_db), user=Depends(require_editor)):
     _authorized(oid, db, user)
@@ -144,16 +181,29 @@ def release_function(oid: str, asset_id: str, body: FunctionRelease, db: Session
         execution_class({'config': body.config, 'side_effect': asset.side_effect})
     except (ContractValidationError, SchemaError) as exc:
         raise HTTPException(422, 'Invalid Function release contract') from exc
-    if asset.implementation not in EXECUTORS:
-        raise HTTPException(422, 'Function implementation is unavailable')
+    from app.services.v2.user_functions import IMPLEMENTATION, UserFunctionError, release_config
+    config = body.config
+    if asset.implementation == IMPLEMENTATION:
+        # Source lives in the release; a new release may change it, an old one never can.
+        try:
+            config = release_config(body.source or asset.config.get('source', ''), body.config.get('limits') or asset.config.get('limits'))
+        except UserFunctionError as exc:
+            raise HTTPException(422, detail={'code': exc.code, 'message': exc.message}) from exc
+        contract_changed = body.input_schema != asset.input_schema or body.output_schema != asset.output_schema
+    else:
+        if asset.implementation not in EXECUTORS:
+            raise HTTPException(422, 'Function implementation is unavailable')
+        if body.source is not None:
+            raise HTTPException(422, 'Only user Functions carry source')
+        contract_changed = body.input_schema != asset.input_schema or body.output_schema != asset.output_schema or body.config != asset.config
     # Conservative compatibility: schema/execution changes require a major
     # release until a richer structural compatibility adapter is available.
-    if new_version[0] == old_version[0] and (body.input_schema != asset.input_schema or body.output_schema != asset.output_schema or body.config != asset.config):
+    if new_version[0] == old_version[0] and contract_changed:
         raise HTTPException(409, 'Contract changes require a new major release')
     if db.query(LogicAsset).filter_by(ontology_id=oid, asset_key=asset.asset_key, version=body.version).first():
         raise HTTPException(409, 'Function version already exists')
     values = {field: getattr(asset, field) for field in ('asset_key', 'name', 'kind', 'description', 'implementation', 'interface_key', 'interface_version', 'executor_type', 'bindings', 'binding_spec', 'deterministic', 'side_effect')}
-    row = LogicAsset(ontology_id=oid, **values, version=body.version, input_schema=body.input_schema, output_schema=body.output_schema, config=body.config, status='published')
+    row = LogicAsset(ontology_id=oid, **values, version=body.version, input_schema=body.input_schema, output_schema=body.output_schema, config=config, status='published')
     db.add(row); db.commit(); db.refresh(row)
     return _as_dict(row)
 

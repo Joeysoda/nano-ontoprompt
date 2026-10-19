@@ -444,14 +444,23 @@ def execute(asset: dict, inputs: dict, *, metadata=None, snapshot=None, ontology
     if kind == 'edit' and not through_action:
         fail('execution', 'Edit-producing Functions must execute through an Action')
     impl=asset.get("implementation") or asset.get("asset_key")
-    if impl not in EXECUTORS: raise ValueError(f"未注册本地实现: {impl}")
+    from .user_functions import IMPLEMENTATION as USER_FUNCTION
+    if impl != USER_FUNCTION and impl not in EXECUTORS: raise ValueError(f"未注册本地实现: {impl}")
     normalized, unit_trace = normalize_units(asset["input_schema"], inputs)
     validate_payload(asset["input_schema"], normalized, "input")
     validate_domain(asset['input_schema'], normalized, metadata=metadata, snapshot=snapshot, ontology_id=ontology_id)
     if snapshot is not None:
         normalized = hydrate_domain(asset['input_schema'], normalized, snapshot=snapshot, ontology_id=ontology_id)
-    output=EXECUTORS[impl](normalized)
+    if impl == USER_FUNCTION:
+        from .user_functions import run as run_user_function
+        output = run_user_function(asset.get("config") or {}, normalized)  # isolated runner, never in-process
+    else:
+        output=EXECUTORS[impl](normalized)
     validate_payload(asset["output_schema"], output, "output")
+    from .decision_output import is_decision, validate_decision
+    for value in (output.values() if isinstance(output, dict) else ()):
+        if is_decision(value):
+            validate_decision(value)  # a malformed decision result fails the run, not the workspace
     solver = output.get('solver') if isinstance(output, dict) else None
     if kind == 'edit' and isinstance(solver, dict) and solver.get('status') not in ('optimal', 'feasible'):
         raise SolverOutcome(solver)

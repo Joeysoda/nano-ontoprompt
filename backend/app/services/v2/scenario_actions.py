@@ -209,12 +209,15 @@ def _bind_legacy_parameters(definitions, submitted):
     return values
 
 
-def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *, actor=None, id_factory=None, function_resolver=None):
+def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *, actor=None, id_factory=None, function_resolver=None,
+                    deliver_side_effects=False):
     """Return one complete, ordered edit batch for live or Scenario targets.
 
     ``scenario_id`` is only used for deterministic Scenario-created IDs.  A
     live caller can provide ``id_factory`` for its own IDs; the resulting
-    ``Edit`` objects are otherwise identical.
+    ``Edit`` objects are otherwise identical.  ``deliver_side_effects`` is set
+    only by callers that deliver external effects themselves (Decision
+    Package outbox); everyone else keeps refusing such Actions.
     """
     if not isinstance(actions, list) or len(actions) > 30:
         raise ScenarioError("invalid_actions", "A Scenario supports at most 30 Actions")
@@ -235,7 +238,7 @@ def compile_actions(ontology_id, scenario_id, actions, action_types, snapshot, *
         if not action_type or not action_type.enabled or action_type.status != "published":
             raise ScenarioError("action_type_unavailable", "Select a published Action type", 422)
         _authorize(action_type, actor)
-        if getattr(action_type, "side_effects", None):
+        if getattr(action_type, "side_effects", None) and not deliver_side_effects:
             raise ScenarioError("unsupported_side_effect", "External side effects require a configured delivery adapter", 422, "side_effects")
         function_manifest = None
         current_id_factory = id_factory

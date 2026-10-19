@@ -1,5 +1,7 @@
 import { formatStudyValue } from './studyDisplay'
-import MaterialDecisionWorkspace, { type DecisionRunContext, type MaterialDecisionOutputs } from './MaterialDecisionWorkspace'
+import MaterialDecisionWorkspace, { type MaterialDecisionOutputs } from './MaterialDecisionWorkspace'
+import type { DecisionRunContext } from './decisionPackage'
+import DecisionWorkspace, { type DecisionOutput } from './DecisionWorkspace'
 
 export type StudyNodeResult = { kind: string; outputs: Record<string, unknown> }
 type ScheduleRow = { task_id?: string; demand_id?: string; resource?: string; start?: unknown; end?: unknown; finish?: unknown }
@@ -17,14 +19,21 @@ function StructuredValue({ port, value }: { port: string; value: unknown }) {
 export type StudyRunContext = Omit<DecisionRunContext, 'nodeKey' | 'artifact'> & { artifacts?: Array<{ id: string; artifact_type: string; content_digest: string }> }
 // Runs produced before candidate evaluation existed have no kpis; they fall back to the generic node view.
 const isMaterialDecision = (outputs: Record<string, unknown>) => !!outputs.impact_path && !!outputs.kpis && Array.isArray(outputs.demand_impacts) && Array.isArray(outputs.candidate_actions)
+// Any Function may return the domain-neutral decision/v1 contract on one of its ports.
+const decisionPort = (outputs: Record<string, unknown>) => Object.values(outputs).find((value): value is DecisionOutput => !!value && typeof value === 'object' && (value as { schema?: unknown }).schema === 'decision/v1')
+const isDecisionNode = (outputs: Record<string, unknown>) => !!decisionPort(outputs) || isMaterialDecision(outputs)
 
 export default function StudyRunResults({ nodes, context }: { nodes: Record<string, StudyNodeResult>; context?: StudyRunContext }) {
-  const decisions = Object.entries(nodes).filter(([, node]) => isMaterialDecision(node.outputs))
+  const decisions = Object.entries(nodes).filter(([, node]) => isDecisionNode(node.outputs))
   if (decisions.length) {
     // Business users start from the decision; data-loading and other nodes stay one click away.
-    const others = Object.fromEntries(Object.entries(nodes).filter(([, node]) => !isMaterialDecision(node.outputs)))
+    const others = Object.fromEntries(Object.entries(nodes).filter(([, node]) => !isDecisionNode(node.outputs)))
     return <div className="mt-4 space-y-3">
-      {decisions.map(([key, node]) => <MaterialDecisionWorkspace key={key} outputs={node.outputs as MaterialDecisionOutputs} context={context && { ...context, nodeKey: key, artifact: context.artifacts?.find(item => item.artifact_type === `node:${key}`) }} />)}
+      {decisions.map(([key, node]) => {
+        const nodeContext = context && { ...context, nodeKey: key, artifact: context.artifacts?.find(item => item.artifact_type === `node:${key}`) }
+        const decision = decisionPort(node.outputs)
+        return decision ? <DecisionWorkspace key={key} decision={decision} context={nodeContext} /> : <MaterialDecisionWorkspace key={key} outputs={node.outputs as MaterialDecisionOutputs} context={nodeContext} />
+      })}
       {Object.keys(others).length > 0 && <details className="decision-advanced"><summary>高级：其他节点原始结果（{Object.keys(others).length}）</summary><StudyRunResults nodes={others} /></details>}
     </div>
   }

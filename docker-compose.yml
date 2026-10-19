@@ -36,9 +36,12 @@ services:
       FALKORDB_HOST: ${FALKORDB_HOST:-falkordb}
       FALKORDB_PORT: ${FALKORDB_PORT:-6379}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      FUNCTION_RUNNER_URL: http://function-runner:8100
+      FUNCTION_RUNNER_TOKEN: ${FUNCTION_RUNNER_TOKEN:-}
     depends_on: [db, redis, falkordb]
     volumes: [./backend:/app, ./uploads:/uploads, ./data/frepple_demo:/state:ro, ./test_data:/test_data:ro]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    networks: [default, functions]
     # Migrations run in the backend lifespan. Workers must wait until the
     # schema is ready before startup reconciliation queries scenario tables.
     healthcheck:
@@ -55,6 +58,8 @@ services:
       FALKORDB_HOST: ${FALKORDB_HOST:-falkordb}
       FALKORDB_PORT: ${FALKORDB_PORT:-6379}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      FUNCTION_RUNNER_URL: http://function-runner:8100
+      FUNCTION_RUNNER_TOKEN: ${FUNCTION_RUNNER_TOKEN:-}
     depends_on:
       db:
         condition: service_started
@@ -66,6 +71,20 @@ services:
         condition: service_healthy
     volumes: [./backend:/app, ./uploads:/uploads, ./data/frepple_demo:/state:ro, ./test_data:/test_data:ro]
     command: celery -A app.tasks.celery_app worker --loglevel=info
+    networks: [default, functions]
+
+  # Runs user-authored Functions. It sits only on the internal "functions"
+  # network: no internet, no database, no Redis; read-only, no capabilities.
+  function-runner:
+    build: ./function_runner
+    environment:
+      FUNCTION_RUNNER_TOKEN: ${FUNCTION_RUNNER_TOKEN:-}
+    networks: [functions]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 3g
 
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
@@ -148,3 +167,7 @@ volumes:
   falkordb_data:
     external: true
     name: nano-ontoprompt_workbench_falkordb_data
+
+networks:
+  functions:
+    internal: true

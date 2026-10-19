@@ -59,6 +59,7 @@ class MappingService:
                 confidence=1.0,
             ))
             self._db.flush()
+        self._publish_property_definitions(concept_id, mapping)
         # 写入实例数据（EntityInstance 表）
         instances = self._rows_to_instances(mapping, concept_id, data)
         # New construction path: keep the legacy Neo4j concept write for
@@ -635,10 +636,15 @@ class MappingService:
 
     # ── 工具方法 ─────────────────────────────────────────────────────
 
+    @staticmethod
+    def _columns(rows: list[dict]) -> list[str]:
+        """All columns in first-seen order; sparse rows must not drop a column."""
+        return list(dict.fromkeys(col for row in rows for col in row))
+
     def _normalize_mapping(self, mapping: OntologyMapping, rows: list[dict]) -> None:
         if not rows:
             return
-        sample = rows[0]
+        sample = {col: next((row[col] for row in rows if col in row), None) for col in self._columns(rows)}
         field_map = dict(mapping.field_mapping or {})
         for col in sample.keys():
             if col == "content":
@@ -670,7 +676,7 @@ class MappingService:
     def _property_metadata(self, rows: list[dict], field_map: dict) -> list[dict]:
         if not rows:
             return []
-        sample = rows[0]
+        sample = dict.fromkeys(self._columns(rows))
         existing = {
             item.get("column"): item
             for item in field_map.get("__properties__", [])
@@ -697,6 +703,27 @@ class MappingService:
             })
         return result
 
+    def _publish_property_definitions(self, concept_id: str, mapping: OntologyMapping) -> None:
+        """Record visible mapped columns on the type so Object Query, Studies and
+        Actions can address them; existing definitions are kept."""
+        from app.models.entity import Entity
+        from sqlalchemy.orm.attributes import flag_modified
+        entity = self._db.get(Entity, concept_id)
+        if not entity:
+            return
+        props = dict(entity.properties or {})
+        definitions = list(props.get("property_definitions") or [])
+        known = {item.get("id") for item in definitions}
+        for item in (mapping.field_mapping or {}).get("__properties__", []):
+            name = item.get("property") or item.get("column")
+            if name and not item.get("hidden") and name not in known:
+                definitions.append({"id": name, "type": item.get("type") or "string"})
+                known.add(name)
+        props["property_definitions"] = definitions
+        entity.properties = props
+        flag_modified(entity, "properties")
+        self._db.flush()
+
     def _property_metadata_by_column(self, field_map: dict) -> dict:
         return {
             item.get("column"): item
@@ -707,10 +734,17 @@ class MappingService:
     def _infer_property_type(self, rows: list[dict], col: str) -> str:
         from app.services.v2.pipeline.steps.schema_inference import SchemaInferenceStep
 
-        for row in rows[:20]:
-            value = row.get(col)
-            if value not in (None, ""):
-                return SchemaInferenceStep._infer_type(str(value).strip())
+        values = [row.get(col) for row in rows if row.get(col) not in (None, "")]
+        if values and all(isinstance(value, list) for value in values):
+            return "array"
+        if values and all(isinstance(value, bool) for value in values):
+            return "boolean"
+        if values and all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+            return "integer"
+        if values and all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in values):
+            return "double"
+        for value in values[:20]:
+            return SchemaInferenceStep._infer_type(str(value).strip())
         return "string"
 
     def _choose_pk_col(self, rows: list[dict]) -> str:

@@ -70,6 +70,14 @@ def client(db):
     def override_get_db():
         yield db
     app.dependency_overrides[get_db] = override_get_db
+    # Several routers define their own get_db over SessionLocal; without these
+    # overrides their writes go to the configured DATABASE_URL (by default a
+    # sqlite file in the working tree) instead of the test database.
+    import sys
+    for name, module in list(sys.modules.items()):
+        local = getattr(module, "get_db", None) if name.startswith("app.") else None
+        if callable(local) and local is not get_db:
+            app.dependency_overrides[local] = override_get_db
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

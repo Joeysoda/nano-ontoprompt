@@ -471,3 +471,21 @@ npm run test:e2e -- scenario-studies.spec.ts decision-workspace.spec.ts
 - 验证栈已从 0040 升级到 0041 并重启 backend/celery/frontend（Windows 挂载下 Vite 不感知文件变化，改前端后需重启前端容器）。
 
 未完成：Phase 5 跨案例模板；Phase 6 规模/soak/outage；键盘路径与移动窄屏未专门测试。
+
+## 13. Phase 5 修订：用例必须由新用户在平台上自己搭建
+
+依据：这些案例是客户团队（常与 Palantir 驻场工程师一起）在 Foundry/AIP 标准组件上搭出的应用（对象类型、Functions、Actions、Scenarios、Dynamic Scheduling），不是单独的定制软件。因此复刻标准是“空白本体 + 只用界面/API 即可搭出”，内置 L3 模板只算示例。用户已确认：先做第 0 步 + Heineken；用户函数隔离用方案 A（独立容器 + 子进程限制）；Lear 排程按“建议函数 / 校验函数”可插拔结构做，算法是用户函数的内容。
+
+### 13.1 第 0 步交付
+
+| # | 交付 | 复用 | 门禁 |
+|---|---|---|---|
+| 0.1 | `function-runner` 容器：只在无外网的内部网络上，接收源码+输入，子进程运行（不可联网、CPU/内存/时间/文件写入上限、非 root、空环境变量）；后端客户端不可用时返回 503，绝不回退到进程内执行 | — | 隔离实测：联网、超内存、超时、读环境变量、写文件均失败且被报告 |
+| 0.2 | 用户函数：`executor_type=user_python`，源码与摘要存在不可变版本里；新增创建接口，发布新版本才能改源码；输出仍走既有 JSON Schema 合同校验 | Logic Asset 版本/合同 | 改源码不升版本被拒；同版本两次运行输出一致 |
+| 0.3 | 通用决策输出 `decision/v1`：主指标、对象（订单/仓库/门店…）、候选（指标前后值、获益/受损、成本、硬约束、`{action_type_id, parameters}` 动作） | ImpactPath | Schema 校验；守恒检查（前值−后值 = 获益−受损） |
+| 0.4 | 决策包按候选里的**用户配置情景 Action** 编译编辑（`compile_actions`），外部副作用由 Action 的 `side_effects` 声明 | 情景 Action、决策包、merge、outbox | 不再需要按案例写的编译代码 |
+| 0.5 | 通用工作区：标题、指标、对象和动作名全部来自 `decision/v1` | 现有工作区 | 缺件专用判断删除 |
+
+### 13.2 Heineken 验收（第 0 步的证明）
+
+空白本体，只调 HTTP API：建映射导入集装箱/仓库/订舱数据 → 提交用户函数源码（`examples/heineken/`，后端不 import）→ 配置“改目的地”“调整提箱优先级”情景 Action → 发布 Study → 运行 → 决策包 → 第二人批准 → 执行 → 回滚。手算已知答案覆盖：唯一分配、不可逆状态不可换、换后原目的地缺口显示、截止时间。

@@ -1,0 +1,16 @@
+{
+  "_note": "Synthetic data shaped like the Heineken AIPCon demo; not real customer data. Days are offsets from scenario day 0.",
+  "warehouses": [
+    {"code": "AMS", "on_hand": 1000, "capacity": 3000, "demand_w1": 800, "demand_w2": 800, "demand_w3": 800},
+    {"code": "RTM", "on_hand": 1200, "capacity": 2500, "demand_w1": 1500, "demand_w2": 900, "demand_w3": 900},
+    {"code": "UTR", "on_hand": 2000, "capacity": 4000, "demand_w1": 300, "demand_w2": 300, "demand_w3": 300}
+  ],
+  "containers": [
+    {"code": "C1", "status": "at_port", "destination": "AMS", "quantity": 1000, "port_day": 0, "demurrage_per_day": 200},
+    {"code": "C2", "status": "at_port", "destination": "RTM", "quantity": 1000, "port_day": 1, "demurrage_per_day": 100},
+    {"code": "C3", "status": "at_sea", "destination": "UTR", "quantity": 1000, "eta_day": 9},
+    {"code": "C4", "status": "loaded_at_origin", "destination": "UTR", "quantity": 1000, "eta_day": 12, "cutoff_day": 3, "allowed_destinations": ["UTR", "RTM"]},
+    {"code": "C5", "status": "loaded_at_origin", "destination": "AMS", "quantity": 1000, "eta_day": 15, "cutoff_day": 2, "allowed_destinations": ["AMS", "UTR"]},
+    {"code": "C6", "status": "loaded_at_origin", "destination": "RTM", "quantity": 1000, "eta_day": 16, "cutoff_day": 0, "allowed_destinations": ["RTM", "AMS"]}
+  ]
+}

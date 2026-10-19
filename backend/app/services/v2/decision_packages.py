@@ -118,14 +118,54 @@ def pinned_snapshot(db, run, ontology_id):
     return FalkorReadAdapter(graph._graph(view.graph_key), graph_ontology_id=view.graph_key).read(ontology_id)
 
 
-def compile_package_actions(db, run, ontology_id, candidate_id):
+def compile_package_actions(db, run, ontology_id, candidate_id, actor):
+    """Compile a run candidate into package actions; returns (actions, evidence, title).
+
+    ``decision/v1`` results (any user Function) compile through the
+    ontology's configured scenario Actions.  The built-in material-shortage
+    example keeps its own compiler until it is rebuilt from user artifacts.
+    """
+    from app.models.v2.scenario import ScenarioRunArtifact
+    from app.services.v2.decision_output import DecisionOutputError, compile_decision_candidate, find_decision_candidate, validate_decision
+    found = find_decision_candidate(run, candidate_id)
+    if found:
+        node_key, port, decision, candidate = found
+        artifact = db.query(ScenarioRunArtifact).filter_by(run_id=run.id, artifact_type=f"node:{node_key}").first()
+        if not artifact:
+            raise DecisionPackageError("artifact_incomplete", "The run has no artifact for this candidate", 409)
+        try:
+            validate_decision(decision)
+            actions = compile_decision_candidate(db, ontology_id, run.scenario_id, pinned_snapshot(db, run, ontology_id), candidate, actor)
+        except DecisionOutputError as exc:
+            raise DecisionPackageError(exc.code, str(exc), 422) from exc
+        except Exception as exc:  # contract validation of the stored result
+            if getattr(exc, "errors", None) is not None:
+                raise DecisionPackageError("invalid_decision_output", str(exc), 422) from exc
+            raise
+        evidence = [{"evidence_type": "artifact", "content_digest": artifact.content_digest.removeprefix("sha256:"),
+                     "reference": {"artifact_id": artifact.id, "node_key": node_key, "port": port, "candidate_id": candidate["id"]}},
+                    {"evidence_type": "metric", "content_digest": stable_digest(candidate),
+                     "reference": {"candidate_id": candidate["id"], "metric": decision["metric"]["key"],
+                                   "before": decision["metric"]["baseline"], "after": candidate["metric_after"],
+                                   "cost": candidate.get("cost", 0), "harmed": candidate["harmed"]}}]
+        return actions, evidence, candidate["label"]
+
     from app.services.v2.material_shortage_objects import CompileError, compile_candidate
     node_key, artifact, candidate = find_candidate(db, run, candidate_id)
     try:
         actions = compile_candidate(ontology_id, pinned_snapshot(db, run, ontology_id), candidate, run_id=run.id)
     except CompileError as exc:
         raise DecisionPackageError(exc.code, str(exc), 422) from exc
-    return node_key, artifact, candidate, actions
+    outputs = run.result_manifest["nodes"][node_key]["outputs"]
+    evidence = [{"evidence_type": "artifact", "content_digest": artifact.content_digest.removeprefix("sha256:"),
+                 "reference": {"artifact_id": artifact.id, "node_key": node_key, "candidate_id": candidate["id"]}},
+                {"evidence_type": "impact_path", "content_digest": outputs["impact_path"]["content_digest"],
+                 "reference": {"artifact_id": artifact.id, "path": f"nodes.{node_key}.outputs.impact_path"}},
+                {"evidence_type": "metric", "content_digest": candidate["content_digest"],
+                 "reference": {"candidate_id": candidate["id"], "revenue_at_risk_before": outputs["revenue_at_risk"],
+                               "revenue_at_risk_after": candidate["revenue_at_risk"], "incremental_cost": candidate["incremental_cost"],
+                               "harmed_orders": [row["demand_id"] for row in candidate["harmed_orders"]]}}]
+    return actions, evidence, candidate["label"]
 
 
 def package_candidate_id(db, package) -> str:
@@ -160,7 +200,7 @@ def apply_package(db, package, user, *, expected_etag: int, request_id: str, con
 
     run = db.get(ScenarioRun, package.run_id)
     candidate_id = package_candidate_id(db, package)
-    _, _, _, actions = compile_package_actions(db, run, package.ontology_id, candidate_id)
+    actions, _, _ = compile_package_actions(db, run, package.ontology_id, candidate_id, user)
     if stable_digest([row["expected_edits"] for row in actions]) != package.preview_digest:
         raise DecisionPackageError("preview_digest_mismatch", "Recompiled edits differ from the reviewed preview", 409)
 
