@@ -1,19 +1,20 @@
 # Ontology Decision Workbench
 
-> Latest integrated delivery: [`codex/merge-impact-chains`](https://github.com/Joeysoda/nano-ontoprompt/tree/codex/merge-impact-chains). This branch combines the FactoryNet temporal workbench and Plan A semantic-governance foundation with Plan B object exploration, governed operations, and scenario workflows.
+> This README describes the `feature/l3-decision-workspace` line of work: the [`codex/merge-impact-chains`](https://github.com/Joeysoda/nano-ontoprompt/tree/codex/merge-impact-chains) integration (Plan A semantic-governance foundation + Plan B operational workbench) plus Plan A 2.0, the typed rule runtime, the Azure PdM Machinery path, constraint solvers, Foundry-style navigation, and the decision layer (material-shortage decisions, governed Decision Packages, isolated user Functions).
 
-**[中文原始说明](./README_zh.md)** · **[中文部署指南](./DEPLOYMENT_WORKBENCH_ZH.md)** · **[Plan A / Plan B integration contract](./docs/plans/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md)**
+**[中文说明](./README_zh.md)** · **[中文部署指南](./DEPLOYMENT_WORKBENCH_ZH.md)** · **[Docs index](./docs/README.md)** · **[Plan A / Plan B integration contract](./docs/plans/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md)**
 
 The workbench is an open-source, Palantir Foundry-inspired platform for turning structured, temporal, and multimodal data into a governed ontology that users can query, inspect, operate, and test in what-if scenarios. It preserves the original pipeline and LLM extraction paths while adding a complete operational layer around stable semantic identities, provenance, object sets, actions, functions, and scenarios.
 
 ## Integrated scope
 
-The current delivery joins two complementary layers:
+The current delivery stacks three layers:
 
 | Layer | Responsibility | Current capabilities |
 |---|---|---|
 | **Plan A — semantic and data foundation** | Define what ontology resources mean, who may see them, and which data version produced a result | Versioned semantic resources, stable resource IDs, source mappings, authorization projections, execution/result manifests, schema migration planning, snapshot and graph-projection status |
-| **Plan B — operational workbench** | Let users explore objects and turn governed data into decisions | Object Query, Object Sets and saved views; Object Explorer; Action and Function governance; scenario creation, preview, comparison, tracking and merge; temporal and graph analysis |
+| **Plan B — operational workbench** | Let users explore objects and turn governed data into decisions | Object Query, Object Sets and saved views; Object Explorer with Vertex-style graph; Action and Function governance; typed rules and alerts; constraint solvers; scenario creation, preview, comparison, tracking and merge; temporal and time-series analysis |
+| **Decision layer** | Turn a scenario study into a reviewed, reversible change | `decision/v1` result contract, candidate comparison, Decision Packages (submit → review → apply through Scenario merge → revert), external effects via an outbox, user-written Functions executed in an isolated runner |
 
 The merge also retains the existing construction platform: connectors, transformations, curated datasets, ontology mapping, quality audit, temporal replay, multimodal evidence, rule reasoning, and decision proposals.
 
@@ -27,17 +28,17 @@ Source data
    -> immutable revision + source evidence
    -> live or pinned data view
    -> Object Query / Object Explorer
-   -> Action, Function, or What-If Scenario
-   -> governed result, audit trail, and optional merge
+   -> Action, Function, Rule, or What-If Scenario
+   -> Study candidates -> Decision Package -> review
+   -> apply via governed merge (with audit trail and revert)
 ```
 
-Three prepared demonstration domains are included:
+Prepared demonstration data:
 
-- **C-MAPSS FD001** — regular equipment-degradation data.
-- **FactoryNet CNC** — event-at-a-time temporal construction, replay, snapshots, and dynamic ontology evolution.
-- **I-BADAS** — multimodal evidence installation and inspection.
-
-The repository also contains a public frePPLe supply-chain fixture used to demonstrate supplier resilience, Object Sets, actions, and scenario comparison.
+- **frePPLe supply chain** (`data/frepple_demo/`) — public fixture for Object Sets, actions, and saved scenario studies.
+- **Material shortage** — synthetic MRPSpeed-complexity fixture (multi-level BOM, located stock, reservations, two-line scheduling) with hand-derived known answers, driving the material-shortage decision workspace.
+- **Azure PdM Machinery** — Microsoft's simulated predictive-maintenance sample mapped to Machine objects with Time Series Properties and Failure/Maintenance/Error events. The 80 MB CSVs are not in the repository; the loader takes a local directory, and tests read it from `AZURE_PDM_DIR`.
+- **C-MAPSS FD001**, **FactoryNet CNC**, **I-BADAS** — regular, temporal (event-at-a-time replay), and multimodal construction paths.
 
 ## Major capabilities
 
@@ -74,6 +75,20 @@ The repository also contains a public frePPLe supply-chain fixture used to demon
 - Function input/output contracts and governed binding to Object Sets and objects.
 - Versioned Logic Assets with runtime contract checks.
 - Semantica-backed bounded rule reasoning and explainable decision proposals.
+- Constraint solvers (HiGHS MILP via SciPy) run as edit Functions; only a function-backed Action can apply their edits.
+- User Functions: user-submitted Python stored as immutable releases and executed only in `function_runner`, a separate container with no network, no writable filesystem, and CPU/memory/process limits.
+
+### Rules, alerts, and automation
+
+- Typed rule runtime in the Foundry Rules shape (Object Set input → ordered logic blocks → output rows), changed only through reviewed proposals.
+- Scheduled evaluation over pinned data views with pause/mute semantics; alerts deduplicate per episode and can be resolved by citing a completed Action run.
+- Alert center and rule pages in the UI.
+
+### Decisions
+
+- Material-shortage decision model: candidates (expedite, buy alternate, reallocate, qualify, combined replan) are evaluated by re-running the same simulation, reporting protected/harmed orders, incremental cost, and hard constraints.
+- Decision Packages with a state machine, ETags, idempotent transitions, and a self-review ban. Apply recompiles candidates into typed edits, checks the preview digest, and stages a Scenario revision through the existing merge; revert restores the baseline and lists effects that cannot be undone.
+- External effects go through an outbox (a local fake ERP connector in the demo) with receipts and retry.
 
 ### Scenarios and temporal operations
 
@@ -101,7 +116,9 @@ The repository also contains a public frePPLe supply-chain fixture used to demon
 | Object and file storage | MinIO with local development fallback |
 | Analytical processing | DuckDB, pandas, PyArrow |
 | Vector search | ChromaDB |
-| Background work | Celery and Redis |
+| Background work | Celery and Redis (including the one-minute rule scheduler) |
+| User Function sandbox | `function_runner/` container on an internal-only network |
+| Optimization | HiGHS via SciPy `milp` |
 | Model gateway | LiteLLM; OpenAI, Anthropic, and compatible providers |
 | Local reasoning model | Ollama, with `qwen3.5:0.8b` used by the current demo setup |
 
@@ -114,8 +131,9 @@ PostgreSQL owns revisions, facts, policies, mappings, and execution records. Fal
 Prerequisites: Git, Docker with Compose, and Bash. Ollama is optional unless local model audit/reasoning is required.
 
 ```bash
-git clone --branch codex/merge-impact-chains https://github.com/Joeysoda/nano-ontoprompt.git
+git clone https://github.com/Joeysoda/nano-ontoprompt.git
 cd nano-ontoprompt
+git checkout <branch>   # e.g. codex/merge-impact-chains, or the branch you are delivering
 ./scripts/bootstrap_deployment.sh --seed-demo
 ```
 
@@ -156,12 +174,13 @@ Manual development can use SQLite and synchronous execution for smaller tasks, b
 
 For a short leadership demo:
 
-1. Open **Data Construction** and show one prepared regular, temporal, or multimodal source.
-2. Open an ontology and show its semantic resources, source evidence, and revision history.
-3. Use **Object Query** to filter, aggregate, compare, or save an Object Set.
-4. Open an object to show its details, links, graph neighborhood, and temporal/time-series context.
-5. Preview and run a governed Action, or create a What-If Scenario and compare it with the live baseline.
-6. Show the result manifest, action/scenario audit trail, and explicit merge boundary.
+The sidebar is platform-level: 首页 (home), 本体库 (ontology library), applications (对象浏览器 Object Explorer, 告警中心 Alert center, 情景研究 Scenario studies, 通用情景 Scenarios), and 系统 (system). Data is added inside an ontology (数据 → 数据源), not from a separate data tool.
+
+1. Open an ontology from **本体库** and show its overview, semantic resources, source evidence, and revision history.
+2. In **对象浏览器**, filter, aggregate, or save an Object Set; open an object to show its properties, links, graph (Search Around, layers, time cursor), alerts, events, and time-series charts.
+3. In **告警中心**, show alerts raised by a scheduled rule and resolve one by citing a completed Action run.
+4. In **情景研究**, run a study (e.g. material shortage), compare candidates, create a Decision Package, review it, apply it through the Scenario merge, and revert it.
+5. Show the result manifest, audit trail, and explicit merge boundary.
 
 FactoryNet's **Dynamic Evolution** page can additionally demonstrate event-at-a-time updates, replay controls, watermarks, historical validity, and manual snapshot publication.
 
@@ -181,13 +200,16 @@ nano-ontoprompt/
 │   └── tests/                   # Unit, contract, integration, and migration tests
 ├── frontend/
 │   └── src/
+│       ├── pages/apps/          # Application launcher (/apps/:app)
 │       ├── pages/data-management/
 │       ├── pages/ontologies/
-│       ├── pages/what-if/
+│       ├── pages/what-if/       # Scenario studies, decision workspaces, Decision Packages
 │       └── test/e2e/            # Browser acceptance workflows
-├── data/frepple_demo/           # Public supply-chain demonstration fixture
-├── docs/                        # ADRs, integration contracts, plans, and acceptance guidance
+├── function_runner/             # Isolated sandbox service for user Functions
+├── data/                        # Demo fixtures: frepple_demo, cmapss_fd001_demo, bts_demo
+├── docs/                        # See docs/README.md: research, plans, adr, guides, reports, archive
 ├── scripts/                     # Bootstrap, imports, and deployment verification
+├── storage/                     # Local file-storage fallback when MinIO is off (git-ignored)
 ├── docker-compose.yml           # Base service topology
 ├── docker-compose.local.yml     # Local ports and single-user demo mode
 └── DEPLOYMENT_WORKBENCH_ZH.md   # Complete Chinese deployment guide
@@ -222,6 +244,8 @@ The repository also provides focused scripts for branch wiring, persistence acro
 - Plan A's core contracts and SQLite test coverage are present. Real PostgreSQL/FalkorDB migration recovery, projection reconciliation, and performance percentiles still require environment-specific acceptance evidence.
 - Some legacy and Plan B endpoints still need full migration to the unified Plan A authorization projection and stable semantic resource IDs; consult the unchecked items in the [integration contract](./docs/plans/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md).
 - Rule-based scenarios demonstrate bounded logical consequences. They do not by themselves establish causal effects or maintenance-outcome predictions.
+- Decision Package external effects are delivered to a local fake ERP connector; no real ERP integration ships in this repository.
+- The material-shortage fixture is synthetic (MRPSpeed-level complexity), and Azure PdM is Microsoft's simulated sample; neither is production data.
 - Running database volumes, uploaded files, `.env`, and API credentials are intentionally excluded from Git.
 - The independent `codex/next-stage-ontology-modules` branch is not part of this integrated delivery unless it is merged separately.
 

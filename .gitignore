@@ -65,7 +65,7 @@ docs/plans/*
 !docs/plans/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md
 !docs/guides/
 docs/guides/*
-!docs/guides/DEMO_SUPPLIER_SCENARIO_WORKBENCH.md
+# （当前无共享的 guides；新增时在此放行）
 !docs/research/
 docs/research/*
 !docs/research/official/

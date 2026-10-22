@@ -1,8 +1,12 @@
 # 本体构筑工作台（Nano-OntoPrompt）
 
-> 当前可验收分支：`factorynet-temporal-workbench`。本分支提供 C-MAPSS FD001、FactoryNet CNC、I-BADAS 三类构筑闭环，并使用 Docker Compose 启动本地工作台。
+> **现状说明（2026-10-22）**：本文件下方内容只覆盖"数据构筑"模块（C-MAPSS FD001、FactoryNet CNC、I-BADAS 三类构筑闭环），写于 `factorynet-temporal-workbench` 阶段。系统当前的完整能力以 **[英文 README](./README.md)** 为准，概括如下：
 >
-> 部署、端口、Ollama、Celery、LiteLLM、数据库和后端启动说明请先阅读：[Docker 与后端部署说明](./DEPLOYMENT_WORKBENCH_ZH.md)。
+> - **Plan A 语义与数据底座**：版本化语义资源、权限投影、执行/结果清单、Schema 迁移。
+> - **Plan B 运营工作台**：对象查询与对象集、对象浏览器（Vertex 风格关系图）、Action/Function 治理、类型化规则与告警中心、约束求解器、情景创建/比较/合并、时序分析；Azure PdM 设备（Machinery）路径。
+> - **决策层**：缺料决策（多级 BOM、候选方案重跑模拟比较）、决策包（提交 → 审核 → 经情景合并应用 → 回滚）、外部副作用经 outbox 投递、用户自写 Function 在隔离的 `function_runner` 容器中执行。
+>
+> 部署、端口、Ollama、Celery、LiteLLM、数据库和后端启动说明请先阅读：[Docker 与后端部署说明](./DEPLOYMENT_WORKBENCH_ZH.md)。文档目录说明见 [docs/README.md](./docs/README.md)。
 
 **[English Documentation](./README.md)**
 
