@@ -1,2 +1,3 @@
 # Checksummed real-data fixtures must stay byte-identical to their manifest.
 backend/tests/data/*.csv -text
+docs/research/originals.sha256 text eol=lf

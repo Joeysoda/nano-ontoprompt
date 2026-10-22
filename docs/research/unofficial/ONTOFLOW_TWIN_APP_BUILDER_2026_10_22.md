@@ -1,8 +1,8 @@
 # OntoFlow：孪生应用搭建器（Dashboard）
 
 > 日期：2026-10-22 · 来源：用户提供的产品截图（编辑态，“型号研发生产经营风险协同 孪生”应用的“经营风险总览”页）· 证据等级：画面可见的内容为第三方产品截图；机制解释为**本项目推断**
-> 原件：`unofficial/ontoflow_twin_app_builder_2026_10_22.jpg`（仅本地，不进 git）
-> 白皮书（`OntoFlow本体智能开发平台+AbutionGraph本体数据库-技术与应用白皮书.pdf`）只提到“推送结果到可视化大屏”，没有搭建器细节。
+> 原件：[`evidence/ontoflow-twin-app-builder-2026-10-22/screenshot.jpg`](evidence/ontoflow-twin-app-builder-2026-10-22/screenshot.jpg)（不进 git，清单见 [`../ORIGINALS.md`](../ORIGINALS.md)）
+> 白皮书（`evidence/ontoflow-whitepaper/`）只提到“推送结果到可视化大屏”，没有搭建器细节。
 
 ## 一句话结论
 

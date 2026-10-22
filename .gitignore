@@ -69,11 +69,14 @@ docs/guides/*
 !docs/research/
 docs/research/*
 !docs/research/README.md
+!docs/research/ORIGINALS.md
+!docs/research/originals.sha256
 !docs/research/official/
 docs/research/official/*
 !docs/research/official/PALANTIR_NHS_SUPPLY_CHAIN_VIDEO_SCENARIO_REVIEW_2026_10_18.md
 !docs/research/official/PALANTIR_ONTOLOGY_MODELING_AND_DESIGN.md
 !docs/research/official/PALANTIR_ONTOLOGY_RUNTIME_AND_ARCHITECTURE.md
+!docs/research/official/VERTEX_SCENARIO_REFERENCE_GALLERY_2026_10_12.md
 !docs/research/unofficial/
 docs/research/unofficial/*
 !docs/research/unofficial/OPEN_SOURCE_AND_BENCHMARKS_FROM_ARCHIVED_PLANS.md

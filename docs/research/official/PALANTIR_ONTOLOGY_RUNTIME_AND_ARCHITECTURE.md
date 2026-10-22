@@ -36,7 +36,7 @@ Function 是有类型、有版本、可监控的实时逻辑。会编辑数据�
 | [完成 Run 图](https://www.palantir.com/docs/resources/foundry/vertex/simulate-system-9.jpg)、[override 图](https://www.palantir.com/docs/resources/foundry/vertex/simulate-system-10.jpg) | Run 完成时显示绿色对勾和耗时；被覆盖的输入高亮；新输出与 baseline 并列比较；右侧有 Actions 和 Models 表格。 |
 | [Scenario options](https://www.palantir.com/docs/foundry/vertex/scenarios-options)；[Scope/参数图](https://www.palantir.com/docs/resources/foundry/vertex/simulate-system-7.jpg) | 可设置图上对象的范围（Scope = Objects on Graph），自动生成 baseline，可添加输入/输出参数。 |
 
-截图只能证明界面布局，不能说明背后服务如何存储或保证事务。更多 Vertex 截图见 `vertex-scenario-research-2026-10-12/REFERENCE_GALLERY.md`。
+截图只能证明界面布局，不能说明背后服务如何存储或保证事务。更多 Vertex 截图见 [Vertex 图集](VERTEX_SCENARIO_REFERENCE_GALLERY_2026_10_12.md)。
 
 ## 5. Object Explorer 与 Object Views（官方文档 + 官方配图；A）
 
