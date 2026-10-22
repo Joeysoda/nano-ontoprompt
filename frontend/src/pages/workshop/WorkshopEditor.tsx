@@ -6,7 +6,7 @@ import { asRows, discoverFields, discoverPaths, getPath } from '@/components/das
 import PageCanvas from './PageCanvas'
 import { duplicateWidget, resourceReferences, validateDefinition } from './editorModel'
 import { appsUrl, useApp, useSources } from './runtime'
-import { nextId, specOf, WIDGETS, type AppDefinition, type FieldSpec, type LayoutItem, type Page, type Widget } from './spec'
+import { nextId, specOf, WIDGETS, type AppDefinition, type DataSource, type FieldSpec, type LayoutItem, type Page, type Widget } from './spec'
 
 type Study = { id: string; name: string }
 type StudyDetail = { versions: Array<{ version: number; spec: { nodes: Array<{ key: string; kind: string }> } }> }
@@ -121,23 +121,50 @@ function PageInspector({ page, canDelete, onChange, onDelete }: { page: Page; ca
     {canDelete && <button className="text-xs text-rose-700" onClick={onDelete}>删除此页面</button>}</div>
 }
 
+const SOURCE_KINDS = [['study_run', 'Study 运行结果'], ['object_set', '本体对象集'], ['alerts', '规则告警']] as const
+type CatalogType = { api_name: string; properties: Array<{ api_name: string }> }
+
+function sourceSummary(source: DataSource) {
+  if (source.kind === 'study_run') return `Study · ${source.node}`
+  if (source.kind === 'object_set') return `对象 · ${source.object_type}${source.filters?.length ? ` · ${source.filters.map(row => `${row.field}=${String(row.value)}`).join('、')}` : ''}`
+  return `告警 · ${source.status ?? '全部'}`
+}
+
 function DataSources({ draft, update, ontologyId, errors, onBlocked }: { draft: AppDefinition; update: (next: AppDefinition) => void; ontologyId: string; errors: string[]; onBlocked: (message: string) => void }) {
-  const studies = useQuery({ queryKey: ['studies', ontologyId], queryFn: () => apiClientV2.get<{ items: Study[] }>(`/ontologies/${ontologyId}/scenario-study-definitions`) })
+  const [kind, setKind] = useState<DataSource['kind']>('object_set')
+  const studies = useQuery({ queryKey: ['studies', ontologyId], enabled: kind === 'study_run', queryFn: () => apiClientV2.get<{ items: Study[] }>(`/ontologies/${ontologyId}/scenario-study-definitions`) })
+  const catalog = useQuery({ queryKey: ['query-catalog', ontologyId], enabled: kind === 'object_set', queryFn: () => apiClientV2.get<{ types: CatalogType[] }>(`/ontologies/${ontologyId}/object-query/catalog`) })
   const [study, setStudy] = useState('')
   const detail = useQuery({ queryKey: ['study-detail', ontologyId, study], enabled: !!study, queryFn: () => apiClientV2.get<StudyDetail>(`/ontologies/${ontologyId}/scenario-study-definitions/${study}`) })
   const nodes = useMemo(() => { const latest = [...(detail.data?.versions ?? [])].sort((a, b) => b.version - a.version)[0]
     return (latest?.spec.nodes ?? []).filter(node => node.kind === 'function').map(node => node.key) }, [detail.data])
   const [node, setNode] = useState('')
+  const [objectType, setObjectType] = useState('')
+  const [filter, setFilter] = useState({ field: '', value: '' })
+  const [alertStatus, setAlertStatus] = useState('open')
+  const fields = catalog.data?.types.find(row => row.api_name === objectType)?.properties.map(row => row.api_name) ?? []
+  const ready = kind === 'study_run' ? !!study && !!node : kind === 'object_set' ? !!objectType : true
+  const add = () => {
+    const id = nextId('source', draft.data_sources.map(row => row.id))
+    const source: DataSource = kind === 'study_run' ? { id, kind, label: studies.data?.items.find(row => row.id === study)?.name ?? id, study_id: study, node }
+      : kind === 'object_set' ? { id, kind, label: objectType, object_type: objectType, ...(filter.field ? { filters: [{ field: filter.field, op: 'eq' as const, value: filter.value }] } : {}) }
+      : { id, kind, label: '告警', status: alertStatus ? alertStatus as 'open' : null }
+    update({ ...draft, data_sources: [...draft.data_sources, source] })
+    setStudy(''); setNode(''); setObjectType(''); setFilter({ field: '', value: '' })
+  }
   return <section><h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">数据源</h2>
-    {draft.data_sources.map(source => <div key={source.id} className="mb-1 rounded border px-2 py-1 text-xs"><strong>{source.label || source.id}</strong> · {source.node}{errors.includes(source.id) && <span className="block text-amber-700">还没有完成的运行</span>}
+    {draft.data_sources.map(source => <div key={source.id} className="mb-1 rounded border px-2 py-1 text-xs"><strong>{source.label || source.id}</strong> · {sourceSummary(source)}{errors.includes(source.id) && <span className="block text-amber-700">{source.kind === 'study_run' ? '还没有完成的运行' : '加载失败'}</span>}
       <button className="float-right text-rose-700" onClick={() => { const refs = resourceReferences(draft, 'source', source.id); if (refs.length) onBlocked(`不能删除数据源“${source.label || source.id}”：${refs.join('、')} 仍在使用它。`); else update({ ...draft, data_sources: draft.data_sources.filter(row => row.id !== source.id) }) }} aria-label={`删除数据源 ${source.id}`}>×</button></div>)}
-    <select className="wb-input mt-1 w-full" aria-label="选择 Study" value={study} onChange={event => { setStudy(event.target.value); setNode('') }}><option value="">选择 Study…</option>{studies.data?.items.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
-    {study && <select className="wb-input mt-1 w-full" aria-label="选择函数节点" value={node} onChange={event => setNode(event.target.value)}><option value="">选择输出节点…</option>{nodes.map(key => <option key={key} value={key}>{key}</option>)}</select>}
-    <button className="mt-1 w-full rounded border px-2 py-1 text-sm disabled:opacity-50" disabled={!study || !node} onClick={() => {
-      const id = nextId('source', draft.data_sources.map(row => row.id))
-      update({ ...draft, data_sources: [...draft.data_sources, { id, kind: 'study_run', label: studies.data?.items.find(row => row.id === study)?.name ?? id, study_id: study, node }] })
-      setStudy(''); setNode('')
-    }}>＋ 添加数据源</button></section>
+    <select className="wb-input mt-1 w-full" aria-label="数据源类型" value={kind} onChange={event => setKind(event.target.value as DataSource['kind'])}>{SOURCE_KINDS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+    {kind === 'study_run' && <>
+      <select className="wb-input mt-1 w-full" aria-label="选择 Study" value={study} onChange={event => { setStudy(event.target.value); setNode('') }}><option value="">选择 Study…</option>{studies.data?.items.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
+      {study && <select className="wb-input mt-1 w-full" aria-label="选择函数节点" value={node} onChange={event => setNode(event.target.value)}><option value="">选择输出节点…</option>{nodes.map(key => <option key={key} value={key}>{key}</option>)}</select>}</>}
+    {kind === 'object_set' && <>
+      <select className="wb-input mt-1 w-full" aria-label="选择对象类型" value={objectType} onChange={event => { setObjectType(event.target.value); setFilter({ field: '', value: '' }) }}><option value="">选择对象类型…</option>{catalog.data?.types.map(row => <option key={row.api_name} value={row.api_name}>{row.api_name}</option>)}</select>
+      {objectType && <div className="mt-1 flex gap-1"><select className="wb-input min-w-0 flex-1" aria-label="筛选字段" value={filter.field} onChange={event => setFilter({ ...filter, field: event.target.value })}><option value="">不筛选</option>{fields.map(name => <option key={name} value={name}>{name}</option>)}</select>
+        {filter.field && <input className="wb-input min-w-0 flex-1" aria-label="筛选值" placeholder="等于…" value={filter.value} onChange={event => setFilter({ ...filter, value: event.target.value })} />}</div>}</>}
+    {kind === 'alerts' && <select className="wb-input mt-1 w-full" aria-label="告警状态" value={alertStatus} onChange={event => setAlertStatus(event.target.value)}><option value="open">未处理</option><option value="acknowledged">已确认</option><option value="resolved">已解决</option><option value="">全部</option></select>}
+    <button className="mt-1 w-full rounded border px-2 py-1 text-sm disabled:opacity-50" disabled={!ready} onClick={add}>＋ 添加数据源</button></section>
 }
 
 function Variables({ draft, update, onBlocked }: { draft: AppDefinition; update: (next: AppDefinition) => void; onBlocked: (message: string) => void }) {

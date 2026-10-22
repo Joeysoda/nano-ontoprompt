@@ -16,14 +16,20 @@ export function useSources(ontologyId: string, appId: string, definition: AppDef
   const queryClient = useQueryClient()
   const sources = definition?.data_sources ?? []
   const results = useQueries({ queries: sources.map(source => ({
-    queryKey: ['workshop-source', ontologyId, appId, version ?? 'head', source.id, pinned[source.id] ?? 'latest', source.study_id, source.node],
+    queryKey: ['workshop-source', ontologyId, appId, version ?? 'head', source.id, pinned[source.id] ?? 'latest', JSON.stringify(source)],
     queryFn: () => apiClientV2.get<ResolvedSource>(`${appsUrl(ontologyId)}/${appId}/sources/${source.id}`, { params: { ...(pinned[source.id] ? { run: pinned[source.id] } : {}), ...(version ? { version } : {}) } }),
     retry: false,
   })) })
   const resolved = Object.fromEntries(sources.map((source, index) => [source.id, results[index]?.data]))
   const errors = sources.map((source, index) => results[index]?.error ? source.id : null).filter(Boolean) as string[]
   const refresh = useCallback(() => queryClient.invalidateQueries({ queryKey: ['workshop-source', ontologyId, appId] }), [queryClient, ontologyId, appId])
-  return { resolved, errors, refresh }
+  /** Take a new Ontology snapshot (object-set sources read it), then reload every source. */
+  const usesSnapshot = sources.some(source => source.kind === 'object_set')
+  const reload = useCallback(async () => {
+    if (usesSnapshot) await apiClientV2.post(`${appsUrl(ontologyId)}/${appId}/snapshot`)
+    await refresh()
+  }, [usesSnapshot, ontologyId, appId, refresh])
+  return { resolved, errors, refresh, reload }
 }
 
 /** Variables live in the URL (v.<id>=value) so every state of an app is a shareable link. */

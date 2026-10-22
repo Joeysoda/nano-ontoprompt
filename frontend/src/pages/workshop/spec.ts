@@ -4,11 +4,18 @@ export type Event = { set_variable?: string | null; field?: string | null; navig
 export type Widget = { id: string; type: WidgetType; title: string; source?: string | null; path: string; props: Record<string, unknown>; on_select?: Event | null }
 export type LayoutItem = { i: string; x: number; y: number; w: number; h: number }
 export type Page = { id: string; title: string; widgets: Widget[]; layout: LayoutItem[] }
-export type DataSource = { id: string; kind: 'study_run'; label: string; study_id: string; node: string }
+export type SourceFilter = { field: string; op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in'; value: unknown }
+export type StudyRunSource = { id: string; kind: 'study_run'; label: string; study_id: string; node: string }
+/** Every object of one type (optionally filtered), read from a snapshot shared by the app's sources. */
+export type ObjectSetSource = { id: string; kind: 'object_set'; label: string; object_type: string; select?: string[]; filters?: SourceFilter[]; limit?: number }
+export type AlertsSource = { id: string; kind: 'alerts'; label: string; status?: 'open' | 'acknowledged' | 'resolved' | null; subject_type?: string | null; limit?: number }
+export type DataSource = StudyRunSource | ObjectSetSource | AlertsSource
 export type Variable = { id: string; label: string; default?: unknown }
 export type AppDefinition = { schema: 'workshop-app/v1'; data_sources: DataSource[]; variables: Variable[]; pages: Page[] }
 export type AppRecord = { id: string; name: string; description: string; head_version: number; head: { version: number; definition: AppDefinition } }
-export type ResolvedSource = { source_id: string; study_id: string; node: string; run_id: string; status: string; scenario_id: string; scenario_revision: number; completed_at: string | null; outputs: Record<string, unknown> | null; artifacts: Array<{ id: string; artifact_type: string; content_digest: string }> }
+export type ResolvedStudyRun = { source_id: string; kind: 'study_run'; study_id: string; node: string; run_id: string; status: string; scenario_id: string; scenario_revision: number; completed_at: string | null; outputs: Record<string, unknown> | null; artifacts: Array<{ id: string; artifact_type: string; content_digest: string }> }
+export type ResolvedOntologySource = { source_id: string; kind: 'object_set' | 'alerts'; status: string; completed_at: string | null; data_view_id?: string; outputs: Record<string, unknown> & { count: number } }
+export type ResolvedSource = ResolvedStudyRun | ResolvedOntologySource
 
 export type FieldKind = 'text' | 'number' | 'boolean' | 'select' | 'scalar_path' | 'field' | 'variable' | 'page' | 'list' | 'color'
 export type FieldSpec = { key: string; label: string; kind: FieldKind; options?: string[]; item?: FieldSpec[]; help?: string }

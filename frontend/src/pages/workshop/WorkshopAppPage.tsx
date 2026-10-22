@@ -1,7 +1,17 @@
+import { useMutation } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { formatApiError } from '@/api/client'
 import PageCanvas from './PageCanvas'
 import { useApp, useSources, useUrlState } from './runtime'
+import type { ResolvedSource } from './spec'
+
+const stamp = (iso: string | null) => (iso ? ` · ${iso.slice(0, 16).replace('T', ' ')}` : '')
+
+function sourceStatus(resolved: ResolvedSource | undefined, failed: boolean) {
+  if (!resolved) return failed ? '加载失败' : '加载中'
+  if (resolved.kind === 'study_run') return `Run ${resolved.run_id.slice(0, 8)}${stamp(resolved.completed_at)}`
+  return `${resolved.outputs.count} ${resolved.kind === 'alerts' ? '条告警' : '个对象'}${resolved.kind === 'object_set' ? ` · 快照${stamp(resolved.completed_at)}` : ''}`
+}
 
 /** Runs a published app: pages of bound widgets; selections and page live in the URL. */
 export default function WorkshopAppPage() {
@@ -14,6 +24,7 @@ export default function WorkshopAppPage() {
   const state = useUrlState(definition)
   const sources = useSources(ontologyId, appId, definition, state.pinned, version)
   const page = definition?.pages.find(row => row.id === state.pageId) ?? definition?.pages[0]
+  const reload = useMutation({ mutationFn: sources.reload })
   if (app.error) return <p role="alert" className="p-6 text-sm text-rose-700">{formatApiError(app.error)}</p>
   if (!definition || !page) return <p role="status" className="p-6 text-sm text-slate-500">应用加载中…</p>
   return <div className="flex min-h-full flex-col bg-slate-100" data-testid="workshop-app">
@@ -21,8 +32,8 @@ export default function WorkshopAppPage() {
       <span className="text-lg font-semibold text-slate-800">{app.data!.name}</span>
       <nav className="flex flex-wrap gap-1" aria-label="应用页面">{definition.pages.map(row => <button key={row.id} onClick={() => state.navigate(row.id)}
         className={`rounded px-3 py-1.5 text-sm ${row.id === page.id ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{row.title}</button>)}</nav>
-      <span className="ml-auto min-w-0 truncate text-xs text-slate-500">{definition.data_sources.map(source => { const resolved = sources.resolved[source.id]
-        return <span key={source.id} className="ml-3">{source.label || source.id}：{resolved ? `Run ${resolved.run_id.slice(0, 8)}${resolved.completed_at ? ` · ${resolved.completed_at.slice(0, 16).replace('T', ' ')}` : ''}` : sources.errors.includes(source.id) ? '还没有完成的运行' : '加载中'}</span> })}</span>
+      <span className="ml-auto min-w-0 truncate text-xs text-slate-500">{definition.data_sources.map(source => <span key={source.id} className="ml-3">{source.label || source.id}：{sourceStatus(sources.resolved[source.id], sources.errors.includes(source.id))}</span>)}</span>
+      <button className="wb-button-secondary shrink-0" disabled={reload.isPending} onClick={() => reload.mutate()} title="重新拍一份本体快照并重新加载全部数据源">{reload.isPending ? '刷新中…' : '刷新数据'}</button>
       <span className="text-xs text-slate-400">v{app.data!.head.version}</span>
       <Link className="wb-button-secondary shrink-0" to={`/apps/workshop/${appId}/edit?ontology=${ontologyId}`}>编辑</Link>
     </header>

@@ -5,7 +5,7 @@ import { CoverageGrid, DataTable, KpiStrip, StackedBarChart } from '@/components
 import { aggregate, asRows, formatCell, getPath, groupSeries, matches, plainId, template, tone, type Format, type Row, type ToneRule, type Where } from '@/components/dashboard/binding'
 import DecisionPackagePanel from '@/pages/what-if/DecisionPackagePanel'
 import type { DecisionRunContext } from '@/pages/what-if/decisionPackage'
-import type { ResolvedSource, Widget } from './spec'
+import type { ResolvedSource, ResolvedStudyRun, Widget } from './spec'
 
 export type Runtime = {
   ontologyId: string
@@ -57,8 +57,8 @@ export default function WidgetView({ widget, rt }: { widget: Widget; rt: Runtime
     case 'banner': { const count = aggregate(rows, { agg: 'count', ...(p as Where) })
       return count ? <p className="rounded border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900" role="status">🔔 {template(str(p.template), outputs, { count })}</p> : <Empty text="没有需要提醒的项" /> }
     case 'action_list': return <ActionList rows={rows} p={p} rt={rt} />
-    case 'action_detail': return source ? <ActionDetail rows={rows} p={p} rt={rt} source={source} /> : <Empty text="请绑定数据源" />
-    case 'rerun_button': return source ? <RerunButton p={p} rt={rt} source={source} /> : <Empty text="请绑定数据源" />
+    case 'action_detail': return source?.kind === 'study_run' ? <ActionDetail rows={rows} p={p} rt={rt} source={source} /> : <Empty text="请绑定 Study 运行结果数据源" />
+    case 'rerun_button': return source?.kind === 'study_run' ? <RerunButton p={p} rt={rt} source={source} /> : <Empty text="请绑定 Study 运行结果数据源" />
     default: return <Empty text={`未知组件 ${widget.type}`} />
   }
 }
@@ -121,7 +121,7 @@ function ActionList({ rows, p, rt }: { rows: Row[]; p: P; rt: Runtime }) {
 
 type Explanation = { candidate_id: string; model: string; verified: boolean; issues: Array<{ where: string; problem: string; value?: number }>; evidence: Array<{ id: string; label: string; value: unknown }>; answer: { summary: string; reasoning: Array<{ claim: string; evidence_ids: string[] }>; risks: Array<{ claim: string; evidence_ids: string[] }> } }
 
-function ActionDetail({ rows, p, rt, source }: { rows: Row[]; p: P; rt: Runtime; source: ResolvedSource }) {
+function ActionDetail({ rows, p, rt, source }: { rows: Row[]; p: P; rt: Runtime; source: ResolvedStudyRun }) {
   const candidate = rows.find(row => str(row.id) === rt.vars[str(p.variable)])
   const context: DecisionRunContext | undefined = source.status === 'completed' ? { ontologyId: rt.ontologyId, runId: source.run_id, scenarioId: source.scenario_id, scenarioRevision: source.scenario_revision, nodeKey: source.node, artifact: source.artifacts[0] } : undefined
   const base = `/ontologies/${rt.ontologyId}/scenario-study-runs/${source.run_id}`
@@ -154,7 +154,7 @@ function ActionDetail({ rows, p, rt, source }: { rows: Row[]; p: P; rt: Runtime;
 type Step = { label: string; state: 'pending' | 'running' | 'done' | 'failed'; detail?: string }
 
 /** Re-run the source's Study on freshly pinned live data, then compare configured values. */
-function RerunButton({ p, rt, source }: { p: P; rt: Runtime; source: ResolvedSource }) {
+function RerunButton({ p, rt, source }: { p: P; rt: Runtime; source: ResolvedStudyRun }) {
   const [open, setOpen] = useState(false)
   const compare = list<P>(p.steps)
   const [steps, setSteps] = useState<Step[]>([])
