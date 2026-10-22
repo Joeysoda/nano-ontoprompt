@@ -37,7 +37,7 @@ Prepared demonstration data:
 
 - **frePPLe supply chain** (`data/frepple_demo/`) — public fixture for Object Sets, actions, and saved scenario studies.
 - **Material shortage** — synthetic MRPSpeed-complexity fixture (multi-level BOM, located stock, reservations, two-line scheduling) with hand-derived known answers, driving the material-shortage decision workspace.
-- **Azure PdM Machinery** — Microsoft's simulated predictive-maintenance sample mapped to Machine objects with Time Series Properties and Failure/Maintenance/Error events. The 80 MB CSVs are not in the repository; the loader takes a local directory, and tests read it from `AZURE_PDM_DIR`.
+- **Azure PdM Machinery** — Microsoft's simulated predictive-maintenance sample mapped to Machine objects with Time Series Properties and Failure/Maintenance/Error events. The 80 MB CSVs are not committed: place them in `data/azure_pdm/` (git-ignored) or point `AZURE_PDM_DIR` at a local copy.
 - **C-MAPSS FD001**, **FactoryNet CNC**, **I-BADAS** — regular, temporal (event-at-a-time replay), and multimodal construction paths.
 
 ## Major capabilities
@@ -206,7 +206,7 @@ nano-ontoprompt/
 │       ├── pages/what-if/       # Scenario studies, decision workspaces, Decision Packages
 │       └── test/e2e/            # Browser acceptance workflows
 ├── function_runner/             # Isolated sandbox service for user Functions
-├── data/                        # Demo fixtures: frepple_demo, cmapss_fd001_demo, bts_demo
+├── data/                        # Demo fixtures: frepple_demo, cmapss_fd001_demo, bts_demo; azure_pdm, dataco local-only
 ├── docs/                        # See docs/README.md: research, plans, adr, guides, reports, archive
 ├── scripts/                     # Bootstrap, imports, and deployment verification
 ├── storage/                     # Local file-storage fallback when MinIO is off (git-ignored)
