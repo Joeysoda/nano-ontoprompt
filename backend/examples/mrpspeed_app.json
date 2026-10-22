@@ -1,0 +1,530 @@
+{
+ "schema": "workshop-app/v1",
+ "data_sources": [
+  {
+   "id": "plan",
+   "kind": "study_run",
+   "label": "MRPSpeed 规划",
+   "study_id": "__STUDY_ID__",
+   "node": "plan"
+  }
+ ],
+ "variables": [
+  {
+   "id": "line",
+   "label": "产品线"
+  },
+  {
+   "id": "policy",
+   "label": "情景"
+  },
+  {
+   "id": "action",
+   "label": "动作"
+  }
+ ],
+ "pages": [
+  {
+   "id": "cockpit",
+   "title": "MRPSpeed Cockpit",
+   "widgets": [
+    {
+     "id": "kpis",
+     "type": "kpi_strip",
+     "title": "",
+     "source": "plan",
+     "path": "",
+     "props": {
+      "items": [
+       {
+        "label": "Projected Revenue",
+        "path": "totals.projected_revenue",
+        "format": "money",
+        "note": "{totals.revenue_gap|money} to quarterly target",
+        "tone_path": "totals.revenue_gap"
+       },
+       {
+        "label": "Total Cost",
+        "path": "totals.cost",
+        "format": "money"
+       },
+       {
+        "label": "OTIF",
+        "path": "totals.otif",
+        "format": "percent"
+       },
+       {
+        "label": "Total Demand Events",
+        "path": "totals.demand_events",
+        "format": "number"
+       },
+       {
+        "label": "Demand Events At Risk",
+        "path": "totals.at_risk",
+        "format": "number"
+       },
+       {
+        "label": "Total Planned Orders",
+        "path": "totals.planned_orders",
+        "format": "number"
+       }
+      ]
+     }
+    },
+    {
+     "id": "scenario",
+     "type": "facet_list",
+     "title": "Scenario",
+     "source": "plan",
+     "path": "portfolio",
+     "props": {
+      "field": "policy",
+      "options_path": "policies",
+      "variable": "policy"
+     }
+    },
+    {
+     "id": "suggested",
+     "type": "action_list",
+     "title": "MRPSpeed Suggested Actions",
+     "source": "plan",
+     "path": "candidate_actions",
+     "props": {
+      "label_field": "label",
+      "subtitle": "季度收入 +{quarter_revenue_delta|money}",
+      "variable": "action",
+      "only_applicable": true,
+      "max_rows": 4,
+      "navigate": "actions"
+     }
+    },
+    {
+     "id": "lines",
+     "type": "table",
+     "title": "Product Lines",
+     "source": "plan",
+     "path": "portfolio",
+     "props": {
+      "columns": [
+       {
+        "label": "Product Line",
+        "field": "name"
+       },
+       {
+        "label": "Scenario",
+        "field": "policy",
+        "badge": true
+       },
+       {
+        "label": "Projected Revenue",
+        "field": "projected_revenue",
+        "format": "money"
+       },
+       {
+        "label": "Cost",
+        "field": "cost",
+        "format": "money"
+       },
+       {
+        "label": "OTIF",
+        "field": "otif",
+        "format": "percent",
+        "tone_rule": "lt",
+        "tone_value": 0.6
+       },
+       {
+        "label": "Demand Events",
+        "field": "demand_events",
+        "format": "number"
+       },
+       {
+        "label": "Demand Events at Risk",
+        "field": "at_risk",
+        "format": "number",
+        "tone_rule": "gt",
+        "tone_value": 0
+       },
+       {
+        "label": "Planned Orders",
+        "field": "planned_orders",
+        "format": "number"
+       }
+      ],
+      "filter_field": "policy",
+      "filter_variable": "policy",
+      "sort_field": "projected_revenue",
+      "sort_desc": true
+     },
+     "on_select": {
+      "set_variable": "line",
+      "field": "id",
+      "navigate": "demand"
+     }
+    }
+   ],
+   "layout": [
+    {
+     "i": "kpis",
+     "x": 0,
+     "y": 0,
+     "w": 24,
+     "h": 3
+    },
+    {
+     "i": "scenario",
+     "x": 0,
+     "y": 3,
+     "w": 6,
+     "h": 5
+    },
+    {
+     "i": "suggested",
+     "x": 0,
+     "y": 8,
+     "w": 6,
+     "h": 9
+    },
+    {
+     "i": "lines",
+     "x": 6,
+     "y": 3,
+     "w": 18,
+     "h": 14
+    }
+   ]
+  },
+  {
+   "id": "demand",
+   "title": "Demand Explorer",
+   "widgets": [
+    {
+     "id": "lineSelect",
+     "type": "select",
+     "title": "Product Line",
+     "source": "plan",
+     "path": "portfolio",
+     "props": {
+      "value_field": "id",
+      "label_field": "name",
+      "variable": "line",
+      "allow_all": true
+     }
+    },
+    {
+     "id": "demandStats",
+     "type": "stat_row",
+     "title": "Demand Events",
+     "source": "plan",
+     "path": "demand_events",
+     "props": {
+      "items": [
+       {
+        "label": "% Delayed",
+        "agg": "ratio",
+        "where_field": "at_risk",
+        "where_equals": "true",
+        "format": "percent"
+       },
+       {
+        "label": "With Delays",
+        "agg": "count",
+        "where_field": "at_risk",
+        "where_equals": "true"
+       },
+       {
+        "label": "Events",
+        "agg": "count"
+       }
+      ],
+      "filter_field": "product_line",
+      "filter_variable": "line"
+     }
+    },
+    {
+     "id": "delayBanner",
+     "type": "banner",
+     "title": "",
+     "source": "plan",
+     "path": "demand_events",
+     "props": {
+      "template": "有 {count} 个需求事件延期需要关注。",
+      "where_field": "at_risk",
+      "where_equals": "true",
+      "filter_field": "product_line",
+      "filter_variable": "line"
+     }
+    },
+    {
+     "id": "demandChart",
+     "type": "bar_chart",
+     "title": "Demand Event Views",
+     "source": "plan",
+     "path": "demand_events",
+     "props": {
+      "x_field": "due_month",
+      "series": [
+       {
+        "label": "Planned Demand Events",
+        "value_field": "quantity",
+        "where_field": "at_risk",
+        "where_equals": "false",
+        "color": "#1d4ed8"
+       },
+       {
+        "label": "At-Risk Demand Events",
+        "value_field": "quantity",
+        "where_field": "at_risk",
+        "where_equals": "true",
+        "color": "#b91c1c"
+       }
+      ],
+      "filter_field": "product_line",
+      "filter_variable": "line"
+     }
+    },
+    {
+     "id": "events",
+     "type": "table",
+     "title": "Demand Events",
+     "source": "plan",
+     "path": "demand_events",
+     "props": {
+      "columns": [
+       {
+        "label": "Demand Event Id",
+        "field": "id"
+       },
+       {
+        "label": "Product Line",
+        "field": "product_line_name"
+       },
+       {
+        "label": "Market",
+        "field": "customer"
+       },
+       {
+        "label": "Item Quantity",
+        "field": "quantity",
+        "format": "number"
+       },
+       {
+        "label": "Expected Ship Date",
+        "field": "expected_ship_date"
+       },
+       {
+        "label": "Total Delay Days",
+        "field": "delay_days",
+        "format": "number",
+        "tone_rule": "truthy",
+        "tone_field": "at_risk"
+       },
+       {
+        "label": "Root Cause",
+        "field": "root_cause_names"
+       }
+      ],
+      "filter_field": "product_line",
+      "filter_variable": "line"
+     },
+     "on_select": {
+      "set_variable": "line",
+      "field": "product_line",
+      "navigate": "coverage"
+     }
+    }
+   ],
+   "layout": [
+    {
+     "i": "lineSelect",
+     "x": 0,
+     "y": 0,
+     "w": 6,
+     "h": 3
+    },
+    {
+     "i": "demandStats",
+     "x": 0,
+     "y": 3,
+     "w": 6,
+     "h": 3
+    },
+    {
+     "i": "delayBanner",
+     "x": 6,
+     "y": 0,
+     "w": 18,
+     "h": 2
+    },
+    {
+     "i": "demandChart",
+     "x": 6,
+     "y": 2,
+     "w": 18,
+     "h": 8
+    },
+    {
+     "i": "events",
+     "x": 0,
+     "y": 10,
+     "w": 24,
+     "h": 11
+    }
+   ]
+  },
+  {
+   "id": "coverage",
+   "title": "Material Coverage",
+   "widgets": [
+    {
+     "id": "rootItem",
+     "type": "select",
+     "title": "Root Item",
+     "source": "plan",
+     "path": "portfolio",
+     "props": {
+      "value_field": "id",
+      "label_field": "name",
+      "variable": "line",
+      "allow_all": false
+     }
+    },
+    {
+     "id": "grid",
+     "type": "coverage_grid",
+     "title": "Requirements — Surplus/Deficit of Inventory for Demand",
+     "source": "plan",
+     "path": "coverage.rows",
+     "props": {
+      "label_field": "name",
+      "values_field": "projected",
+      "columns_path": "coverage.weeks",
+      "emphasis_field": "critical",
+      "weeks": 12,
+      "filter_field": "lines",
+      "filter_variable": "line"
+     }
+    }
+   ],
+   "layout": [
+    {
+     "i": "rootItem",
+     "x": 0,
+     "y": 0,
+     "w": 6,
+     "h": 3
+    },
+    {
+     "i": "grid",
+     "x": 0,
+     "y": 2,
+     "w": 24,
+     "h": 15
+    }
+   ]
+  },
+  {
+   "id": "actions",
+   "title": "Suggested Actions",
+   "widgets": [
+    {
+     "id": "actionList",
+     "type": "action_list",
+     "title": "Suggestions",
+     "source": "plan",
+     "path": "candidate_actions",
+     "props": {
+      "label_field": "label",
+      "subtitle": "季度收入 {quarter_revenue_delta|money} · 成本 {incremental_cost|money}",
+      "variable": "action"
+     }
+    },
+    {
+     "id": "detail",
+     "type": "action_detail",
+     "title": "Action",
+     "source": "plan",
+     "path": "candidate_actions",
+     "props": {
+      "variable": "action",
+      "explain": true,
+      "metrics": [
+       {
+        "label": "季度预计收入",
+        "before_path": "totals.projected_revenue",
+        "after_field": "quarter_revenue_after",
+        "format": "money"
+       },
+       {
+        "label": "OTIF",
+        "before_path": "totals.otif",
+        "after_field": "otif_after",
+        "format": "percent"
+       },
+       {
+        "label": "风险需求事件",
+        "before_path": "totals.at_risk",
+        "after_field": "at_risk_after",
+        "format": "number"
+       },
+       {
+        "label": "增量成本",
+        "after_field": "incremental_cost",
+        "format": "money"
+       }
+      ]
+     }
+    },
+    {
+     "id": "rerun",
+     "type": "rerun_button",
+     "title": "",
+     "source": "plan",
+     "path": "",
+     "props": {
+      "label": "Execute：重跑 MRPSpeed 并更新预测",
+      "steps": [
+       {
+        "label": "Generating New Orders",
+        "path": "totals.planned_orders",
+        "format": "number"
+       },
+       {
+        "label": "Updating Financial Forecast",
+        "path": "totals.projected_revenue",
+        "format": "money"
+       },
+       {
+        "label": "OTIF",
+        "path": "totals.otif",
+        "format": "percent"
+       }
+      ]
+     }
+    }
+   ],
+   "layout": [
+    {
+     "i": "actionList",
+     "x": 0,
+     "y": 0,
+     "w": 8,
+     "h": 21
+    },
+    {
+     "i": "detail",
+     "x": 8,
+     "y": 0,
+     "w": 16,
+     "h": 19
+    },
+    {
+     "i": "rerun",
+     "x": 8,
+     "y": 19,
+     "w": 16,
+     "h": 2
+    }
+   ]
+  }
+ ]
+}
