@@ -69,6 +69,7 @@ from app.models.v2 import (  # noqa: E402, F401
 target_metadata = Base.metadata
 from app.models.v2 import reasoning  # noqa: E402, F401
 from app.models.v2 import decision  # noqa: E402, F401
+from app.models.v2 import workshop_app  # noqa: E402, F401
 from app.models.v2 import agent  # noqa: E402, F401
 from app.models.v2 import logic_asset  # noqa: E402, F401
 from app.models.v2 import object_set  # noqa: E402, F401

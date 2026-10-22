@@ -1,0 +1,39 @@
+import { useCallback, useMemo } from 'react'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
+import { apiClientV2 } from '@/api/client'
+import type { AppDefinition, AppRecord, ResolvedSource } from './spec'
+
+export const appsUrl = (ontologyId: string) => `/ontologies/${ontologyId}/workshop-apps`
+
+export function useApp(ontologyId: string, appId: string, version?: number) {
+  return useQuery({ queryKey: ['workshop-app', ontologyId, appId, version ?? 'head'], enabled: !!ontologyId && !!appId,
+    queryFn: () => apiClientV2.get<AppRecord>(`${appsUrl(ontologyId)}/${appId}`, { params: version ? { version } : undefined }) })
+}
+
+/** Resolve every data source; a `run.<source>` URL parameter pins a run, otherwise the Study's latest completed run is used. */
+export function useSources(ontologyId: string, appId: string, definition: AppDefinition | undefined, pinned: Record<string, string | undefined>, version?: number) {
+  const queryClient = useQueryClient()
+  const sources = definition?.data_sources ?? []
+  const results = useQueries({ queries: sources.map(source => ({
+    queryKey: ['workshop-source', ontologyId, appId, version ?? 'head', source.id, pinned[source.id] ?? 'latest', source.study_id, source.node],
+    queryFn: () => apiClientV2.get<ResolvedSource>(`${appsUrl(ontologyId)}/${appId}/sources/${source.id}`, { params: { ...(pinned[source.id] ? { run: pinned[source.id] } : {}), ...(version ? { version } : {}) } }),
+    retry: false,
+  })) })
+  const resolved = Object.fromEntries(sources.map((source, index) => [source.id, results[index]?.data]))
+  const errors = sources.map((source, index) => results[index]?.error ? source.id : null).filter(Boolean) as string[]
+  const refresh = useCallback(() => queryClient.invalidateQueries({ queryKey: ['workshop-source', ontologyId, appId] }), [queryClient, ontologyId, appId])
+  return { resolved, errors, refresh }
+}
+
+/** Variables live in the URL (v.<id>=value) so every state of an app is a shareable link. */
+export function useUrlState(definition: AppDefinition | undefined) {
+  const [params, setParams] = useSearchParams()
+  const vars = useMemo(() => Object.fromEntries((definition?.variables ?? []).map(variable =>
+    [variable.id, params.get(`v.${variable.id}`) ?? (variable.default === undefined || variable.default === null ? null : String(variable.default))])), [definition, params])
+  const setVar = useCallback((id: string, value: string | null) => setParams(current => { if (value === null || value === '') current.delete(`v.${id}`); else current.set(`v.${id}`, value); return current }), [setParams])
+  const pageId = params.get('page') ?? definition?.pages[0]?.id ?? ''
+  const navigate = useCallback((page: string) => setParams(current => { current.set('page', page); return current }), [setParams])
+  const pinned = useMemo(() => Object.fromEntries((definition?.data_sources ?? []).map(source => [source.id, params.get(`run.${source.id}`) ?? undefined])), [definition, params])
+  return { vars, setVar, pageId, navigate, pinned, params }
+}

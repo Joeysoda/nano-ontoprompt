@@ -94,6 +94,8 @@ def test_all_v2_tables_registered():
         "v2_decision_package_evidence",
         "v2_decision_packages",
         "v2_decisions",
+        "v2_workshop_app_versions",
+        "v2_workshop_apps",
         "v2_logic_asset_runs",
         "v2_logic_assets",
         "v2_logic_derived_facts",
