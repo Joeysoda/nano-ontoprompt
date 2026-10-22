@@ -37,6 +37,9 @@ services:
       FALKORDB_PORT: ${FALKORDB_PORT:-6379}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       FUNCTION_RUNNER_URL: http://function-runner:8100
+      # LLM explanations of planning actions; read from the shell or .env, never committed.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EXPLANATION_MODEL: ${EXPLANATION_MODEL:-gpt-4.1}
       FUNCTION_RUNNER_TOKEN: ${FUNCTION_RUNNER_TOKEN:-}
     depends_on: [db, redis, falkordb]
     volumes: [./backend:/app, ./uploads:/uploads, ./data/frepple_demo:/state:ro, ./test_data:/test_data:ro]
@@ -59,6 +62,9 @@ services:
       FALKORDB_PORT: ${FALKORDB_PORT:-6379}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       FUNCTION_RUNNER_URL: http://function-runner:8100
+      # LLM explanations of planning actions; read from the shell or .env, never committed.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EXPLANATION_MODEL: ${EXPLANATION_MODEL:-gpt-4.1}
       FUNCTION_RUNNER_TOKEN: ${FUNCTION_RUNNER_TOKEN:-}
     depends_on:
       db:

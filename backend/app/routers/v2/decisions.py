@@ -390,3 +390,36 @@ def analysis(oid: str, body: AnalysisInput, db: Session = Depends(get_db), user=
         return response
     except Exception as exc:
         raise HTTPException(503, f'决策分析失败：{exc}') from exc
+
+
+@router.get('/{oid}/scenario-study-runs/{run_id}/explanations')
+def list_explanations(oid: str, run_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    scope(db, oid, user)
+    rows = db.query(ScenarioRunArtifact).filter(ScenarioRunArtifact.run_id == run_id, ScenarioRunArtifact.artifact_type.like('explanation:%')).all()
+    return {"explanations": [row.manifest_json for row in rows]}
+
+
+@router.post('/{oid}/scenario-study-runs/{run_id}/candidates/{candidate_id}:explain')
+def explain_candidate(oid: str, run_id: str, candidate_id: str, db: Session = Depends(get_db), user=Depends(require_editor)):
+    """Ask the configured LLM to explain one candidate from this run's evidence, then verify it."""
+    from app.services.v2.decision_explanations import ExplanationError, explain
+    scope(db, oid, user)
+    run = db.get(ScenarioRun, run_id)
+    if not run or not db.query(ScenarioResource).filter_by(id=run.scenario_id, ontology_id=oid).first():
+        raise HTTPException(404, {"code": "run_not_found", "message": "Run not found"})
+    try:
+        node_key, _, candidate = package_service.find_candidate(db, run, candidate_id)
+        result = explain(run.result_manifest["nodes"][node_key]["outputs"], candidate)
+    except DecisionPackageError as exc:
+        _package_error(exc)
+    except ExplanationError as exc:
+        raise HTTPException(exc.status, {"code": exc.code, "message": str(exc)}) from exc
+    artifact_type = f"explanation:{candidate_id}"[:80]
+    row = db.query(ScenarioRunArtifact).filter_by(run_id=run.id, artifact_type=artifact_type).first()
+    digest = stable_digest(result)
+    if row:
+        row.manifest_json, row.content_digest = result, digest
+    else:
+        db.add(ScenarioRunArtifact(run_id=run.id, artifact_type=artifact_type, manifest_json=result, content_digest=digest))
+    db.commit()
+    return result
