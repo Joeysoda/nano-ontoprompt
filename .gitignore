@@ -68,9 +68,16 @@ docs/guides/*
 # （当前无共享的 guides；新增时在此放行）
 !docs/research/
 docs/research/*
+!docs/research/README.md
 !docs/research/official/
 docs/research/official/*
 !docs/research/official/PALANTIR_NHS_SUPPLY_CHAIN_VIDEO_SCENARIO_REVIEW_2026_10_18.md
+!docs/research/official/PALANTIR_ONTOLOGY_MODELING_AND_DESIGN.md
+!docs/research/official/PALANTIR_ONTOLOGY_RUNTIME_AND_ARCHITECTURE.md
+!docs/research/unofficial/
+docs/research/unofficial/*
+!docs/research/unofficial/OPEN_SOURCE_AND_BENCHMARKS_FROM_ARCHIVED_PLANS.md
+!docs/research/unofficial/ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md
 !docs/research/official/PALANTIR_OFFICIAL_INDUSTRIAL_USE_CASE_VIDEO_REVIEW_2026_10_18.md
 # docs/archive/ 下的文件已被 git 跟踪，无需白名单；新归档文件用 git mv 移入即可
 pipeline-builder-redesign-plan.md
