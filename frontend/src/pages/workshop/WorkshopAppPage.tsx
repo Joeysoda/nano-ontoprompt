@@ -10,7 +10,8 @@ const stamp = (iso: string | null) => (iso ? ` · ${iso.slice(0, 16).replace('T'
 function sourceStatus(resolved: ResolvedSource | undefined, failed: boolean) {
   if (!resolved) return failed ? '加载失败' : '加载中'
   if (resolved.kind === 'study_run') return `Run ${resolved.run_id.slice(0, 8)}${stamp(resolved.completed_at)}`
-  return `${resolved.outputs.count} ${resolved.kind === 'alerts' ? '条告警' : '个对象'}${resolved.kind === 'object_set' ? ` · 快照${stamp(resolved.completed_at)}` : ''}`
+  const cut = resolved.outputs.truncated ? '（已截断，统计不完整）' : ''
+  return `${resolved.outputs.count} ${resolved.kind === 'alerts' ? '条告警' : '个对象'}${cut}${resolved.kind === 'object_set' ? ` · 快照${stamp(resolved.completed_at)}` : ''}`
 }
 
 /** Runs a published app: pages of bound widgets; selections and page live in the URL. */

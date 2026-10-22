@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { apiClientV2, formatApiError } from '@/api/client'
-import { CoverageGrid, DataTable, KpiStrip, StackedBarChart } from '@/components/dashboard/widgets'
-import { aggregate, asRows, formatCell, getPath, groupSeries, matches, plainId, template, tone, type Format, type Row, type ToneRule, type Where } from '@/components/dashboard/binding'
+import { AlertList, CoverageGrid, DataTable, DonutChart, GeoMap, KpiStrip, RankBars, StackedBarChart, type MapLink, type MapPoint } from '@/components/dashboard/widgets'
+import { aggregate, asRows, categoryColor, coordinate, formatCell, getPath, groupSeries, groupTotals, matches, plainId, template, tone, type Format, type Row, type ToneRule, type Where } from '@/components/dashboard/binding'
 import DecisionPackagePanel from '@/pages/what-if/DecisionPackagePanel'
 import type { DecisionRunContext } from '@/pages/what-if/decisionPackage'
 import type { ResolvedSource, ResolvedStudyRun, Widget } from './spec'
@@ -58,9 +58,59 @@ export default function WidgetView({ widget, rt }: { widget: Widget; rt: Runtime
       return count ? <p className="rounded border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900" role="status">🔔 {template(str(p.template), outputs, { count })}</p> : <Empty text="没有需要提醒的项" /> }
     case 'action_list': return <ActionList rows={rows} p={p} rt={rt} />
     case 'action_detail': return source?.kind === 'study_run' ? <ActionDetail rows={rows} p={p} rt={rt} source={source} /> : <Empty text="请绑定 Study 运行结果数据源" />
+    case 'donut_chart': return <DonutWidget rows={rows} p={p} rt={rt} title={widget.title} />
+    case 'rank_bars': return <RankWidget rows={rows} p={p} rt={rt} title={widget.title} />
+    case 'alert_list': return <AlertWidget rows={rows} p={p} rt={rt} title={widget.title} />
+    case 'geo_map': return <MapWidget rows={rows} p={p} rt={rt} title={widget.title} />
     case 'rerun_button': return source?.kind === 'study_run' ? <RerunButton p={p} rt={rt} source={source} /> : <Empty text="请绑定 Study 运行结果数据源" />
     default: return <Empty text={`未知组件 ${widget.type}`} />
   }
+}
+
+/** Clicking a chart item writes its key to the configured variable (clicking the selected one clears it). */
+function chooser(p: P, rt: Runtime) {
+  const variable = str(p.variable)
+  if (!variable) return {}
+  const current = rt.vars[variable]
+  return { selected: current, onSelect: (key: string) => { rt.setVar(variable, current === key ? null : key); if (p.navigate && !rt.editing) rt.navigate(str(p.navigate)) } }
+}
+
+function DonutWidget({ rows, p, rt, title }: { rows: Row[]; p: P; rt: Runtime; title: string }) {
+  const slices = useMemo(() => groupTotals(rows, str(p.category_field), str(p.value_field) || undefined), [rows, p.category_field, p.value_field])
+  return slices.length ? <DonutChart slices={slices} label={title || '环形图'} centerLabel={str(p.center_label) || '合计'} {...chooser(p, rt)} /> : <Empty text="没有数据" />
+}
+
+function RankWidget({ rows, p, rt, title }: { rows: Row[]; p: P; rt: Runtime; title: string }) {
+  const ranked = useMemo(() => groupTotals(rows, str(p.label_field), str(p.value_field) || undefined).slice(0, Number(p.max_rows) || 10), [rows, p.label_field, p.value_field, p.max_rows])
+  return ranked.length ? <RankBars rows={ranked.map(row => ({ ...row, key: plainId(row.key) }))} label={title || '排行'} format={(p.format as Format) || 'number'} color={str(p.color) || undefined} {...chooser(p, rt)} /> : <Empty text="没有数据" />
+}
+
+function AlertWidget({ rows, p, rt, title }: { rows: Row[]; p: P; rt: Runtime; title: string }) {
+  const keyField = str(p.key_field) || 'id'
+  const items = rows.slice(0, Number(p.max_rows) || 50).map((row, index) => ({ id: str(row.id) || String(index), key: str(getPath(row, keyField)) || String(index), title: template(str(p.title), row),
+    subtitle: p.subtitle ? template(str(p.subtitle), row) : undefined, severity: str(getPath(row, str(p.severity_field) || 'severity')),
+    time: p.time_field ? formatCell(getPath(row, str(p.time_field)), 'date') : undefined }))
+  return items.length ? <div className="h-full overflow-auto"><AlertList items={items} label={title || '告警'} {...chooser(p, rt)} /></div> : <Empty text="没有告警" />
+}
+
+function MapWidget({ rows, p, rt, title }: { rows: Row[]; p: P; rt: Runtime; title: string }) {
+  const { points, links, skipped } = useMemo(() => {
+    const colors = new Map<string, string>()
+    const colorOf = (key: string) => { if (!colors.has(key)) colors.set(key, categoryColor(key, colors.size)); return colors.get(key)! }
+    const points: MapPoint[] = [], links: MapLink[] = []
+    let skipped = 0
+    for (const row of rows) {
+      const lat = coordinate(getPath(row, str(p.lat_field)), 90), lng = coordinate(getPath(row, str(p.lng_field)), 180)
+      if (lat === null || lng === null) { skipped += 1; continue }
+      points.push({ key: str(getPath(row, str(p.key_field) || 'id')), name: plainId(str(getPath(row, str(p.label_field) || 'id'))), lat, lng,
+        value: p.size_field ? Number(getPath(row, str(p.size_field))) || 0 : 1, color: p.color_field ? colorOf(str(getPath(row, str(p.color_field)))) : '#1d4ed8' })
+      const toLat = coordinate(getPath(row, str(p.to_lat_field)), 90), toLng = coordinate(getPath(row, str(p.to_lng_field)), 180)
+      if (p.to_lat_field && toLat !== null && toLng !== null) links.push({ from: [lng, lat], to: [toLng, toLat] })
+    }
+    return { points, links, skipped }
+  }, [rows, p.lat_field, p.lng_field, p.key_field, p.label_field, p.size_field, p.color_field, p.to_lat_field, p.to_lng_field])
+  return <div className="flex h-full flex-col"><div className="min-h-0 flex-1"><GeoMap points={points} links={links} label={title || '地图'} onSelect={chooser(p, rt).onSelect} /></div>
+    {skipped > 0 && <p className="text-[11px] text-slate-400">{skipped} 行缺少有效经纬度，未画出</p>}</div>
 }
 
 function Empty({ text }: { text: string }) {

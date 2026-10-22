@@ -20,6 +20,7 @@ export type ResolvedSource = ResolvedStudyRun | ResolvedOntologySource
 export type FieldKind = 'text' | 'number' | 'boolean' | 'select' | 'scalar_path' | 'field' | 'variable' | 'page' | 'list' | 'color'
 export type FieldSpec = { key: string; label: string; kind: FieldKind; options?: string[]; item?: FieldSpec[]; help?: string }
 export type WidgetType = 'kpi_strip' | 'table' | 'bar_chart' | 'coverage_grid' | 'facet_list' | 'select' | 'stat_row' | 'banner' | 'action_list' | 'action_detail' | 'rerun_button'
+  | 'donut_chart' | 'rank_bars' | 'alert_list' | 'geo_map'
 export type WidgetSpec = { type: WidgetType; label: string; description: string; w: number; h: number; usesArray: boolean; selectable: boolean; props: FieldSpec[]; defaults: Record<string, unknown> }
 
 const FORMAT = ['text', 'number', 'money', 'percent', 'date']
@@ -67,6 +68,24 @@ export const WIDGETS: WidgetSpec[] = [
   { type: 'rerun_button', label: '重跑按钮', description: '用最新本体数据重跑数据源的 Study，并逐步显示前后变化。', w: 8, h: 2, usesArray: false, selectable: false,
     props: [{ key: 'label', label: '按钮文字', kind: 'text' }, { key: 'steps', label: '对比的数值', kind: 'list', item: [{ key: 'label', label: '名称', kind: 'text' }, { key: 'path', label: '数值', kind: 'scalar_path' }, { key: 'format', label: '格式', kind: 'select', options: FORMAT }] }],
     defaults: { label: '重跑并更新', steps: [] } },
+  { type: 'donut_chart', label: '环形图', description: '按某字段分组看占比，中间显示合计；点击扇区写入变量。告警等级等会自动用红黄绿。', w: 8, h: 7, usesArray: true, selectable: false,
+    props: [{ key: 'category_field', label: '分组字段', kind: 'field' }, { key: 'value_field', label: '求和字段（空=计数）', kind: 'field' }, { key: 'center_label', label: '中间文字', kind: 'text' },
+      { key: 'variable', label: '点击写入变量', kind: 'variable' }, ...FILTER],
+    defaults: { center_label: '合计' } },
+  { type: 'rank_bars', label: '横向排行条', description: '按某字段分组求和或计数，从大到小排出前 N 名；点击一行写入变量。', w: 8, h: 7, usesArray: true, selectable: false,
+    props: [{ key: 'label_field', label: '分组字段', kind: 'field' }, { key: 'value_field', label: '求和字段（空=计数）', kind: 'field' }, { key: 'max_rows', label: '显示前几名', kind: 'number' },
+      { key: 'format', label: '数值格式', kind: 'select', options: FORMAT }, { key: 'color', label: '颜色（空=多色）', kind: 'color' }, { key: 'variable', label: '点击写入变量', kind: 'variable' }, ...FILTER],
+    defaults: { max_rows: 10, format: 'number' } },
+  { type: 'alert_list', label: '告警列表', description: '按严重度排列的告警或风险条目；绑定“规则告警”数据源的 alerts 路径即可。', w: 10, h: 8, usesArray: true, selectable: false,
+    props: [{ key: 'title', label: '标题（可用 {字段|格式}）', kind: 'text' }, { key: 'subtitle', label: '副标题（可用 {字段|格式}）', kind: 'text' },
+      { key: 'severity_field', label: '严重度字段', kind: 'field' }, { key: 'time_field', label: '时间字段', kind: 'field' }, { key: 'key_field', label: '点击写入的字段', kind: 'field' },
+      { key: 'variable', label: '点击写入变量', kind: 'variable' }, { key: 'navigate', label: '点击后跳到页面', kind: 'page' }, { key: 'max_rows', label: '最多条数', kind: 'number' }, ...FILTER],
+    defaults: { title: '{rule_name}：{subject_id}', severity_field: 'severity', time_field: 'window_end', key_field: 'subject_id', max_rows: 50 } },
+  { type: 'geo_map', label: '地图', description: '有经纬度的行画成地图上的点，大小按数值、颜色按分组；可连线。底图为 Natural Earth 世界地图。', w: 14, h: 12, usesArray: true, selectable: false,
+    props: [{ key: 'lat_field', label: '纬度字段', kind: 'field' }, { key: 'lng_field', label: '经度字段', kind: 'field' }, { key: 'label_field', label: '名称字段', kind: 'field' },
+      { key: 'size_field', label: '大小字段（空=一样大）', kind: 'field' }, { key: 'color_field', label: '颜色分组字段', kind: 'field' }, { key: 'key_field', label: '点击写入的字段', kind: 'field' },
+      { key: 'variable', label: '点击写入变量', kind: 'variable' }, { key: 'to_lat_field', label: '连线终点纬度字段', kind: 'field' }, { key: 'to_lng_field', label: '连线终点经度字段', kind: 'field' }, ...FILTER],
+    defaults: { key_field: 'id' } },
 ]
 
 export const specOf = (type: string) => WIDGETS.find(row => row.type === type)

@@ -6,6 +6,7 @@ const REQUIRED_PROPS: Record<string, string[]> = {
   kpi_strip: ['items'], table: ['columns'], bar_chart: ['x_field', 'series'], coverage_grid: ['label_field', 'values_field'],
   facet_list: ['field'], select: ['value_field', 'label_field', 'variable'], stat_row: ['items'], banner: ['template'],
   action_list: ['label_field'], action_detail: ['variable'], rerun_button: ['steps'],
+  donut_chart: ['category_field'], rank_bars: ['label_field'], alert_list: ['title'], geo_map: ['lat_field', 'lng_field'],
 }
 
 /** References that make deleting a builder resource unsafe. */
