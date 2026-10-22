@@ -6,8 +6,8 @@ alerts and a maintenance Action, and the alert trace links them together.
 
 Azure PdM is Microsoft's *simulated* predictive-maintenance sample; results
 are evidence about this runtime, not about field equipment.  The dataset is
-large (80 MB) and lives outside the repository: set AZURE_PDM_DIR or place it
-at <workspace>/data/azure_pdm.  Checksums are pinned in
+large (80 MB) and is not committed: set AZURE_PDM_DIR or place it at
+<repo>/data/azure_pdm (git-ignored).  Checksums are pinned in
 tests/data/azure_pdm_manifest.json.
 """
 import hashlib
@@ -32,7 +32,7 @@ from app.services.v2.object_query.metadata import load_sql_metadata
 from app.services.v2.temporal_surface import install_surface
 
 MANIFEST = json.loads((Path(__file__).resolve().parents[1] / "data" / "azure_pdm_manifest.json").read_text())
-DATA = Path(os.environ.get("AZURE_PDM_DIR") or Path(__file__).resolve().parents[4] / "data" / "azure_pdm")
+DATA = Path(os.environ.get("AZURE_PDM_DIR") or Path(__file__).resolve().parents[3] / "data" / "azure_pdm")
 RULES = {"volt": ("gt", "comp1"), "rotate": ("lt", "comp2"), "pressure": ("gt", "comp3"), "vibration": ("gt", "comp4")}
 WINDOW = 24  # hourly readings -> 24 h rolling mean
 

@@ -2,7 +2,7 @@
   "dataset": "Azure AI predictive maintenance sample (Microsoft)",
   "nature": "simulated, not field observations",
   "timezone_assumption": "UTC (source timestamps carry no zone)",
-  "location": "outside the repository: <workspace>/data/azure_pdm; set AZURE_PDM_DIR to override",
+  "location": "not committed: <repo>/data/azure_pdm (git-ignored); set AZURE_PDM_DIR to override",
   "files": {
     "PdM_machines.csv": {
       "sha256": "5e8e1571c4999bf88abb7cae3925964c218d946fe851a9a100bb3d19330652bc",

@@ -84,3 +84,7 @@ test_data/screenshots/
 
 # 本地文件存储 fallback（MinIO 不可用时）
 /storage/
+
+# 体积较大的外部数据集，只放本地
+/data/azure_pdm/
+/data/dataco/
