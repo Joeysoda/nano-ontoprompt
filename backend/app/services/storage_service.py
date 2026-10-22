@@ -98,7 +98,8 @@ class StorageService:
                 cls._shared_unavailable_until = time.monotonic() + cls._RETRY_INTERVAL
 
     # ── 本地文件系统 fallback ─────────────────────────────────────
-    _LOCAL_BASE = os.path.join(os.path.dirname(__file__), "../../../../storage")
+    # 仓库根目录下的 storage/（services → app → backend → 仓库根）
+    _LOCAL_BASE = os.path.join(os.path.dirname(__file__), "../../../storage")
 
     @property
     def available(self) -> bool:

@@ -81,3 +81,6 @@ RELEASE_NOTES_*.md
 # Test screenshots
 frontend/screenshots_*/
 test_data/screenshots/
+
+# 本地文件存储 fallback（MinIO 不可用时）
+/storage/
