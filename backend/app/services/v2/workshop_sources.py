@@ -25,6 +25,7 @@ from app.services.v2.object_query.metadata import load_sql_metadata
 
 SNAPSHOT_SECONDS = 3600
 MAX_OBJECTS = 10_000
+MAX_ALERTS = 10_000
 
 
 def snapshot_key(app_id: str) -> str:
@@ -84,9 +85,19 @@ def resolve_object_set(db, ontology_id: str, app_id: str, source: dict, user, ac
 
 
 def resolve_alerts(db, ontology_id: str, source: dict, user) -> dict:
+    from app.models.v2.rule_runtime import RuleResource
     from app.routers.v2.rule_runtime import list_alerts
-    found = list_alerts(ontology_id, status=source.get("status"), subject_type=source.get("subject_type"), limit=source.get("limit") or 200,
-                        db=db, user=user)
-    alerts = [{**row, "subject_type": row["subject"]["object_type"], "subject_id": row["subject"]["object_id"]} for row in found["alerts"]]
+    limit = int(source.get("limit") or MAX_ALERTS)
+    rows, total = [], None
+    while len(rows) < limit and (total is None or len(rows) < total):   # the Alert Center API pages at 500
+        page = list_alerts(ontology_id, status=source.get("status"), subject_type=source.get("subject_type"), limit=min(500, limit - len(rows)),
+                           offset=len(rows), db=db, user=user)
+        rows += page["alerts"]
+        total = page["total"]
+        if not page["alerts"]:
+            break
+    names = dict(db.query(RuleResource.id, RuleResource.display_name).filter_by(ontology_id=ontology_id).all())
+    alerts = [{**row, "rule_name": names.get(row["rule_id"], ""), "subject_type": row["subject"]["object_type"],
+               "subject_id": row["subject"]["object_id"]} for row in rows]
     return {"kind": "alerts", "status": "completed", "completed_at": datetime.now(timezone.utc).isoformat(),
-            "outputs": {"alerts": alerts, "count": len(alerts), "total": found["total"]}}
+            "outputs": {"alerts": alerts, "count": len(alerts), "total": total or 0, "truncated": (total or 0) > len(alerts)}}

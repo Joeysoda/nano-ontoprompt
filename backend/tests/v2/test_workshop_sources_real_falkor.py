@@ -88,4 +88,4 @@ def test_alert_source_lists_visible_alerts(client, auth_headers, plant):
     created = client.post(plant["api"], headers=auth_headers, json={"name": "Alerts", "definition": app_definition([{"id": "alerts", "kind": "alerts"}])})
     assert created.status_code == 201, created.text
     alerts = client.get(f"{plant['api']}/{created.json()['id']}/sources/alerts", headers=auth_headers).json()
-    assert alerts["kind"] == "alerts" and alerts["outputs"] == {"alerts": [], "count": 0, "total": 0}
+    assert alerts["kind"] == "alerts" and alerts["outputs"] == {"alerts": [], "count": 0, "total": 0, "truncated": False}
