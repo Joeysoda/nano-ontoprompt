@@ -2,7 +2,7 @@
 
 Status: **the major implementation gaps found by the first paired review are closed. Structural visual acceptance passes; a few exact-fidelity refinements remain partial.**
 
-This review applies the visual gate in `docs/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md` to deterministic browser states. Every current image is generated from the real React surface by `frontend/src/test/e2e/object-explorer-visual-evidence.spec.ts` against controlled API responses. `Pass` means the required state and its main interaction structure are present. `Partial` now identifies fine-grained fidelity differences, rather than a missing core workflow.
+This review applies the visual gate in `docs/plans/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md` to deterministic browser states. Every current image is generated from the real React surface by `frontend/src/test/e2e/object-explorer-visual-evidence.spec.ts` against controlled API responses. `Pass` means the required state and its main interaction structure are present. `Partial` now identifies fine-grained fidelity differences, rather than a missing core workflow.
 
 ## Core-state matrix
 

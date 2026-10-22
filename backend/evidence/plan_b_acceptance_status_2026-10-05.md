@@ -4,7 +4,7 @@ Status: **engineering implementation and structural visual remediation complete;
 
 This record separates executable evidence from acceptance work that still
 requires people or a dedicated end-to-end run. It must not be used to claim
-that every gate in `docs/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md` has passed.
+that every gate in `docs/plans/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md` has passed.
 
 ## Passed evidence
 

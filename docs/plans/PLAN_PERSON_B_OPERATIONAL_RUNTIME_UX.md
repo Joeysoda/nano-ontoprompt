@@ -3,8 +3,8 @@
 > 计划性质：责任边界与差距说明；不是工期承诺，也不授权实施。
 > 负责人：人员 B
 > 基准日期：2026-09-25
-> 上游审计：`docs/PALANTIR_ONTOLOGY_GAP_AUDIT_2026_09_23.md`
-> 2026-10-18 范围修订：同时参考 `docs/PALANTIR_ONTOLOGY_PLATFORM_GAP_AUDIT_2026_10_18.md`。暂缓 Machinery、Dynamic Scheduling、Foundry Rules 的完整专业 UI，不再等同于暂缓其共用运行时；时间序列/streaming、事件/告警、约束/solver/schedule edit batch、通用规则运行时纳入人员 B 的实现与验收范围。Map 与地理空间能力本轮明确延期。
+> 上游审计：`docs/archive/PALANTIR_ONTOLOGY_GAP_AUDIT_2026_09_23.md`
+> 2026-10-18 范围修订：同时参考 `docs/plans/PALANTIR_ONTOLOGY_PLATFORM_GAP_AUDIT_2026_10_18.md`。暂缓 Machinery、Dynamic Scheduling、Foundry Rules 的完整专业 UI，不再等同于暂缓其共用运行时；时间序列/streaming、事件/告警、约束/solver/schedule edit batch、通用规则运行时纳入人员 B 的实现与验收范围。Map 与地理空间能力本轮明确延期。
 
 ## 1. 目标与不做事项
 

@@ -2,7 +2,7 @@
 
 > 计划性质：长期主计划；每个阶段独立实施、迁移和验收，不是工期承诺。  
 > 基准日期：2026-10-18  
-> 上游审计：`docs/PALANTIR_ONTOLOGY_PLATFORM_GAP_AUDIT_2026_10_18.md`  
+> 上游审计：`docs/plans/PALANTIR_ONTOLOGY_PLATFORM_GAP_AUDIT_2026_10_18.md`  
 > 参考风格：Plan A 负责底层真相与安全，Plan B 负责运行时和用户工作流；本计划延续该责任边界，并允许淘汰旧接口。  
 > 用户决策：覆盖完整 Ontology Platform；制造业/供应链为主验证链，辅以跨行业数据；旧接口可淘汰，但必须先提供迁移、验证和回滚；新增服务必须经过 spike 与压力阈值。
 

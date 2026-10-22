@@ -3,7 +3,7 @@
 > 计划性质：责任边界与差距说明；不是工期承诺，也不授权实施。
 > 负责人：人员 A
 > 基准日期：2026-09-23
-> 上游审计：`docs/PALANTIR_ONTOLOGY_GAP_AUDIT_2026_09_23.md`
+> 上游审计：`docs/archive/PALANTIR_ONTOLOGY_GAP_AUDIT_2026_09_23.md`
 
 ## 1. 目标与不做事项
 

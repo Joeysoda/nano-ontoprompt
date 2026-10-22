@@ -112,7 +112,7 @@ Draft = local per-case form state (not submitted revision or result)
 1. **契约/回归基线**：冻结当前 API 示例、UI Demo 和失败样本；给 `ResolvedScenarioContext` 与兼容选择写 schema/纯函数测试，针对“同 revision 不同定义版本”“旧 run view”“Study options 改变”出红测试。Gate：身份/错误/加载状态表经测试覆盖，现有代码与用户改动未被覆盖。
 2. **服务器单一 resolver**：将 Study `context_ref`、Graph pin/回显、Compare 复用和鉴权接通，保留已有字段和不带 pin 的 Graph 请求；用真实 PostgreSQL + FalkorDB 验证每个 View。Gate：B/C 并发/重复运行后 graph/compare 的 run/view/digest 完全相同，失配请求拒绝，不混用旧结果；现有前端请求形式仍正常返回。
 3. **Provider 与 UI 迁移**：Provider 管理活动上下文，组件改用 context-bound hooks；按可见性读取，URL 回退/刷新同步；Action mutation pin target；Summary/Graph/Selection/KPI/对象明细/Compare 信息层级整理。Gate：受控慢响应 B→C→B、Run 中切换、options 改变、浏览器前进后退均无跨 Case 一帧错配；草稿不会跨 Case 提交。
-4. **完整真实验收**：执行既有 [Supplier Demo 操作稿](DEMO_SUPPLIER_SCENARIO_WORKBENCH.md) 并在其基础上增加 Provider 一致性步骤，保持原步骤不删；Playwright 从准备好数据起完整重放，截图 Graph、Selection、Summary、Models、Compare、现有推理配置、重启恢复。Gate：同一稿连续完整通过，真实后端回归、build、lint 和环境故障注入通过；缺陷则修复后从第一步重跑。若可比运行持续出现同类跨组件错配，先做限界架构复盘（身份来源/缓存失效/视图所有权），记录证据、影响和最小修复，再继续，不因一次孤立失败重写。
+4. **完整真实验收**：执行既有 [Supplier Demo 操作稿](../guides/DEMO_SUPPLIER_SCENARIO_WORKBENCH.md) 并在其基础上增加 Provider 一致性步骤，保持原步骤不删；Playwright 从准备好数据起完整重放，截图 Graph、Selection、Summary、Models、Compare、现有推理配置、重启恢复。Gate：同一稿连续完整通过，真实后端回归、build、lint 和环境故障注入通过；缺陷则修复后从第一步重跑。若可比运行持续出现同类跨组件错配，先做限界架构复盘（身份来源/缓存失效/视图所有权），记录证据、影响和最小修复，再继续，不因一次孤立失败重写。
 
 ## 9. 验证矩阵与验收证据
 

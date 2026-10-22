@@ -105,11 +105,11 @@ pytest -q tests/test_scenario_actions.py tests/test_scenario_merge_preview.py \
 
 | 材料 | 阅读重点 | 支持的结论 |
 | --- | --- | --- |
-| `docs/PLAN_PERSON_A_SEMANTIC_CORE_SECURITY_DATA_PLANE.md` | 语义核心、安全、数据面及来源账本 | Study 必须复用统一身份、权限和数据视图，不另造数据面 |
-| `docs/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md` | 运行时、UX、异步任务、错误态 | 运行计划、状态、取消、恢复和用户流程需共同设计 |
-| `docs/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md` | A/B 边界、digest、revision、ExecutionContext | 本计划沿用集成契约，不重复定义对象查询和权限体系 |
-| `docs/PLAN_SCENARIO_CONTEXT_PROVIDER.md` | Scenario 上下文到 data view 的解析 | 所有节点应通过同一 ExecutionContext 读取隔离状态 |
-| `docs/PALANTIR_ONTOLOGY_GAP_AUDIT_2026_09_23.md` | 已知产品差距和既有来源入口 | 用于交叉检查，不把二手归纳当作新官方证据 |
+| `docs/archive/PLAN_PERSON_A_SEMANTIC_CORE_SECURITY_DATA_PLANE.md` | 语义核心、安全、数据面及来源账本 | Study 必须复用统一身份、权限和数据视图，不另造数据面 |
+| `docs/plans/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md` | 运行时、UX、异步任务、错误态 | 运行计划、状态、取消、恢复和用户流程需共同设计 |
+| `docs/plans/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md` | A/B 边界、digest、revision、ExecutionContext | 本计划沿用集成契约，不重复定义对象查询和权限体系 |
+| `docs/archive/PLAN_SCENARIO_CONTEXT_PROVIDER.md` | Scenario 上下文到 data view 的解析 | 所有节点应通过同一 ExecutionContext 读取隔离状态 |
+| `docs/archive/PALANTIR_ONTOLOGY_GAP_AUDIT_2026_09_23.md` | 已知产品差距和既有来源入口 | 用于交叉检查，不把二手归纳当作新官方证据 |
 | `backend/app/models/v2/scenario.py` | Scenario/Revision/Run/Study/Case 数据模型 | 已有沙箱和 run 基础可扩展；Study 定义不足 |
 | `backend/app/models/v2/dynamic_ontology.py` | 第二套 what-if 表 | 存在竞争 scenario/run 目录，需要迁移收敛 |
 | `backend/app/routers/v2/scenarios.py` | 通用 Scenario API | 沙箱 CRUD、版本、运行和权限应保留 |
@@ -140,9 +140,9 @@ pytest -q tests/test_scenario_actions.py tests/test_scenario_merge_preview.py \
 
 本轮没有重新全文阅读 A/B 已经逐条消化的 Object Types、Link Types、Interfaces、Object Sets/Search、Actions、Functions、Object Explorer/Views、基础权限和索引页面。去重依据是下列三份本地计划中的来源账本和集成契约：
 
-- `docs/PLAN_PERSON_A_SEMANTIC_CORE_SECURITY_DATA_PLANE.md`
-- `docs/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md`
-- `docs/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md`
+- `docs/archive/PLAN_PERSON_A_SEMANTIC_CORE_SECURITY_DATA_PLANE.md`
+- `docs/plans/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md`
+- `docs/plans/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md`
 
 若实现阶段修改这些共享契约，必须重新打开相应官方页面并记录访问日期；不能只引用旧计划摘要。
 

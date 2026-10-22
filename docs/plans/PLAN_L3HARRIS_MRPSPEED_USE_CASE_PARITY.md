@@ -3,7 +3,7 @@
 > 日期：2026-10-18  
 > 状态：实施中（进度见第 12 节）  
 > 主验收案例：[L3Harris MRPSpeed 官方 Demo](https://www.youtube.com/watch?v=EX1T2CEJzL4)  
-> 需求证据：[Palantir 官方工业案例视频审计](PALANTIR_OFFICIAL_INDUSTRIAL_USE_CASE_VIDEO_REVIEW_2026_10_18.md)  
+> 需求证据：[Palantir 官方工业案例视频审计](../research/official/PALANTIR_OFFICIAL_INDUSTRIAL_USE_CASE_VIDEO_REVIEW_2026_10_18.md)  
 > 适用分支：当前整合分支 `codex/merge-impact-chains`
 
 ## 1. 目标与非目标

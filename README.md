@@ -2,7 +2,7 @@
 
 > Latest integrated delivery: [`codex/merge-impact-chains`](https://github.com/Joeysoda/nano-ontoprompt/tree/codex/merge-impact-chains). This branch combines the FactoryNet temporal workbench and Plan A semantic-governance foundation with Plan B object exploration, governed operations, and scenario workflows.
 
-**[中文原始说明](./README_zh.md)** · **[中文部署指南](./DEPLOYMENT_WORKBENCH_ZH.md)** · **[Plan A / Plan B integration contract](./docs/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md)**
+**[中文原始说明](./README_zh.md)** · **[中文部署指南](./DEPLOYMENT_WORKBENCH_ZH.md)** · **[Plan A / Plan B integration contract](./docs/plans/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md)**
 
 The workbench is an open-source, Palantir Foundry-inspired platform for turning structured, temporal, and multimodal data into a governed ontology that users can query, inspect, operate, and test in what-if scenarios. It preserves the original pipeline and LLM extraction paths while adding a complete operational layer around stable semantic identities, provenance, object sets, actions, functions, and scenarios.
 
@@ -220,7 +220,7 @@ The repository also provides focused scripts for branch wiring, persistence acro
 
 - The Docker configuration is a demonstration/development delivery. A shared production deployment must enable JWT, HTTPS, strong external secret management, network restrictions, backups, and monitoring.
 - Plan A's core contracts and SQLite test coverage are present. Real PostgreSQL/FalkorDB migration recovery, projection reconciliation, and performance percentiles still require environment-specific acceptance evidence.
-- Some legacy and Plan B endpoints still need full migration to the unified Plan A authorization projection and stable semantic resource IDs; consult the unchecked items in the [integration contract](./docs/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md).
+- Some legacy and Plan B endpoints still need full migration to the unified Plan A authorization projection and stable semantic resource IDs; consult the unchecked items in the [integration contract](./docs/plans/PLAN_A_PLAN_B_INTEGRATION_CONTRACT.md).
 - Rule-based scenarios demonstrate bounded logical consequences. They do not by themselves establish causal effects or maintenance-outcome predictions.
 - Running database volumes, uploaded files, `.env`, and API credentials are intentionally excluded from Git.
 - The independent `codex/next-stage-ontology-modules` branch is not part of this integrated delivery unless it is merged separately.
