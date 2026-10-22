@@ -38,6 +38,28 @@ def templates() -> list[dict]:
                         **{key: {"from": f"read_{key}.objects"} for key in INPUT_TYPES}}}],
         "edges": [{"source": f"read_{key}.objects", "target": f"decision.{key}"} for key in INPUT_TYPES],
     }
+    from .material_shortage_objects import PLANNING_INPUT_TYPES
+    from .mrpspeed_fixture import HORIZON_WEEKS
+    planning_outputs = ("scenario_time", "quarter", "totals", "portfolio", "policies", "demand_events", "demand_by_month",
+                        "coverage", "candidate_actions", "projected_revenue", "revenue_at_risk", "completeness")
+    mrpspeed = {
+        "spec_version": "scenario-study/v1",
+        "context_policy": {"scenario_mode": "pinned_on_run", "time_required": True},
+        "parameters": [{"key": "scenario_time", "label": "计划基准日", "type": "datetime", "default": "2016-10-03T00:00:00Z"},
+                       {"key": "horizon_weeks", "label": "计划周数", "type": "integer", "default": HORIZON_WEEKS},
+                       {"key": "quarter_start", "label": "本季度起始（距基准日天数）", "type": "integer", "default": 0},
+                       {"key": "quarter_end", "label": "本季度结束（距基准日天数）", "type": "integer", "default": 91}],
+        "nodes": [{"key": f"read_{key}", "kind": "object_query", "outputs": {"objects": "object_set"},
+                   "config": {"type": kind, "select": sorted(OBJECT_TYPES[kind])}} for key, kind in PLANNING_INPUT_TYPES.items()] + [
+            {"key": "plan", "kind": "function", "implementation": {"key": "mrpspeed_planning_v1", "version": "1.0.0"},
+             "inputs": {**{key: {"parameter": key} for key in ("scenario_time", "horizon_weeks", "quarter_start", "quarter_end")},
+                        **{key: {"from": f"read_{key}.objects"} for key in PLANNING_INPUT_TYPES}},
+             "outputs": {key: key for key in planning_outputs}}],
+        "edges": [{"source": f"read_{key}.objects", "target": f"plan.{key}"} for key in PLANNING_INPUT_TYPES],
+        "metrics": [{"key": "projected_revenue", "label": "季度预计收入", "type": "decimal", "direction": "maximize", "unit": "currency", "source": "plan.projected_revenue"}],
+        "constraints": [],
+        "budgets": {"max_nodes": 50, "max_objects": 100000, "max_wall_seconds": 900, "max_artifact_bytes": 52428800},
+    }
     cycle = {
         "spec_version": "scenario-study/v1",
         "context_policy": {"scenario_mode": "pinned_on_run", "time_required": False},
@@ -144,6 +166,7 @@ def templates() -> list[dict]:
     }
     return [
         {"template_id": "material_shortage_decision", "name": "缺件影响与收入保护", "description": "从客户订单逐层钻取到多级 BOM、预留、库存、在途承诺和替代供应，并生成可审计影响路径与候选动作。示例数据为合成数据。", "spec": material_shortage},
+        {"template_id": "mrpspeed_planning_objects", "name": "MRPSpeed 产品组合规划（读取本体对象）", "description": "按产品线计算季度收入、成本、OTIF、需求事件风险、逐周物料覆盖与计划订单，并评估加急、返工、推迟非关键采购、切换规划策略等动作。示例需求来自 DataCo 公开数据，BOM 与供应为规则生成的示意数据。", "spec": mrpspeed},
         {"template_id": "material_shortage_decision_objects", "name": "缺件影响与收入保护（读取本体对象）", "description": "与“缺件影响与收入保护”相同的决策模型，但订单、BOM、库存、预留、供应承诺、替代来源和固定任务全部从固定数据视图的本体对象读取；批准的决策包可作为类型化编辑合并回本体。", "spec": material_shortage_objects},
         {"template_id": "supply_chain_reasoning", "name": "供应停供到订单交付推理", "description": "多级 BOM、合格替代来源、库存、到货时间、生产资源和订单交付的端到端情景推理。示例数据为合成数据，结果不声称全局最优。", "spec": supply_chain},
         {"template_id": "supplier_disruption", "name": "供应中断与缺料影响", "description": "改变供应商供给、停供比例或订单需求，计算剩余缺口。参数样例为合成制造数据。", "spec": supplier},

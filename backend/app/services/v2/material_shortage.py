@@ -176,6 +176,8 @@ def _prepare(inputs: dict) -> dict:
             "quantity": _number(row.get("quantity", row.get("capacity", 0)), "supply quantity"),
             "available_at": available_at, "unit_cost": _number(row.get("unit_cost", row.get("cost", 0)), "unit_cost"),
             "qualified": row.get("qualified", True) is not False,
+            # Rework: each unit converts one unit of another part's free stock.
+            "consumes_item": str(row["consumes_item"]) if row.get("consumes_item") else None,
         })
 
     fixed_tasks = []
@@ -277,10 +279,19 @@ def _simulate(prepared: dict, policy: dict | None = None) -> dict:
                 if remaining <= EPSILON:
                     break
                 take = min(remaining, pool["remaining"])
+                donors = [row for row in stock if row["item"] == pool.get("consumes_item")] if pool.get("consumes_item") else None
+                if donors is not None:
+                    take = min(take, sum(row["remaining"] for row in donors))
                 if take <= EPSILON:
                     continue
                 pool["remaining"] -= take
                 remaining -= take
+                if donors:
+                    left = take
+                    for donor in donors:
+                        part = min(left, donor["remaining"])
+                        donor["remaining"] -= part
+                        left -= part
                 available_at = pool.get("available_at", anchor)
                 ready_at = max(ready_at, available_at)
                 entry = {"item": material, "source": kind, "source_id": pool.get("source_id", pool.get("id")),

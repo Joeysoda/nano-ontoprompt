@@ -15,6 +15,10 @@ from app.schemas.v2.object_query import ObjectSetExpr
 def _canonical(value: Any) -> Any:
     if isinstance(value, dict):
         result = {key: _canonical(item) for key, item in sorted(value.items())}
+        # Only expression nodes carry a string "kind"; a property map can have a
+        # property *named* kind whose value is a dict, which is not an expression.
+        if not isinstance(result.get("kind"), str):
+            return result
         if result.get("kind") == "static":
             result["object_ids"] = sorted(set(result["object_ids"]))
             if not result["object_ids"]:

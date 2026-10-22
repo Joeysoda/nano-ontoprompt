@@ -1,0 +1,9032 @@
+{
+ "scenario_time": "2016-10-03T00:00:00Z",
+ "horizon_weeks": 52,
+ "quarter_start": 0,
+ "quarter_end": 91,
+ "product_lines": [
+  {
+   "id": "BIKE",
+   "name": "Comfort Bike",
+   "source_product": "Diamondback Women's Serene Classic Comfort Bi",
+   "policy": "MRPSpeed Optimized",
+   "unit_price": 299.98,
+   "weekly_rate": 107.3,
+   "conversion_cost": 36.0,
+   "resource": "BIKE line"
+  },
+  {
+   "id": "SAFE",
+   "name": "Gun Fire Safe",
+   "source_product": "Field & Stream Sportsman 16 Gun Fire Safe",
+   "policy": "MRPSpeed Optimized",
+   "unit_price": 399.98,
+   "weekly_rate": 133.4,
+   "conversion_cost": 48.0,
+   "resource": "SAFE line"
+  },
+  {
+   "id": "KAYAK",
+   "name": "Sit-in Kayak",
+   "source_product": "Pelican Sunstream 100 Kayak",
+   "policy": "MRPSpeed Optimized",
+   "unit_price": 199.99,
+   "weekly_rate": 119.6,
+   "conversion_cost": 24.0,
+   "resource": "KAYAK line"
+  },
+  {
+   "id": "RIP",
+   "name": "Rip Deck Trainer",
+   "source_product": "Perfect Fitness Perfect Rip Deck",
+   "policy": "MRPSpeed Cash Preserving",
+   "unit_price": 59.99,
+   "weekly_rate": 561.2,
+   "conversion_cost": 7.2,
+   "resource": "RIP line"
+  },
+  {
+   "id": "VEST",
+   "name": "Neoprene Life Vest",
+   "source_product": "O'Brien Men's Neoprene Life Vest",
+   "policy": "MRPSpeed Grey Swan",
+   "unit_price": 49.98,
+   "weekly_rate": 443.1,
+   "conversion_cost": 6.0,
+   "resource": "VEST line"
+  }
+ ],
+ "policy_definitions": [
+  {
+   "id": "MRPSpeed Optimized",
+   "capacity_factor": 1.0,
+   "pull_in_days": 0,
+   "conversion_factor": 1.0,
+   "exclude_low_confidence": false
+  },
+  {
+   "id": "MRPSpeed Cash Preserving",
+   "capacity_factor": 0.85,
+   "pull_in_days": 0,
+   "conversion_factor": 0.92,
+   "exclude_low_confidence": false
+  },
+  {
+   "id": "MRPSpeed Grey Swan",
+   "capacity_factor": 1.0,
+   "pull_in_days": 0,
+   "conversion_factor": 1.0,
+   "exclude_low_confidence": true
+  },
+  {
+   "id": "MRPSpeed Max",
+   "capacity_factor": 1.4,
+   "pull_in_days": 30,
+   "conversion_factor": 1.18,
+   "exclude_low_confidence": false
+  }
+ ],
+ "items": [
+  {
+   "id": "BIKE Assembly",
+   "kind": "assembly",
+   "product_line": "BIKE",
+   "unit_cost": 0
+  },
+  {
+   "id": "BIKE:Frame Module",
+   "kind": "module",
+   "product_line": "BIKE",
+   "unit_cost": 0
+  },
+  {
+   "id": "BIKE:Aluminum Frame",
+   "kind": "part",
+   "name": "Aluminum Frame",
+   "product_line": "BIKE",
+   "unit_cost": 36.0,
+   "lead_time_days": 42,
+   "critical": true
+  },
+  {
+   "id": "BIKE:Suspension Fork",
+   "kind": "part",
+   "name": "Suspension Fork",
+   "product_line": "BIKE",
+   "unit_cost": 15.0,
+   "lead_time_days": 28,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Headset",
+   "kind": "part",
+   "name": "Headset",
+   "product_line": "BIKE",
+   "unit_cost": 3.0,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Drivetrain Module",
+   "kind": "module",
+   "product_line": "BIKE",
+   "unit_cost": 0
+  },
+  {
+   "id": "BIKE:Crankset",
+   "kind": "part",
+   "name": "Crankset",
+   "product_line": "BIKE",
+   "unit_cost": 9.0,
+   "lead_time_days": 28,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Chain",
+   "kind": "part",
+   "name": "Chain",
+   "product_line": "BIKE",
+   "unit_cost": 3.0,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Rear Derailleur",
+   "kind": "part",
+   "name": "Rear Derailleur",
+   "product_line": "BIKE",
+   "unit_cost": 9.0,
+   "lead_time_days": 35,
+   "critical": true
+  },
+  {
+   "id": "BIKE:Shifter",
+   "kind": "part",
+   "name": "Shifter",
+   "product_line": "BIKE",
+   "unit_cost": 6.0,
+   "lead_time_days": 28,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Pedal",
+   "kind": "part",
+   "name": "Pedal",
+   "product_line": "BIKE",
+   "unit_cost": 1.5,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Wheel Module",
+   "kind": "module",
+   "product_line": "BIKE",
+   "unit_cost": 0
+  },
+  {
+   "id": "BIKE:Wheelset",
+   "kind": "part",
+   "name": "Wheelset",
+   "product_line": "BIKE",
+   "unit_cost": 21.0,
+   "lead_time_days": 35,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Tire",
+   "kind": "part",
+   "name": "Tire",
+   "product_line": "BIKE",
+   "unit_cost": 3.0,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Inner Tube",
+   "kind": "part",
+   "name": "Inner Tube",
+   "product_line": "BIKE",
+   "unit_cost": 0.9,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Cockpit Module",
+   "kind": "module",
+   "product_line": "BIKE",
+   "unit_cost": 0
+  },
+  {
+   "id": "BIKE:Handlebar",
+   "kind": "part",
+   "name": "Handlebar",
+   "product_line": "BIKE",
+   "unit_cost": 3.0,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Grip",
+   "kind": "part",
+   "name": "Grip",
+   "product_line": "BIKE",
+   "unit_cost": 0.6,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Saddle",
+   "kind": "part",
+   "name": "Saddle",
+   "product_line": "BIKE",
+   "unit_cost": 4.5,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Brake Set",
+   "kind": "part",
+   "name": "Brake Set",
+   "product_line": "BIKE",
+   "unit_cost": 7.5,
+   "lead_time_days": 28,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Pack Module",
+   "kind": "module",
+   "product_line": "BIKE",
+   "unit_cost": 0
+  },
+  {
+   "id": "Shipping Carton",
+   "kind": "part",
+   "name": "Shipping Carton",
+   "product_line": null,
+   "unit_cost": 1.8,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "Hardware Kit",
+   "kind": "part",
+   "name": "Hardware Kit",
+   "product_line": null,
+   "unit_cost": 1.2,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "SAFE Assembly",
+   "kind": "assembly",
+   "product_line": "SAFE",
+   "unit_cost": 0
+  },
+  {
+   "id": "SAFE:Body Module",
+   "kind": "module",
+   "product_line": "SAFE",
+   "unit_cost": 0
+  },
+  {
+   "id": "SAFE:Steel Body Panel",
+   "kind": "part",
+   "name": "Steel Body Panel",
+   "product_line": "SAFE",
+   "unit_cost": 56.0,
+   "lead_time_days": 35,
+   "critical": false
+  },
+  {
+   "id": "SAFE:Door Panel",
+   "kind": "part",
+   "name": "Door Panel",
+   "product_line": "SAFE",
+   "unit_cost": 28.0,
+   "lead_time_days": 35,
+   "critical": false
+  },
+  {
+   "id": "SAFE:Fireboard Lining",
+   "kind": "part",
+   "name": "Fireboard Lining",
+   "product_line": "SAFE",
+   "unit_cost": 8.0,
+   "lead_time_days": 28,
+   "critical": false
+  },
+  {
+   "id": "SAFE:Hinge Set",
+   "kind": "part",
+   "name": "Hinge Set",
+   "product_line": "SAFE",
+   "unit_cost": 4.0,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "SAFE:Lock Module",
+   "kind": "module",
+   "product_line": "SAFE",
+   "unit_cost": 0
+  },
+  {
+   "id": "SAFE:Combination Lock",
+   "kind": "part",
+   "name": "Combination Lock",
+   "product_line": "SAFE",
+   "unit_cost": 20.0,
+   "lead_time_days": 42,
+   "critical": true
+  },
+  {
+   "id": "SAFE:Locking Bolt",
+   "kind": "part",
+   "name": "Locking Bolt",
+   "product_line": "SAFE",
+   "unit_cost": 1.6,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "SAFE:Handle",
+   "kind": "part",
+   "name": "Handle",
+   "product_line": "SAFE",
+   "unit_cost": 4.0,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "SAFE:Interior Module",
+   "kind": "module",
+   "product_line": "SAFE",
+   "unit_cost": 0
+  },
+  {
+   "id": "SAFE:Gun Rack",
+   "kind": "part",
+   "name": "Gun Rack",
+   "product_line": "SAFE",
+   "unit_cost": 8.0,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "SAFE:Interior Carpet",
+   "kind": "part",
+   "name": "Interior Carpet",
+   "product_line": "SAFE",
+   "unit_cost": 4.0,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "SAFE:Pack Module",
+   "kind": "module",
+   "product_line": "SAFE",
+   "unit_cost": 0
+  },
+  {
+   "id": "SAFE:Shipping Crate",
+   "kind": "part",
+   "name": "Shipping Crate",
+   "product_line": "SAFE",
+   "unit_cost": 4.0,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "KAYAK Assembly",
+   "kind": "assembly",
+   "product_line": "KAYAK",
+   "unit_cost": 0
+  },
+  {
+   "id": "KAYAK:Hull Module",
+   "kind": "module",
+   "product_line": "KAYAK",
+   "unit_cost": 0
+  },
+  {
+   "id": "KAYAK:HDPE Hull",
+   "kind": "part",
+   "name": "HDPE Hull",
+   "product_line": "KAYAK",
+   "unit_cost": 40.0,
+   "lead_time_days": 42,
+   "critical": false
+  },
+  {
+   "id": "KAYAK:Drain Plug",
+   "kind": "part",
+   "name": "Drain Plug",
+   "product_line": "KAYAK",
+   "unit_cost": 0.4,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "KAYAK:Deck Bungee",
+   "kind": "part",
+   "name": "Deck Bungee",
+   "product_line": "KAYAK",
+   "unit_cost": 0.8,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "KAYAK:Outfit Module",
+   "kind": "module",
+   "product_line": "KAYAK",
+   "unit_cost": 0
+  },
+  {
+   "id": "KAYAK:Seat",
+   "kind": "part",
+   "name": "Seat",
+   "product_line": "KAYAK",
+   "unit_cost": 8.0,
+   "lead_time_days": 28,
+   "critical": false
+  },
+  {
+   "id": "KAYAK:Footrest",
+   "kind": "part",
+   "name": "Footrest",
+   "product_line": "KAYAK",
+   "unit_cost": 1.2,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "KAYAK:Carry Handle",
+   "kind": "part",
+   "name": "Carry Handle",
+   "product_line": "KAYAK",
+   "unit_cost": 0.6,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "KAYAK:Paddle",
+   "kind": "part",
+   "name": "Paddle",
+   "product_line": "KAYAK",
+   "unit_cost": 6.0,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "KAYAK:Pack Module",
+   "kind": "module",
+   "product_line": "KAYAK",
+   "unit_cost": 0
+  },
+  {
+   "id": "RIP Assembly",
+   "kind": "assembly",
+   "product_line": "RIP",
+   "unit_cost": 0
+  },
+  {
+   "id": "RIP:Frame Module",
+   "kind": "module",
+   "product_line": "RIP",
+   "unit_cost": 0
+  },
+  {
+   "id": "RIP:Steel Rail",
+   "kind": "part",
+   "name": "Steel Rail",
+   "product_line": "RIP",
+   "unit_cost": 7.2,
+   "lead_time_days": 28,
+   "critical": false
+  },
+  {
+   "id": "RIP:Bushing",
+   "kind": "part",
+   "name": "Bushing",
+   "product_line": "RIP",
+   "unit_cost": 0.36,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "RIP:Wheel",
+   "kind": "part",
+   "name": "Wheel",
+   "product_line": "RIP",
+   "unit_cost": 0.6,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "RIP:Grip Module",
+   "kind": "module",
+   "product_line": "RIP",
+   "unit_cost": 0
+  },
+  {
+   "id": "RIP:Handle Grip",
+   "kind": "part",
+   "name": "Handle Grip",
+   "product_line": "RIP",
+   "unit_cost": 1.2,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "RIP:Pack Module",
+   "kind": "module",
+   "product_line": "RIP",
+   "unit_cost": 0
+  },
+  {
+   "id": "VEST Assembly",
+   "kind": "assembly",
+   "product_line": "VEST",
+   "unit_cost": 0
+  },
+  {
+   "id": "VEST:Shell Module",
+   "kind": "module",
+   "product_line": "VEST",
+   "unit_cost": 0
+  },
+  {
+   "id": "VEST:Neoprene Shell",
+   "kind": "part",
+   "name": "Neoprene Shell",
+   "product_line": "VEST",
+   "unit_cost": 6.0,
+   "lead_time_days": 28,
+   "critical": false
+  },
+  {
+   "id": "VEST:Foam Panel",
+   "kind": "part",
+   "name": "Foam Panel",
+   "product_line": "VEST",
+   "unit_cost": 0.75,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "VEST:Zipper",
+   "kind": "part",
+   "name": "Zipper",
+   "product_line": "VEST",
+   "unit_cost": 0.5,
+   "lead_time_days": 21,
+   "critical": false
+  },
+  {
+   "id": "VEST:Strap Module",
+   "kind": "module",
+   "product_line": "VEST",
+   "unit_cost": 0
+  },
+  {
+   "id": "VEST:Buckle",
+   "kind": "part",
+   "name": "Buckle",
+   "product_line": "VEST",
+   "unit_cost": 0.3,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "VEST:Webbing",
+   "kind": "part",
+   "name": "Webbing",
+   "product_line": "VEST",
+   "unit_cost": 0.5,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "VEST:Safety Label",
+   "kind": "part",
+   "name": "Safety Label",
+   "product_line": "VEST",
+   "unit_cost": 0.1,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "VEST:Pack Module",
+   "kind": "module",
+   "product_line": "VEST",
+   "unit_cost": 0
+  },
+  {
+   "id": "VEST:Poly Bag",
+   "kind": "part",
+   "name": "Poly Bag",
+   "product_line": "VEST",
+   "unit_cost": 0.15,
+   "lead_time_days": 14,
+   "critical": false
+  },
+  {
+   "id": "BIKE:Returned Derailleur",
+   "kind": "part",
+   "name": "Returned Derailleur",
+   "product_line": "BIKE",
+   "unit_cost": 0,
+   "lead_time_days": 0
+  }
+ ],
+ "demands": [
+  {
+   "id": "DE-RIP-USC-1610",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "USCA",
+   "quantity": 61,
+   "due_at": 21,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 0.76,
+   "resource": "RIP line",
+   "source_orders": 23
+  },
+  {
+   "id": "DE-BIKE-USC-1610",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "USCA",
+   "quantity": 14,
+   "due_at": 25,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 0.91,
+   "resource": "BIKE line",
+   "source_orders": 14
+  },
+  {
+   "id": "DE-VEST-USC-1610",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "USCA",
+   "quantity": 56,
+   "due_at": 25,
+   "priority": 3,
+   "unit_revenue": 49.98,
+   "processing_days": 0.88,
+   "resource": "VEST line",
+   "source_orders": 20
+  },
+  {
+   "id": "DE-BIKE-AFR-1610",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Africa",
+   "quantity": 159,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 10.37,
+   "resource": "BIKE line",
+   "source_orders": 159
+  },
+  {
+   "id": "DE-BIKE-EUR-1610",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Europe",
+   "quantity": 69,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 4.5,
+   "resource": "BIKE line",
+   "source_orders": 69
+  },
+  {
+   "id": "DE-BIKE-PAC-1610",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Pacific Asia",
+   "quantity": 141,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 9.2,
+   "resource": "BIKE line",
+   "source_orders": 141
+  },
+  {
+   "id": "DE-KAYAK-AFR-1610",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Africa",
+   "quantity": 200,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 11.71,
+   "resource": "KAYAK line",
+   "source_orders": 200
+  },
+  {
+   "id": "DE-KAYAK-EUR-1610",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Europe",
+   "quantity": 80,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 4.68,
+   "resource": "KAYAK line",
+   "source_orders": 80
+  },
+  {
+   "id": "DE-KAYAK-PAC-1610",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Pacific Asia",
+   "quantity": 153,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 8.95,
+   "resource": "KAYAK line",
+   "source_orders": 153
+  },
+  {
+   "id": "DE-KAYAK-USC-1610",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "USCA",
+   "quantity": 10,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 0.59,
+   "resource": "KAYAK line",
+   "source_orders": 10
+  },
+  {
+   "id": "DE-RIP-AFR-1610",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Africa",
+   "quantity": 882,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 11.0,
+   "resource": "RIP line",
+   "source_orders": 300
+  },
+  {
+   "id": "DE-RIP-EUR-1610",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Europe",
+   "quantity": 421,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 5.25,
+   "resource": "RIP line",
+   "source_orders": 128
+  },
+  {
+   "id": "DE-RIP-PAC-1610",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Pacific Asia",
+   "quantity": 690,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 8.61,
+   "resource": "RIP line",
+   "source_orders": 226
+  },
+  {
+   "id": "DE-SAFE-AFR-1610",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Africa",
+   "quantity": 219,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 11.49,
+   "resource": "SAFE line",
+   "source_orders": 219
+  },
+  {
+   "id": "DE-SAFE-EUR-1610",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Europe",
+   "quantity": 94,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 4.93,
+   "resource": "SAFE line",
+   "source_orders": 94
+  },
+  {
+   "id": "DE-SAFE-PAC-1610",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Pacific Asia",
+   "quantity": 153,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 8.03,
+   "resource": "SAFE line",
+   "source_orders": 153
+  },
+  {
+   "id": "DE-SAFE-USC-1610",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "USCA",
+   "quantity": 10,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 0.52,
+   "resource": "SAFE line",
+   "source_orders": 10
+  },
+  {
+   "id": "DE-VEST-AFR-1610",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Africa",
+   "quantity": 829,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 13.1,
+   "resource": "VEST line",
+   "source_orders": 263
+  },
+  {
+   "id": "DE-VEST-EUR-1610",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Europe",
+   "quantity": 293,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 4.63,
+   "resource": "VEST line",
+   "source_orders": 99
+  },
+  {
+   "id": "DE-VEST-PAC-1610",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Pacific Asia",
+   "quantity": 617,
+   "due_at": 28,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 9.75,
+   "resource": "VEST line",
+   "source_orders": 200
+  },
+  {
+   "id": "DE-SAFE-USC-1611",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "USCA",
+   "quantity": 22,
+   "due_at": 54,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 1.15,
+   "resource": "SAFE line",
+   "source_orders": 22
+  },
+  {
+   "id": "DE-RIP-USC-1611",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "USCA",
+   "quantity": 78,
+   "due_at": 55,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 0.97,
+   "resource": "RIP line",
+   "source_orders": 25
+  },
+  {
+   "id": "DE-KAYAK-USC-1611",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "USCA",
+   "quantity": 28,
+   "due_at": 56,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 1.64,
+   "resource": "KAYAK line",
+   "source_orders": 28
+  },
+  {
+   "id": "DE-VEST-USC-1611",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "USCA",
+   "quantity": 90,
+   "due_at": 56,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 1.42,
+   "resource": "VEST line",
+   "source_orders": 26
+  },
+  {
+   "id": "DE-BIKE-USC-1611",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "USCA",
+   "quantity": 20,
+   "due_at": 57,
+   "priority": 2,
+   "unit_revenue": 299.98,
+   "processing_days": 1.3,
+   "resource": "BIKE line",
+   "source_orders": 20
+  },
+  {
+   "id": "DE-BIKE-AFR-1611",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Africa",
+   "quantity": 184,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 12.0,
+   "resource": "BIKE line",
+   "source_orders": 184
+  },
+  {
+   "id": "DE-BIKE-EUR-1611",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Europe",
+   "quantity": 71,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 4.63,
+   "resource": "BIKE line",
+   "source_orders": 71
+  },
+  {
+   "id": "DE-BIKE-PAC-1611",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Pacific Asia",
+   "quantity": 130,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 8.48,
+   "resource": "BIKE line",
+   "source_orders": 130
+  },
+  {
+   "id": "DE-KAYAK-AFR-1611",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Africa",
+   "quantity": 199,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 11.65,
+   "resource": "KAYAK line",
+   "source_orders": 199
+  },
+  {
+   "id": "DE-KAYAK-EUR-1611",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Europe",
+   "quantity": 84,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 4.92,
+   "resource": "KAYAK line",
+   "source_orders": 84
+  },
+  {
+   "id": "DE-KAYAK-PAC-1611",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Pacific Asia",
+   "quantity": 157,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 9.19,
+   "resource": "KAYAK line",
+   "source_orders": 157
+  },
+  {
+   "id": "DE-RIP-AFR-1611",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Africa",
+   "quantity": 992,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 12.37,
+   "resource": "RIP line",
+   "source_orders": 316
+  },
+  {
+   "id": "DE-RIP-EUR-1611",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Europe",
+   "quantity": 370,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 4.62,
+   "resource": "RIP line",
+   "source_orders": 122
+  },
+  {
+   "id": "DE-RIP-PAC-1611",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Pacific Asia",
+   "quantity": 710,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 8.86,
+   "resource": "RIP line",
+   "source_orders": 230
+  },
+  {
+   "id": "DE-SAFE-AFR-1611",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Africa",
+   "quantity": 246,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 12.91,
+   "resource": "SAFE line",
+   "source_orders": 246
+  },
+  {
+   "id": "DE-SAFE-EUR-1611",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Europe",
+   "quantity": 100,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 5.25,
+   "resource": "SAFE line",
+   "source_orders": 100
+  },
+  {
+   "id": "DE-SAFE-PAC-1611",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Pacific Asia",
+   "quantity": 150,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 7.87,
+   "resource": "SAFE line",
+   "source_orders": 150
+  },
+  {
+   "id": "DE-VEST-AFR-1611",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Africa",
+   "quantity": 778,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 12.29,
+   "resource": "VEST line",
+   "source_orders": 264
+  },
+  {
+   "id": "DE-VEST-EUR-1611",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Europe",
+   "quantity": 329,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 5.2,
+   "resource": "VEST line",
+   "source_orders": 106
+  },
+  {
+   "id": "DE-VEST-PAC-1611",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Pacific Asia",
+   "quantity": 506,
+   "due_at": 58,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 7.99,
+   "resource": "VEST line",
+   "source_orders": 165
+  },
+  {
+   "id": "DE-BIKE-USC-1612",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "USCA",
+   "quantity": 11,
+   "due_at": 88,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 0.72,
+   "resource": "BIKE line",
+   "source_orders": 11
+  },
+  {
+   "id": "DE-KAYAK-USC-1612",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "USCA",
+   "quantity": 13,
+   "due_at": 88,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 0.76,
+   "resource": "KAYAK line",
+   "source_orders": 13
+  },
+  {
+   "id": "DE-SAFE-USC-1612",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "USCA",
+   "quantity": 19,
+   "due_at": 88,
+   "priority": 3,
+   "unit_revenue": 399.98,
+   "processing_days": 1.0,
+   "resource": "SAFE line",
+   "source_orders": 19
+  },
+  {
+   "id": "DE-BIKE-AFR-1612",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Africa",
+   "quantity": 184,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 12.0,
+   "resource": "BIKE line",
+   "source_orders": 184
+  },
+  {
+   "id": "DE-BIKE-EUR-1612",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Europe",
+   "quantity": 81,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 5.28,
+   "resource": "BIKE line",
+   "source_orders": 81
+  },
+  {
+   "id": "DE-BIKE-PAC-1612",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Pacific Asia",
+   "quantity": 106,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 6.92,
+   "resource": "BIKE line",
+   "source_orders": 106
+  },
+  {
+   "id": "DE-KAYAK-AFR-1612",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Africa",
+   "quantity": 206,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 12.06,
+   "resource": "KAYAK line",
+   "source_orders": 206
+  },
+  {
+   "id": "DE-KAYAK-EUR-1612",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Europe",
+   "quantity": 69,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 4.04,
+   "resource": "KAYAK line",
+   "source_orders": 69
+  },
+  {
+   "id": "DE-KAYAK-PAC-1612",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Pacific Asia",
+   "quantity": 120,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 7.02,
+   "resource": "KAYAK line",
+   "source_orders": 120
+  },
+  {
+   "id": "DE-RIP-AFR-1612",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Africa",
+   "quantity": 1043,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 13.01,
+   "resource": "RIP line",
+   "source_orders": 349
+  },
+  {
+   "id": "DE-RIP-EUR-1612",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Europe",
+   "quantity": 398,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 4.96,
+   "resource": "RIP line",
+   "source_orders": 136
+  },
+  {
+   "id": "DE-RIP-PAC-1612",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Pacific Asia",
+   "quantity": 678,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 8.46,
+   "resource": "RIP line",
+   "source_orders": 223
+  },
+  {
+   "id": "DE-RIP-USC-1612",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "USCA",
+   "quantity": 113,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 1.41,
+   "resource": "RIP line",
+   "source_orders": 35
+  },
+  {
+   "id": "DE-SAFE-AFR-1612",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Africa",
+   "quantity": 229,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 12.02,
+   "resource": "SAFE line",
+   "source_orders": 229
+  },
+  {
+   "id": "DE-SAFE-EUR-1612",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Europe",
+   "quantity": 78,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 4.09,
+   "resource": "SAFE line",
+   "source_orders": 78
+  },
+  {
+   "id": "DE-SAFE-PAC-1612",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Pacific Asia",
+   "quantity": 160,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 8.4,
+   "resource": "SAFE line",
+   "source_orders": 160
+  },
+  {
+   "id": "DE-VEST-AFR-1612",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Africa",
+   "quantity": 849,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 13.41,
+   "resource": "VEST line",
+   "source_orders": 274
+  },
+  {
+   "id": "DE-VEST-EUR-1612",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Europe",
+   "quantity": 365,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 5.77,
+   "resource": "VEST line",
+   "source_orders": 114
+  },
+  {
+   "id": "DE-VEST-PAC-1612",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Pacific Asia",
+   "quantity": 505,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 7.98,
+   "resource": "VEST line",
+   "source_orders": 168
+  },
+  {
+   "id": "DE-VEST-USC-1612",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "USCA",
+   "quantity": 69,
+   "due_at": 89,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 1.09,
+   "resource": "VEST line",
+   "source_orders": 21
+  },
+  {
+   "id": "DE-KAYAK-USC-1701",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "USCA",
+   "quantity": 14,
+   "due_at": 104,
+   "priority": 3,
+   "unit_revenue": 199.99,
+   "processing_days": 0.82,
+   "resource": "KAYAK line",
+   "source_orders": 14
+  },
+  {
+   "id": "DE-VEST-USC-1701",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "USCA",
+   "quantity": 31,
+   "due_at": 105,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 0.49,
+   "resource": "VEST line",
+   "source_orders": 11
+  },
+  {
+   "id": "DE-RIP-USC-1701",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "USCA",
+   "quantity": 59,
+   "due_at": 106,
+   "priority": 3,
+   "unit_revenue": 59.99,
+   "processing_days": 0.74,
+   "resource": "RIP line",
+   "source_orders": 22
+  },
+  {
+   "id": "DE-BIKE-USC-1701",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "USCA",
+   "quantity": 16,
+   "due_at": 107,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 1.04,
+   "resource": "BIKE line",
+   "source_orders": 16
+  },
+  {
+   "id": "DE-SAFE-USC-1701",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "USCA",
+   "quantity": 6,
+   "due_at": 107,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 0.31,
+   "resource": "SAFE line",
+   "source_orders": 6
+  },
+  {
+   "id": "DE-KAYAK-AFR-1701",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Africa",
+   "quantity": 135,
+   "due_at": 110,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 7.9,
+   "resource": "KAYAK line",
+   "source_orders": 135
+  },
+  {
+   "id": "DE-KAYAK-PAC-1701",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Pacific Asia",
+   "quantity": 98,
+   "due_at": 110,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 5.74,
+   "resource": "KAYAK line",
+   "source_orders": 98
+  },
+  {
+   "id": "DE-BIKE-AFR-1701",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Africa",
+   "quantity": 112,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 7.31,
+   "resource": "BIKE line",
+   "source_orders": 112
+  },
+  {
+   "id": "DE-BIKE-EUR-1701",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Europe",
+   "quantity": 53,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 3.46,
+   "resource": "BIKE line",
+   "source_orders": 53
+  },
+  {
+   "id": "DE-BIKE-PAC-1701",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Pacific Asia",
+   "quantity": 89,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 5.81,
+   "resource": "BIKE line",
+   "source_orders": 89
+  },
+  {
+   "id": "DE-KAYAK-EUR-1701",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Europe",
+   "quantity": 46,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 2.69,
+   "resource": "KAYAK line",
+   "source_orders": 46
+  },
+  {
+   "id": "DE-RIP-AFR-1701",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Africa",
+   "quantity": 686,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 8.56,
+   "resource": "RIP line",
+   "source_orders": 224
+  },
+  {
+   "id": "DE-RIP-EUR-1701",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Europe",
+   "quantity": 241,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 3.01,
+   "resource": "RIP line",
+   "source_orders": 88
+  },
+  {
+   "id": "DE-RIP-PAC-1701",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Pacific Asia",
+   "quantity": 529,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 6.6,
+   "resource": "RIP line",
+   "source_orders": 167
+  },
+  {
+   "id": "DE-SAFE-AFR-1701",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Africa",
+   "quantity": 145,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 7.61,
+   "resource": "SAFE line",
+   "source_orders": 145
+  },
+  {
+   "id": "DE-SAFE-EUR-1701",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Europe",
+   "quantity": 60,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 3.15,
+   "resource": "SAFE line",
+   "source_orders": 60
+  },
+  {
+   "id": "DE-SAFE-PAC-1701",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Pacific Asia",
+   "quantity": 130,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 6.82,
+   "resource": "SAFE line",
+   "source_orders": 130
+  },
+  {
+   "id": "DE-VEST-AFR-1701",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Africa",
+   "quantity": 492,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 7.77,
+   "resource": "VEST line",
+   "source_orders": 166
+  },
+  {
+   "id": "DE-VEST-EUR-1701",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Europe",
+   "quantity": 243,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 3.84,
+   "resource": "VEST line",
+   "source_orders": 75
+  },
+  {
+   "id": "DE-VEST-PAC-1701",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Pacific Asia",
+   "quantity": 363,
+   "due_at": 111,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 5.73,
+   "resource": "VEST line",
+   "source_orders": 124
+  },
+  {
+   "id": "DE-BIKE-LAT-1701",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "LATAM",
+   "quantity": 142,
+   "due_at": 120,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 9.26,
+   "resource": "BIKE line",
+   "source_orders": 142
+  },
+  {
+   "id": "DE-KAYAK-LAT-1701",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "LATAM",
+   "quantity": 144,
+   "due_at": 120,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 8.43,
+   "resource": "KAYAK line",
+   "source_orders": 144
+  },
+  {
+   "id": "DE-RIP-LAT-1701",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "LATAM",
+   "quantity": 694,
+   "due_at": 120,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 8.66,
+   "resource": "RIP line",
+   "source_orders": 226
+  },
+  {
+   "id": "DE-SAFE-LAT-1701",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "LATAM",
+   "quantity": 155,
+   "due_at": 120,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 8.13,
+   "resource": "SAFE line",
+   "source_orders": 155
+  },
+  {
+   "id": "DE-VEST-LAT-1701",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "LATAM",
+   "quantity": 569,
+   "due_at": 120,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 8.99,
+   "resource": "VEST line",
+   "source_orders": 205
+  },
+  {
+   "id": "DE-BIKE-LAT-1702",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "LATAM",
+   "quantity": 402,
+   "due_at": 148,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 26.23,
+   "resource": "BIKE line",
+   "source_orders": 402
+  },
+  {
+   "id": "DE-KAYAK-LAT-1702",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "LATAM",
+   "quantity": 416,
+   "due_at": 148,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 24.35,
+   "resource": "KAYAK line",
+   "source_orders": 416
+  },
+  {
+   "id": "DE-RIP-LAT-1702",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "LATAM",
+   "quantity": 1990,
+   "due_at": 148,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 24.82,
+   "resource": "RIP line",
+   "source_orders": 655
+  },
+  {
+   "id": "DE-SAFE-LAT-1702",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "LATAM",
+   "quantity": 479,
+   "due_at": 148,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 25.13,
+   "resource": "SAFE line",
+   "source_orders": 479
+  },
+  {
+   "id": "DE-VEST-LAT-1702",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "LATAM",
+   "quantity": 1747,
+   "due_at": 148,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 27.6,
+   "resource": "VEST line",
+   "source_orders": 575
+  },
+  {
+   "id": "DE-BIKE-LAT-1703",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "LATAM",
+   "quantity": 429,
+   "due_at": 179,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 27.99,
+   "resource": "BIKE line",
+   "source_orders": 429
+  },
+  {
+   "id": "DE-KAYAK-LAT-1703",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "LATAM",
+   "quantity": 463,
+   "due_at": 179,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 27.1,
+   "resource": "KAYAK line",
+   "source_orders": 463
+  },
+  {
+   "id": "DE-RIP-LAT-1703",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "LATAM",
+   "quantity": 2187,
+   "due_at": 179,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 27.28,
+   "resource": "RIP line",
+   "source_orders": 739
+  },
+  {
+   "id": "DE-SAFE-LAT-1703",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "LATAM",
+   "quantity": 469,
+   "due_at": 179,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 24.61,
+   "resource": "SAFE line",
+   "source_orders": 469
+  },
+  {
+   "id": "DE-VEST-LAT-1703",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "LATAM",
+   "quantity": 1557,
+   "due_at": 179,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 24.6,
+   "resource": "VEST line",
+   "source_orders": 542
+  },
+  {
+   "id": "DE-BIKE-LAT-1704",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "LATAM",
+   "quantity": 411,
+   "due_at": 209,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 26.81,
+   "resource": "BIKE line",
+   "source_orders": 411
+  },
+  {
+   "id": "DE-KAYAK-LAT-1704",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "LATAM",
+   "quantity": 468,
+   "due_at": 209,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 27.39,
+   "resource": "KAYAK line",
+   "source_orders": 468
+  },
+  {
+   "id": "DE-RIP-LAT-1704",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "LATAM",
+   "quantity": 2071,
+   "due_at": 209,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 25.83,
+   "resource": "RIP line",
+   "source_orders": 701
+  },
+  {
+   "id": "DE-SAFE-LAT-1704",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "LATAM",
+   "quantity": 503,
+   "due_at": 209,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 26.39,
+   "resource": "SAFE line",
+   "source_orders": 503
+  },
+  {
+   "id": "DE-VEST-LAT-1704",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "LATAM",
+   "quantity": 1770,
+   "due_at": 209,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 27.96,
+   "resource": "VEST line",
+   "source_orders": 599
+  },
+  {
+   "id": "DE-BIKE-LAT-1705",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "LATAM",
+   "quantity": 414,
+   "due_at": 240,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 27.01,
+   "resource": "BIKE line",
+   "source_orders": 414
+  },
+  {
+   "id": "DE-KAYAK-LAT-1705",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "LATAM",
+   "quantity": 477,
+   "due_at": 240,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 27.92,
+   "resource": "KAYAK line",
+   "source_orders": 477
+  },
+  {
+   "id": "DE-RIP-LAT-1705",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "LATAM",
+   "quantity": 2204,
+   "due_at": 240,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 27.49,
+   "resource": "RIP line",
+   "source_orders": 728
+  },
+  {
+   "id": "DE-SAFE-LAT-1705",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "LATAM",
+   "quantity": 509,
+   "due_at": 240,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 26.71,
+   "resource": "SAFE line",
+   "source_orders": 509
+  },
+  {
+   "id": "DE-VEST-LAT-1705",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "LATAM",
+   "quantity": 1680,
+   "due_at": 240,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 26.54,
+   "resource": "VEST line",
+   "source_orders": 562
+  },
+  {
+   "id": "DE-BIKE-LAT-1706",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "LATAM",
+   "quantity": 281,
+   "due_at": 261,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 18.33,
+   "resource": "BIKE line",
+   "source_orders": 281
+  },
+  {
+   "id": "DE-KAYAK-LAT-1706",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "LATAM",
+   "quantity": 278,
+   "due_at": 261,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 16.27,
+   "resource": "KAYAK line",
+   "source_orders": 278
+  },
+  {
+   "id": "DE-RIP-LAT-1706",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "LATAM",
+   "quantity": 1192,
+   "due_at": 261,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 14.87,
+   "resource": "RIP line",
+   "source_orders": 394
+  },
+  {
+   "id": "DE-SAFE-LAT-1706",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "LATAM",
+   "quantity": 327,
+   "due_at": 261,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 17.16,
+   "resource": "SAFE line",
+   "source_orders": 327
+  },
+  {
+   "id": "DE-VEST-LAT-1706",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "LATAM",
+   "quantity": 1059,
+   "due_at": 261,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 16.73,
+   "resource": "VEST line",
+   "source_orders": 352
+  },
+  {
+   "id": "DE-BIKE-EUR-1706",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Europe",
+   "quantity": 124,
+   "due_at": 270,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 8.09,
+   "resource": "BIKE line",
+   "source_orders": 124
+  },
+  {
+   "id": "DE-KAYAK-EUR-1706",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Europe",
+   "quantity": 151,
+   "due_at": 270,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 8.84,
+   "resource": "KAYAK line",
+   "source_orders": 151
+  },
+  {
+   "id": "DE-RIP-EUR-1706",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Europe",
+   "quantity": 648,
+   "due_at": 270,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 8.08,
+   "resource": "RIP line",
+   "source_orders": 218
+  },
+  {
+   "id": "DE-SAFE-EUR-1706",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Europe",
+   "quantity": 183,
+   "due_at": 270,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 9.6,
+   "resource": "SAFE line",
+   "source_orders": 183
+  },
+  {
+   "id": "DE-VEST-EUR-1706",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Europe",
+   "quantity": 477,
+   "due_at": 270,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 7.54,
+   "resource": "VEST line",
+   "source_orders": 164
+  },
+  {
+   "id": "DE-BIKE-EUR-1707",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Europe",
+   "quantity": 409,
+   "due_at": 301,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 26.68,
+   "resource": "BIKE line",
+   "source_orders": 409
+  },
+  {
+   "id": "DE-KAYAK-EUR-1707",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Europe",
+   "quantity": 460,
+   "due_at": 301,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 26.92,
+   "resource": "KAYAK line",
+   "source_orders": 460
+  },
+  {
+   "id": "DE-RIP-EUR-1707",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Europe",
+   "quantity": 2224,
+   "due_at": 301,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 27.74,
+   "resource": "RIP line",
+   "source_orders": 760
+  },
+  {
+   "id": "DE-SAFE-EUR-1707",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Europe",
+   "quantity": 503,
+   "due_at": 301,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 26.39,
+   "resource": "SAFE line",
+   "source_orders": 503
+  },
+  {
+   "id": "DE-VEST-EUR-1707",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Europe",
+   "quantity": 1632,
+   "due_at": 301,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 25.78,
+   "resource": "VEST line",
+   "source_orders": 525
+  },
+  {
+   "id": "DE-BIKE-EUR-1708",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Europe",
+   "quantity": 376,
+   "due_at": 332,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 24.53,
+   "resource": "BIKE line",
+   "source_orders": 376
+  },
+  {
+   "id": "DE-KAYAK-EUR-1708",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Europe",
+   "quantity": 491,
+   "due_at": 332,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 28.74,
+   "resource": "KAYAK line",
+   "source_orders": 491
+  },
+  {
+   "id": "DE-RIP-EUR-1708",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Europe",
+   "quantity": 2184,
+   "due_at": 332,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 27.24,
+   "resource": "RIP line",
+   "source_orders": 725
+  },
+  {
+   "id": "DE-SAFE-EUR-1708",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Europe",
+   "quantity": 549,
+   "due_at": 332,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 28.81,
+   "resource": "SAFE line",
+   "source_orders": 549
+  },
+  {
+   "id": "DE-VEST-EUR-1708",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Europe",
+   "quantity": 1593,
+   "due_at": 332,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 25.17,
+   "resource": "VEST line",
+   "source_orders": 539
+  },
+  {
+   "id": "DE-BIKE-EUR-1709",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Europe",
+   "quantity": 419,
+   "due_at": 362,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 27.33,
+   "resource": "BIKE line",
+   "source_orders": 419
+  },
+  {
+   "id": "DE-KAYAK-EUR-1709",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Europe",
+   "quantity": 439,
+   "due_at": 362,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 25.69,
+   "resource": "KAYAK line",
+   "source_orders": 439
+  },
+  {
+   "id": "DE-RIP-EUR-1709",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Europe",
+   "quantity": 1982,
+   "due_at": 362,
+   "priority": 1,
+   "unit_revenue": 59.99,
+   "processing_days": 24.72,
+   "resource": "RIP line",
+   "source_orders": 659
+  },
+  {
+   "id": "DE-SAFE-EUR-1709",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Europe",
+   "quantity": 516,
+   "due_at": 362,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 27.08,
+   "resource": "SAFE line",
+   "source_orders": 516
+  },
+  {
+   "id": "DE-VEST-EUR-1709",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Europe",
+   "quantity": 1488,
+   "due_at": 362,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 23.51,
+   "resource": "VEST line",
+   "source_orders": 514
+  },
+  {
+   "id": "DE-BIKE-EUR-1710",
+   "item": "BIKE Assembly",
+   "product_line": "BIKE",
+   "customer": "Europe",
+   "quantity": 5,
+   "due_at": 363,
+   "priority": 1,
+   "unit_revenue": 299.98,
+   "processing_days": 0.33,
+   "resource": "BIKE line",
+   "source_orders": 5
+  },
+  {
+   "id": "DE-KAYAK-EUR-1710",
+   "item": "KAYAK Assembly",
+   "product_line": "KAYAK",
+   "customer": "Europe",
+   "quantity": 9,
+   "due_at": 363,
+   "priority": 1,
+   "unit_revenue": 199.99,
+   "processing_days": 0.53,
+   "resource": "KAYAK line",
+   "source_orders": 9
+  },
+  {
+   "id": "DE-RIP-EUR-1710",
+   "item": "RIP Assembly",
+   "product_line": "RIP",
+   "customer": "Europe",
+   "quantity": 50,
+   "due_at": 363,
+   "priority": 2,
+   "unit_revenue": 59.99,
+   "processing_days": 0.62,
+   "resource": "RIP line",
+   "source_orders": 17
+  },
+  {
+   "id": "DE-SAFE-EUR-1710",
+   "item": "SAFE Assembly",
+   "product_line": "SAFE",
+   "customer": "Europe",
+   "quantity": 18,
+   "due_at": 363,
+   "priority": 1,
+   "unit_revenue": 399.98,
+   "processing_days": 0.94,
+   "resource": "SAFE line",
+   "source_orders": 18
+  },
+  {
+   "id": "DE-VEST-EUR-1710",
+   "item": "VEST Assembly",
+   "product_line": "VEST",
+   "customer": "Europe",
+   "quantity": 51,
+   "due_at": 363,
+   "priority": 1,
+   "unit_revenue": 49.98,
+   "processing_days": 0.81,
+   "resource": "VEST line",
+   "source_orders": 17
+  }
+ ],
+ "boms": [
+  {
+   "parent_item": "BIKE Assembly",
+   "component_item": "BIKE:Frame Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Frame Module",
+   "component_item": "BIKE:Aluminum Frame",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Frame Module",
+   "component_item": "BIKE:Suspension Fork",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Frame Module",
+   "component_item": "BIKE:Headset",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE Assembly",
+   "component_item": "BIKE:Drivetrain Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Drivetrain Module",
+   "component_item": "BIKE:Crankset",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Drivetrain Module",
+   "component_item": "BIKE:Chain",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Drivetrain Module",
+   "component_item": "BIKE:Rear Derailleur",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Drivetrain Module",
+   "component_item": "BIKE:Shifter",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Drivetrain Module",
+   "component_item": "BIKE:Pedal",
+   "quantity_per": 2
+  },
+  {
+   "parent_item": "BIKE Assembly",
+   "component_item": "BIKE:Wheel Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Wheel Module",
+   "component_item": "BIKE:Wheelset",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Wheel Module",
+   "component_item": "BIKE:Tire",
+   "quantity_per": 2
+  },
+  {
+   "parent_item": "BIKE:Wheel Module",
+   "component_item": "BIKE:Inner Tube",
+   "quantity_per": 2
+  },
+  {
+   "parent_item": "BIKE Assembly",
+   "component_item": "BIKE:Cockpit Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Cockpit Module",
+   "component_item": "BIKE:Handlebar",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Cockpit Module",
+   "component_item": "BIKE:Grip",
+   "quantity_per": 2
+  },
+  {
+   "parent_item": "BIKE:Cockpit Module",
+   "component_item": "BIKE:Saddle",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Cockpit Module",
+   "component_item": "BIKE:Brake Set",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE Assembly",
+   "component_item": "BIKE:Pack Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Pack Module",
+   "component_item": "Shipping Carton",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "BIKE:Pack Module",
+   "component_item": "Hardware Kit",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE Assembly",
+   "component_item": "SAFE:Body Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE:Body Module",
+   "component_item": "SAFE:Steel Body Panel",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE:Body Module",
+   "component_item": "SAFE:Door Panel",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE:Body Module",
+   "component_item": "SAFE:Fireboard Lining",
+   "quantity_per": 4
+  },
+  {
+   "parent_item": "SAFE:Body Module",
+   "component_item": "SAFE:Hinge Set",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE Assembly",
+   "component_item": "SAFE:Lock Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE:Lock Module",
+   "component_item": "SAFE:Combination Lock",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE:Lock Module",
+   "component_item": "SAFE:Locking Bolt",
+   "quantity_per": 6
+  },
+  {
+   "parent_item": "SAFE:Lock Module",
+   "component_item": "SAFE:Handle",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE Assembly",
+   "component_item": "SAFE:Interior Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE:Interior Module",
+   "component_item": "SAFE:Gun Rack",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE:Interior Module",
+   "component_item": "SAFE:Interior Carpet",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE Assembly",
+   "component_item": "SAFE:Pack Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE:Pack Module",
+   "component_item": "SAFE:Shipping Crate",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "SAFE:Pack Module",
+   "component_item": "Hardware Kit",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "KAYAK Assembly",
+   "component_item": "KAYAK:Hull Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "KAYAK:Hull Module",
+   "component_item": "KAYAK:HDPE Hull",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "KAYAK:Hull Module",
+   "component_item": "KAYAK:Drain Plug",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "KAYAK:Hull Module",
+   "component_item": "KAYAK:Deck Bungee",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "KAYAK Assembly",
+   "component_item": "KAYAK:Outfit Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "KAYAK:Outfit Module",
+   "component_item": "KAYAK:Seat",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "KAYAK:Outfit Module",
+   "component_item": "KAYAK:Footrest",
+   "quantity_per": 2
+  },
+  {
+   "parent_item": "KAYAK:Outfit Module",
+   "component_item": "KAYAK:Carry Handle",
+   "quantity_per": 2
+  },
+  {
+   "parent_item": "KAYAK:Outfit Module",
+   "component_item": "KAYAK:Paddle",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "KAYAK Assembly",
+   "component_item": "KAYAK:Pack Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "KAYAK:Pack Module",
+   "component_item": "Shipping Carton",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "RIP Assembly",
+   "component_item": "RIP:Frame Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "RIP:Frame Module",
+   "component_item": "RIP:Steel Rail",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "RIP:Frame Module",
+   "component_item": "RIP:Bushing",
+   "quantity_per": 4
+  },
+  {
+   "parent_item": "RIP:Frame Module",
+   "component_item": "RIP:Wheel",
+   "quantity_per": 4
+  },
+  {
+   "parent_item": "RIP Assembly",
+   "component_item": "RIP:Grip Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "RIP:Grip Module",
+   "component_item": "RIP:Handle Grip",
+   "quantity_per": 2
+  },
+  {
+   "parent_item": "RIP:Grip Module",
+   "component_item": "Hardware Kit",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "RIP Assembly",
+   "component_item": "RIP:Pack Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "RIP:Pack Module",
+   "component_item": "Shipping Carton",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "VEST Assembly",
+   "component_item": "VEST:Shell Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "VEST:Shell Module",
+   "component_item": "VEST:Neoprene Shell",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "VEST:Shell Module",
+   "component_item": "VEST:Foam Panel",
+   "quantity_per": 4
+  },
+  {
+   "parent_item": "VEST:Shell Module",
+   "component_item": "VEST:Zipper",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "VEST Assembly",
+   "component_item": "VEST:Strap Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "VEST:Strap Module",
+   "component_item": "VEST:Buckle",
+   "quantity_per": 3
+  },
+  {
+   "parent_item": "VEST:Strap Module",
+   "component_item": "VEST:Webbing",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "VEST:Strap Module",
+   "component_item": "VEST:Safety Label",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "VEST Assembly",
+   "component_item": "VEST:Pack Module",
+   "quantity_per": 1
+  },
+  {
+   "parent_item": "VEST:Pack Module",
+   "component_item": "VEST:Poly Bag",
+   "quantity_per": 1
+  }
+ ],
+ "inventory": [
+  {
+   "id": "LOT-BIKE:Aluminum Frame-Plant A",
+   "item": "BIKE:Aluminum Frame",
+   "location": "Plant A",
+   "quantity": 72
+  },
+  {
+   "id": "LOT-BIKE:Aluminum Frame-Plant B",
+   "item": "BIKE:Aluminum Frame",
+   "location": "Plant B",
+   "quantity": 73
+  },
+  {
+   "id": "LOT-BIKE:Brake Set-Plant A",
+   "item": "BIKE:Brake Set",
+   "location": "Plant A",
+   "quantity": 305
+  },
+  {
+   "id": "LOT-BIKE:Brake Set-Plant B",
+   "item": "BIKE:Brake Set",
+   "location": "Plant B",
+   "quantity": 305
+  },
+  {
+   "id": "LOT-BIKE:Chain-Plant A",
+   "item": "BIKE:Chain",
+   "location": "Plant A",
+   "quantity": 275
+  },
+  {
+   "id": "LOT-BIKE:Chain-Plant B",
+   "item": "BIKE:Chain",
+   "location": "Plant B",
+   "quantity": 276
+  },
+  {
+   "id": "LOT-BIKE:Crankset-Plant A",
+   "item": "BIKE:Crankset",
+   "location": "Plant A",
+   "quantity": 321
+  },
+  {
+   "id": "LOT-BIKE:Crankset-Plant B",
+   "item": "BIKE:Crankset",
+   "location": "Plant B",
+   "quantity": 321
+  },
+  {
+   "id": "LOT-BIKE:Grip-Plant A",
+   "item": "BIKE:Grip",
+   "location": "Plant A",
+   "quantity": 728
+  },
+  {
+   "id": "LOT-BIKE:Grip-Plant B",
+   "item": "BIKE:Grip",
+   "location": "Plant B",
+   "quantity": 728
+  },
+  {
+   "id": "LOT-BIKE:Handlebar-Plant A",
+   "item": "BIKE:Handlebar",
+   "location": "Plant A",
+   "quantity": 245
+  },
+  {
+   "id": "LOT-BIKE:Handlebar-Plant B",
+   "item": "BIKE:Handlebar",
+   "location": "Plant B",
+   "quantity": 246
+  },
+  {
+   "id": "LOT-BIKE:Headset-Plant A",
+   "item": "BIKE:Headset",
+   "location": "Plant A",
+   "quantity": 272
+  },
+  {
+   "id": "LOT-BIKE:Headset-Plant B",
+   "item": "BIKE:Headset",
+   "location": "Plant B",
+   "quantity": 272
+  },
+  {
+   "id": "LOT-BIKE:Inner Tube-Plant A",
+   "item": "BIKE:Inner Tube",
+   "location": "Plant A",
+   "quantity": 775
+  },
+  {
+   "id": "LOT-BIKE:Inner Tube-Plant B",
+   "item": "BIKE:Inner Tube",
+   "location": "Plant B",
+   "quantity": 775
+  },
+  {
+   "id": "LOT-BIKE:Pedal-Plant A",
+   "item": "BIKE:Pedal",
+   "location": "Plant A",
+   "quantity": 395
+  },
+  {
+   "id": "LOT-BIKE:Pedal-Plant B",
+   "item": "BIKE:Pedal",
+   "location": "Plant B",
+   "quantity": 395
+  },
+  {
+   "id": "LOT-BIKE:Rear Derailleur-Plant A",
+   "item": "BIKE:Rear Derailleur",
+   "location": "Plant A",
+   "quantity": 72
+  },
+  {
+   "id": "LOT-BIKE:Rear Derailleur-Plant B",
+   "item": "BIKE:Rear Derailleur",
+   "location": "Plant B",
+   "quantity": 73
+  },
+  {
+   "id": "LOT-BIKE:Returned Derailleur-returns",
+   "item": "BIKE:Returned Derailleur",
+   "location": "Plant A",
+   "quantity": 727
+  },
+  {
+   "id": "LOT-BIKE:Saddle-Plant A",
+   "item": "BIKE:Saddle",
+   "location": "Plant A",
+   "quantity": 368
+  },
+  {
+   "id": "LOT-BIKE:Saddle-Plant B",
+   "item": "BIKE:Saddle",
+   "location": "Plant B",
+   "quantity": 369
+  },
+  {
+   "id": "LOT-BIKE:Shifter-Plant A",
+   "item": "BIKE:Shifter",
+   "location": "Plant A",
+   "quantity": 382
+  },
+  {
+   "id": "LOT-BIKE:Shifter-Plant B",
+   "item": "BIKE:Shifter",
+   "location": "Plant B",
+   "quantity": 382
+  },
+  {
+   "id": "LOT-BIKE:Suspension Fork-Plant A",
+   "item": "BIKE:Suspension Fork",
+   "location": "Plant A",
+   "quantity": 314
+  },
+  {
+   "id": "LOT-BIKE:Suspension Fork-Plant B",
+   "item": "BIKE:Suspension Fork",
+   "location": "Plant B",
+   "quantity": 314
+  },
+  {
+   "id": "LOT-BIKE:Tire-Plant A",
+   "item": "BIKE:Tire",
+   "location": "Plant A",
+   "quantity": 733
+  },
+  {
+   "id": "LOT-BIKE:Tire-Plant B",
+   "item": "BIKE:Tire",
+   "location": "Plant B",
+   "quantity": 734
+  },
+  {
+   "id": "LOT-BIKE:Wheelset-Plant A",
+   "item": "BIKE:Wheelset",
+   "location": "Plant A",
+   "quantity": 222
+  },
+  {
+   "id": "LOT-BIKE:Wheelset-Plant B",
+   "item": "BIKE:Wheelset",
+   "location": "Plant B",
+   "quantity": 223
+  },
+  {
+   "id": "LOT-Hardware Kit-Plant A",
+   "item": "Hardware Kit",
+   "location": "Plant A",
+   "quantity": 2694
+  },
+  {
+   "id": "LOT-Hardware Kit-Plant B",
+   "item": "Hardware Kit",
+   "location": "Plant B",
+   "quantity": 2695
+  },
+  {
+   "id": "LOT-KAYAK:Carry Handle-Plant A",
+   "item": "KAYAK:Carry Handle",
+   "location": "Plant A",
+   "quantity": 807
+  },
+  {
+   "id": "LOT-KAYAK:Carry Handle-Plant B",
+   "item": "KAYAK:Carry Handle",
+   "location": "Plant B",
+   "quantity": 807
+  },
+  {
+   "id": "LOT-KAYAK:Deck Bungee-Plant A",
+   "item": "KAYAK:Deck Bungee",
+   "location": "Plant A",
+   "quantity": 346
+  },
+  {
+   "id": "LOT-KAYAK:Deck Bungee-Plant B",
+   "item": "KAYAK:Deck Bungee",
+   "location": "Plant B",
+   "quantity": 347
+  },
+  {
+   "id": "LOT-KAYAK:Drain Plug-Plant A",
+   "item": "KAYAK:Drain Plug",
+   "location": "Plant A",
+   "quantity": 283
+  },
+  {
+   "id": "LOT-KAYAK:Drain Plug-Plant B",
+   "item": "KAYAK:Drain Plug",
+   "location": "Plant B",
+   "quantity": 283
+  },
+  {
+   "id": "LOT-KAYAK:Footrest-Plant A",
+   "item": "KAYAK:Footrest",
+   "location": "Plant A",
+   "quantity": 514
+  },
+  {
+   "id": "LOT-KAYAK:Footrest-Plant B",
+   "item": "KAYAK:Footrest",
+   "location": "Plant B",
+   "quantity": 515
+  },
+  {
+   "id": "LOT-KAYAK:HDPE Hull-Plant A",
+   "item": "KAYAK:HDPE Hull",
+   "location": "Plant A",
+   "quantity": 318
+  },
+  {
+   "id": "LOT-KAYAK:HDPE Hull-Plant B",
+   "item": "KAYAK:HDPE Hull",
+   "location": "Plant B",
+   "quantity": 319
+  },
+  {
+   "id": "LOT-KAYAK:Paddle-Plant A",
+   "item": "KAYAK:Paddle",
+   "location": "Plant A",
+   "quantity": 266
+  },
+  {
+   "id": "LOT-KAYAK:Paddle-Plant B",
+   "item": "KAYAK:Paddle",
+   "location": "Plant B",
+   "quantity": 267
+  },
+  {
+   "id": "LOT-KAYAK:Seat-Plant A",
+   "item": "KAYAK:Seat",
+   "location": "Plant A",
+   "quantity": 412
+  },
+  {
+   "id": "LOT-KAYAK:Seat-Plant B",
+   "item": "KAYAK:Seat",
+   "location": "Plant B",
+   "quantity": 413
+  },
+  {
+   "id": "LOT-RIP:Bushing-Plant A",
+   "item": "RIP:Bushing",
+   "location": "Plant A",
+   "quantity": 4483
+  },
+  {
+   "id": "LOT-RIP:Bushing-Plant B",
+   "item": "RIP:Bushing",
+   "location": "Plant B",
+   "quantity": 4483
+  },
+  {
+   "id": "LOT-RIP:Handle Grip-Plant A",
+   "item": "RIP:Handle Grip",
+   "location": "Plant A",
+   "quantity": 3966
+  },
+  {
+   "id": "LOT-RIP:Handle Grip-Plant B",
+   "item": "RIP:Handle Grip",
+   "location": "Plant B",
+   "quantity": 3967
+  },
+  {
+   "id": "LOT-RIP:Steel Rail-Plant A",
+   "item": "RIP:Steel Rail",
+   "location": "Plant A",
+   "quantity": 1572
+  },
+  {
+   "id": "LOT-RIP:Steel Rail-Plant B",
+   "item": "RIP:Steel Rail",
+   "location": "Plant B",
+   "quantity": 1573
+  },
+  {
+   "id": "LOT-RIP:Wheel-Plant A",
+   "item": "RIP:Wheel",
+   "location": "Plant A",
+   "quantity": 6240
+  },
+  {
+   "id": "LOT-RIP:Wheel-Plant B",
+   "item": "RIP:Wheel",
+   "location": "Plant B",
+   "quantity": 6241
+  },
+  {
+   "id": "LOT-SAFE:Combination Lock-Plant A",
+   "item": "SAFE:Combination Lock",
+   "location": "Plant A",
+   "quantity": 90
+  },
+  {
+   "id": "LOT-SAFE:Combination Lock-Plant B",
+   "item": "SAFE:Combination Lock",
+   "location": "Plant B",
+   "quantity": 90
+  },
+  {
+   "id": "LOT-SAFE:Door Panel-Plant A",
+   "item": "SAFE:Door Panel",
+   "location": "Plant A",
+   "quantity": 323
+  },
+  {
+   "id": "LOT-SAFE:Door Panel-Plant B",
+   "item": "SAFE:Door Panel",
+   "location": "Plant B",
+   "quantity": 324
+  },
+  {
+   "id": "LOT-SAFE:Fireboard Lining-Plant A",
+   "item": "SAFE:Fireboard Lining",
+   "location": "Plant A",
+   "quantity": 1605
+  },
+  {
+   "id": "LOT-SAFE:Fireboard Lining-Plant B",
+   "item": "SAFE:Fireboard Lining",
+   "location": "Plant B",
+   "quantity": 1605
+  },
+  {
+   "id": "LOT-SAFE:Gun Rack-Plant A",
+   "item": "SAFE:Gun Rack",
+   "location": "Plant A",
+   "quantity": 380
+  },
+  {
+   "id": "LOT-SAFE:Gun Rack-Plant B",
+   "item": "SAFE:Gun Rack",
+   "location": "Plant B",
+   "quantity": 381
+  },
+  {
+   "id": "LOT-SAFE:Handle-Plant A",
+   "item": "SAFE:Handle",
+   "location": "Plant A",
+   "quantity": 380
+  },
+  {
+   "id": "LOT-SAFE:Handle-Plant B",
+   "item": "SAFE:Handle",
+   "location": "Plant B",
+   "quantity": 381
+  },
+  {
+   "id": "LOT-SAFE:Hinge Set-Plant A",
+   "item": "SAFE:Hinge Set",
+   "location": "Plant A",
+   "quantity": 255
+  },
+  {
+   "id": "LOT-SAFE:Hinge Set-Plant B",
+   "item": "SAFE:Hinge Set",
+   "location": "Plant B",
+   "quantity": 255
+  },
+  {
+   "id": "LOT-SAFE:Interior Carpet-Plant A",
+   "item": "SAFE:Interior Carpet",
+   "location": "Plant A",
+   "quantity": 467
+  },
+  {
+   "id": "LOT-SAFE:Interior Carpet-Plant B",
+   "item": "SAFE:Interior Carpet",
+   "location": "Plant B",
+   "quantity": 467
+  },
+  {
+   "id": "LOT-SAFE:Locking Bolt-Plant A",
+   "item": "SAFE:Locking Bolt",
+   "location": "Plant A",
+   "quantity": 2688
+  },
+  {
+   "id": "LOT-SAFE:Locking Bolt-Plant B",
+   "item": "SAFE:Locking Bolt",
+   "location": "Plant B",
+   "quantity": 2689
+  },
+  {
+   "id": "LOT-SAFE:Shipping Crate-Plant A",
+   "item": "SAFE:Shipping Crate",
+   "location": "Plant A",
+   "quantity": 331
+  },
+  {
+   "id": "LOT-SAFE:Shipping Crate-Plant B",
+   "item": "SAFE:Shipping Crate",
+   "location": "Plant B",
+   "quantity": 332
+  },
+  {
+   "id": "LOT-SAFE:Steel Body Panel-Plant A",
+   "item": "SAFE:Steel Body Panel",
+   "location": "Plant A",
+   "quantity": 397
+  },
+  {
+   "id": "LOT-SAFE:Steel Body Panel-Plant B",
+   "item": "SAFE:Steel Body Panel",
+   "location": "Plant B",
+   "quantity": 397
+  },
+  {
+   "id": "LOT-Shipping Carton-Plant A",
+   "item": "Shipping Carton",
+   "location": "Plant A",
+   "quantity": 1812
+  },
+  {
+   "id": "LOT-Shipping Carton-Plant B",
+   "item": "Shipping Carton",
+   "location": "Plant B",
+   "quantity": 1813
+  },
+  {
+   "id": "LOT-VEST:Buckle-Plant A",
+   "item": "VEST:Buckle",
+   "location": "Plant A",
+   "quantity": 2574
+  },
+  {
+   "id": "LOT-VEST:Buckle-Plant B",
+   "item": "VEST:Buckle",
+   "location": "Plant B",
+   "quantity": 2574
+  },
+  {
+   "id": "LOT-VEST:Foam Panel-Plant A",
+   "item": "VEST:Foam Panel",
+   "location": "Plant A",
+   "quantity": 5921
+  },
+  {
+   "id": "LOT-VEST:Foam Panel-Plant B",
+   "item": "VEST:Foam Panel",
+   "location": "Plant B",
+   "quantity": 5921
+  },
+  {
+   "id": "LOT-VEST:Neoprene Shell-Plant A",
+   "item": "VEST:Neoprene Shell",
+   "location": "Plant A",
+   "quantity": 983
+  },
+  {
+   "id": "LOT-VEST:Neoprene Shell-Plant B",
+   "item": "VEST:Neoprene Shell",
+   "location": "Plant B",
+   "quantity": 983
+  },
+  {
+   "id": "LOT-VEST:Poly Bag-Plant A",
+   "item": "VEST:Poly Bag",
+   "location": "Plant A",
+   "quantity": 1363
+  },
+  {
+   "id": "LOT-VEST:Poly Bag-Plant B",
+   "item": "VEST:Poly Bag",
+   "location": "Plant B",
+   "quantity": 1363
+  },
+  {
+   "id": "LOT-VEST:Safety Label-Plant A",
+   "item": "VEST:Safety Label",
+   "location": "Plant A",
+   "quantity": 1106
+  },
+  {
+   "id": "LOT-VEST:Safety Label-Plant B",
+   "item": "VEST:Safety Label",
+   "location": "Plant B",
+   "quantity": 1106
+  },
+  {
+   "id": "LOT-VEST:Webbing-Plant A",
+   "item": "VEST:Webbing",
+   "location": "Plant A",
+   "quantity": 1516
+  },
+  {
+   "id": "LOT-VEST:Webbing-Plant B",
+   "item": "VEST:Webbing",
+   "location": "Plant B",
+   "quantity": 1517
+  },
+  {
+   "id": "LOT-VEST:Zipper-Plant A",
+   "item": "VEST:Zipper",
+   "location": "Plant A",
+   "quantity": 1237
+  },
+  {
+   "id": "LOT-VEST:Zipper-Plant B",
+   "item": "VEST:Zipper",
+   "location": "Plant B",
+   "quantity": 1238
+  }
+ ],
+ "reservations": [],
+ "supply_commitments": [
+  {
+   "id": "PO-00001",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 45,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.6,
+   "expedite_available_at": 10,
+   "expedite_unit_premium": 10.8
+  },
+  {
+   "id": "PO-00002",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 77,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.6,
+   "expedite_available_at": 42,
+   "expedite_unit_premium": 10.8
+  },
+  {
+   "id": "PO-00003",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 107,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.6,
+   "expedite_available_at": 72,
+   "expedite_unit_premium": 10.8
+  },
+  {
+   "id": "PO-00004",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 139,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.6,
+   "expedite_available_at": 104,
+   "expedite_unit_premium": 10.8
+  },
+  {
+   "id": "PO-00005",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 133,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00006",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 164,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00007",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 197,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00008",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 229,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00009",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 259,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00010",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 289,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00011",
+   "item": "BIKE:Aluminum Frame",
+   "quantity": 392,
+   "supplier": "Summit Metals",
+   "available_at": 322,
+   "status": "active",
+   "unit_cost": 36.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00012",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Coastal Plastics",
+   "available_at": 11,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00013",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Apex Precision",
+   "available_at": 41,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00014",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Coastal Plastics",
+   "available_at": 70,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00015",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Northwind Components",
+   "available_at": 104,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00016",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Coastal Plastics",
+   "available_at": 132,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00017",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Coastal Plastics",
+   "available_at": 166,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00018",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Coastal Plastics",
+   "available_at": 197,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00019",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Northwind Components",
+   "available_at": 227,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00020",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Northwind Components",
+   "available_at": 256,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00021",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Northwind Components",
+   "available_at": 288,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00022",
+   "item": "BIKE:Brake Set",
+   "quantity": 439,
+   "supplier": "Northwind Components",
+   "available_at": 321,
+   "status": "active",
+   "unit_cost": 7.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00023",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Coastal Plastics",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00024",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Coastal Plastics",
+   "available_at": 37,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00025",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Coastal Plastics",
+   "available_at": 66,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00026",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Apex Precision",
+   "available_at": 96,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00027",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Northwind Components",
+   "available_at": 122,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00028",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Northwind Components",
+   "available_at": 152,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00029",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Apex Precision",
+   "available_at": 180,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00030",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Coastal Plastics",
+   "available_at": 210,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00031",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Northwind Components",
+   "available_at": 235,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00032",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Apex Precision",
+   "available_at": 266,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00033",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Northwind Components",
+   "available_at": 296,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00034",
+   "item": "BIKE:Chain",
+   "quantity": 425,
+   "supplier": "Apex Precision",
+   "available_at": 321,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00035",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Coastal Plastics",
+   "available_at": 9,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00036",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Coastal Plastics",
+   "available_at": 29,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00037",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Apex Precision",
+   "available_at": 52,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00038",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Northwind Components",
+   "available_at": 76,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00039",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Coastal Plastics",
+   "available_at": 102,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00040",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Coastal Plastics",
+   "available_at": 124,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00041",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Northwind Components",
+   "available_at": 144,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00042",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Apex Precision",
+   "available_at": 171,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00043",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Northwind Components",
+   "available_at": 190,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00044",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Northwind Components",
+   "available_at": 212,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00045",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Coastal Plastics",
+   "available_at": 238,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00046",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Northwind Components",
+   "available_at": 258,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00047",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Apex Precision",
+   "available_at": 283,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00048",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Coastal Plastics",
+   "available_at": 304,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00049",
+   "item": "BIKE:Crankset",
+   "quantity": 298,
+   "supplier": "Apex Precision",
+   "available_at": 328,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00050",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Coastal Plastics",
+   "available_at": 9,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00051",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Northwind Components",
+   "available_at": 34,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00052",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Apex Precision",
+   "available_at": 60,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00053",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Northwind Components",
+   "available_at": 81,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00054",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Northwind Components",
+   "available_at": 108,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00055",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Apex Precision",
+   "available_at": 129,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00056",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Northwind Components",
+   "available_at": 157,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00057",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Coastal Plastics",
+   "available_at": 181,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00058",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Coastal Plastics",
+   "available_at": 203,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00059",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Coastal Plastics",
+   "available_at": 230,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00060",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Coastal Plastics",
+   "available_at": 253,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00061",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Coastal Plastics",
+   "available_at": 277,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00062",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Northwind Components",
+   "available_at": 303,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00063",
+   "item": "BIKE:Grip",
+   "quantity": 712,
+   "supplier": "Northwind Components",
+   "available_at": 325,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00064",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Coastal Plastics",
+   "available_at": 10,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00065",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Northwind Components",
+   "available_at": 30,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00066",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Coastal Plastics",
+   "available_at": 55,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00067",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Apex Precision",
+   "available_at": 76,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00068",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Northwind Components",
+   "available_at": 98,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00069",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Coastal Plastics",
+   "available_at": 121,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00070",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Northwind Components",
+   "available_at": 144,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00071",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Apex Precision",
+   "available_at": 168,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00072",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Apex Precision",
+   "available_at": 191,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00073",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Apex Precision",
+   "available_at": 215,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00074",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Coastal Plastics",
+   "available_at": 236,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00075",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Northwind Components",
+   "available_at": 260,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00076",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Coastal Plastics",
+   "available_at": 285,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00077",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Northwind Components",
+   "available_at": 304,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00078",
+   "item": "BIKE:Handlebar",
+   "quantity": 337,
+   "supplier": "Northwind Components",
+   "available_at": 329,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00079",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Northwind Components",
+   "available_at": 11,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00080",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Coastal Plastics",
+   "available_at": 33,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00081",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Northwind Components",
+   "available_at": 52,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00082",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Coastal Plastics",
+   "available_at": 77,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00083",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Northwind Components",
+   "available_at": 98,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00084",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Apex Precision",
+   "available_at": 123,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00085",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Coastal Plastics",
+   "available_at": 147,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00086",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Apex Precision",
+   "available_at": 171,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00087",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Northwind Components",
+   "available_at": 192,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00088",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Apex Precision",
+   "available_at": 212,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00089",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Apex Precision",
+   "available_at": 239,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00090",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Northwind Components",
+   "available_at": 258,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00091",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Apex Precision",
+   "available_at": 281,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00092",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Northwind Components",
+   "available_at": 305,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00093",
+   "item": "BIKE:Headset",
+   "quantity": 343,
+   "supplier": "Northwind Components",
+   "available_at": 331,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00094",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Northwind Components",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00095",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Northwind Components",
+   "available_at": 43,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00096",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Apex Precision",
+   "available_at": 78,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00097",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Coastal Plastics",
+   "available_at": 109,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00098",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Apex Precision",
+   "available_at": 146,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00099",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Coastal Plastics",
+   "available_at": 180,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00100",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Apex Precision",
+   "available_at": 213,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00101",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Apex Precision",
+   "available_at": 247,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00102",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Northwind Components",
+   "available_at": 282,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00103",
+   "item": "BIKE:Inner Tube",
+   "quantity": 945,
+   "supplier": "Apex Precision",
+   "available_at": 318,
+   "status": "active",
+   "unit_cost": 0.9,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00104",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Coastal Plastics",
+   "available_at": 10,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00105",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Northwind Components",
+   "available_at": 38,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00106",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Northwind Components",
+   "available_at": 64,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00107",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Apex Precision",
+   "available_at": 96,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00108",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Coastal Plastics",
+   "available_at": 125,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00109",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Coastal Plastics",
+   "available_at": 151,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00110",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Coastal Plastics",
+   "available_at": 180,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00111",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Northwind Components",
+   "available_at": 210,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00112",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Northwind Components",
+   "available_at": 239,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00113",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Apex Precision",
+   "available_at": 264,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00114",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Northwind Components",
+   "available_at": 295,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00115",
+   "item": "BIKE:Pedal",
+   "quantity": 883,
+   "supplier": "Coastal Plastics",
+   "available_at": 325,
+   "status": "active",
+   "unit_cost": 1.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00116",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 45,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.6,
+   "expedite_available_at": 10,
+   "expedite_unit_premium": 2.7
+  },
+  {
+   "id": "PO-00117",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 79,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.6,
+   "expedite_available_at": 44,
+   "expedite_unit_premium": 2.7
+  },
+  {
+   "id": "PO-00118",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 111,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.6,
+   "expedite_available_at": 76,
+   "expedite_unit_premium": 2.7
+  },
+  {
+   "id": "PO-00119",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 112,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00120",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 148,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00121",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 181,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00122",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 214,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00123",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 250,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00124",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 282,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00125",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 431,
+   "supplier": "Summit Metals",
+   "available_at": 318,
+   "status": "active",
+   "unit_cost": 9.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00126",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Apex Precision",
+   "available_at": 10,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00127",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Apex Precision",
+   "available_at": 45,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00128",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Northwind Components",
+   "available_at": 78,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00129",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Coastal Plastics",
+   "available_at": 112,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00130",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Coastal Plastics",
+   "available_at": 148,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00131",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Apex Precision",
+   "available_at": 181,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00132",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Apex Precision",
+   "available_at": 212,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00133",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Apex Precision",
+   "available_at": 251,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00134",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Apex Precision",
+   "available_at": 282,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00135",
+   "item": "BIKE:Saddle",
+   "quantity": 505,
+   "supplier": "Coastal Plastics",
+   "available_at": 318,
+   "status": "active",
+   "unit_cost": 4.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00136",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Northwind Components",
+   "available_at": 10,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00137",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Coastal Plastics",
+   "available_at": 33,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00138",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Coastal Plastics",
+   "available_at": 57,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00139",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Northwind Components",
+   "available_at": 84,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00140",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Northwind Components",
+   "available_at": 107,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00141",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Coastal Plastics",
+   "available_at": 129,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00142",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Apex Precision",
+   "available_at": 156,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00143",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Northwind Components",
+   "available_at": 179,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00144",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Coastal Plastics",
+   "available_at": 203,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00145",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Coastal Plastics",
+   "available_at": 230,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00146",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Northwind Components",
+   "available_at": 252,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00147",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Northwind Components",
+   "available_at": 278,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00148",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Coastal Plastics",
+   "available_at": 305,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00149",
+   "item": "BIKE:Shifter",
+   "quantity": 348,
+   "supplier": "Apex Precision",
+   "available_at": 328,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00150",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Northwind Components",
+   "available_at": 9,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00151",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Coastal Plastics",
+   "available_at": 33,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00152",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Apex Precision",
+   "available_at": 56,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00153",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Northwind Components",
+   "available_at": 79,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00154",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Coastal Plastics",
+   "available_at": 101,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00155",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Apex Precision",
+   "available_at": 125,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00156",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Coastal Plastics",
+   "available_at": 145,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00157",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Northwind Components",
+   "available_at": 167,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00158",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Coastal Plastics",
+   "available_at": 192,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00159",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Apex Precision",
+   "available_at": 214,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00160",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Coastal Plastics",
+   "available_at": 235,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00161",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Coastal Plastics",
+   "available_at": 260,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00162",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Northwind Components",
+   "available_at": 283,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00163",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Coastal Plastics",
+   "available_at": 305,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00164",
+   "item": "BIKE:Suspension Fork",
+   "quantity": 326,
+   "supplier": "Apex Precision",
+   "available_at": 328,
+   "status": "active",
+   "unit_cost": 15.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00165",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Coastal Plastics",
+   "available_at": 11,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00166",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Apex Precision",
+   "available_at": 35,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00167",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Coastal Plastics",
+   "available_at": 60,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00168",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Apex Precision",
+   "available_at": 83,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00169",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Apex Precision",
+   "available_at": 105,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00170",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Apex Precision",
+   "available_at": 131,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00171",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Apex Precision",
+   "available_at": 155,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00172",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Northwind Components",
+   "available_at": 179,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00173",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Coastal Plastics",
+   "available_at": 206,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00174",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Apex Precision",
+   "available_at": 228,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00175",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Apex Precision",
+   "available_at": 255,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00176",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Northwind Components",
+   "available_at": 276,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00177",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Northwind Components",
+   "available_at": 304,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00178",
+   "item": "BIKE:Tire",
+   "quantity": 688,
+   "supplier": "Northwind Components",
+   "available_at": 327,
+   "status": "active",
+   "unit_cost": 3.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00179",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Northwind Components",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00180",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Northwind Components",
+   "available_at": 31,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00181",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Northwind Components",
+   "available_at": 54,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00182",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Coastal Plastics",
+   "available_at": 78,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00183",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Coastal Plastics",
+   "available_at": 102,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00184",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Northwind Components",
+   "available_at": 121,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00185",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Northwind Components",
+   "available_at": 148,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00186",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Apex Precision",
+   "available_at": 169,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00187",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Apex Precision",
+   "available_at": 193,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00188",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Northwind Components",
+   "available_at": 214,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00189",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Coastal Plastics",
+   "available_at": 236,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00190",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Apex Precision",
+   "available_at": 259,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00191",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Coastal Plastics",
+   "available_at": 281,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00192",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Northwind Components",
+   "available_at": 307,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00193",
+   "item": "BIKE:Wheelset",
+   "quantity": 344,
+   "supplier": "Coastal Plastics",
+   "available_at": 328,
+   "status": "active",
+   "unit_cost": 21.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00194",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Apex Precision",
+   "available_at": 11,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00195",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Coastal Plastics",
+   "available_at": 33,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00196",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Northwind Components",
+   "available_at": 55,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00197",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Northwind Components",
+   "available_at": 77,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00198",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Northwind Components",
+   "available_at": 100,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00199",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Northwind Components",
+   "available_at": 121,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00200",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Northwind Components",
+   "available_at": 145,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00201",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Northwind Components",
+   "available_at": 168,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00202",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Coastal Plastics",
+   "available_at": 192,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00203",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Coastal Plastics",
+   "available_at": 214,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00204",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Apex Precision",
+   "available_at": 236,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00205",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Northwind Components",
+   "available_at": 262,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00206",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Apex Precision",
+   "available_at": 283,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00207",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Coastal Plastics",
+   "available_at": 304,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00208",
+   "item": "Hardware Kit",
+   "quantity": 2527,
+   "supplier": "Apex Precision",
+   "available_at": 330,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00209",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Apex Precision",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00210",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Apex Precision",
+   "available_at": 31,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00211",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Northwind Components",
+   "available_at": 54,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00212",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Apex Precision",
+   "available_at": 76,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00213",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Apex Precision",
+   "available_at": 99,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00214",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Northwind Components",
+   "available_at": 121,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00215",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Northwind Components",
+   "available_at": 148,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00216",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Coastal Plastics",
+   "available_at": 168,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00217",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Coastal Plastics",
+   "available_at": 191,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00218",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Coastal Plastics",
+   "available_at": 216,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00219",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Coastal Plastics",
+   "available_at": 236,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00220",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Apex Precision",
+   "available_at": 258,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00221",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Coastal Plastics",
+   "available_at": 282,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00222",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Coastal Plastics",
+   "available_at": 304,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00223",
+   "item": "KAYAK:Carry Handle",
+   "quantity": 669,
+   "supplier": "Coastal Plastics",
+   "available_at": 327,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00224",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Coastal Plastics",
+   "available_at": 9,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00225",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Apex Precision",
+   "available_at": 32,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00226",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Apex Precision",
+   "available_at": 55,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00227",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Apex Precision",
+   "available_at": 75,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00228",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Coastal Plastics",
+   "available_at": 102,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00229",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Northwind Components",
+   "available_at": 121,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00230",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Apex Precision",
+   "available_at": 146,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00231",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Apex Precision",
+   "available_at": 171,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00232",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Apex Precision",
+   "available_at": 191,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00233",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Apex Precision",
+   "available_at": 215,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00234",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Coastal Plastics",
+   "available_at": 239,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00235",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Apex Precision",
+   "available_at": 258,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00236",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Coastal Plastics",
+   "available_at": 282,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00237",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Northwind Components",
+   "available_at": 306,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00238",
+   "item": "KAYAK:Deck Bungee",
+   "quantity": 362,
+   "supplier": "Apex Precision",
+   "available_at": 330,
+   "status": "active",
+   "unit_cost": 0.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00239",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Apex Precision",
+   "available_at": 11,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00240",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Apex Precision",
+   "available_at": 35,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00241",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Coastal Plastics",
+   "available_at": 62,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00242",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Northwind Components",
+   "available_at": 86,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00243",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Apex Precision",
+   "available_at": 114,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00244",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Coastal Plastics",
+   "available_at": 142,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00245",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Northwind Components",
+   "available_at": 169,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00246",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Coastal Plastics",
+   "available_at": 194,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00247",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Apex Precision",
+   "available_at": 218,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00248",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Coastal Plastics",
+   "available_at": 244,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00249",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Apex Precision",
+   "available_at": 272,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00250",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Northwind Components",
+   "available_at": 297,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00251",
+   "item": "KAYAK:Drain Plug",
+   "quantity": 414,
+   "supplier": "Coastal Plastics",
+   "available_at": 326,
+   "status": "active",
+   "unit_cost": 0.4,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00252",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Coastal Plastics",
+   "available_at": 9,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00253",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Apex Precision",
+   "available_at": 35,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00254",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Coastal Plastics",
+   "available_at": 60,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00255",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Apex Precision",
+   "available_at": 80,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00256",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Northwind Components",
+   "available_at": 107,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00257",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Coastal Plastics",
+   "available_at": 132,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00258",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Apex Precision",
+   "available_at": 157,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00259",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Northwind Components",
+   "available_at": 180,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00260",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Northwind Components",
+   "available_at": 206,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00261",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Northwind Components",
+   "available_at": 230,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00262",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Coastal Plastics",
+   "available_at": 256,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00263",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Northwind Components",
+   "available_at": 276,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00264",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Coastal Plastics",
+   "available_at": 302,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00265",
+   "item": "KAYAK:Footrest",
+   "quantity": 745,
+   "supplier": "Northwind Components",
+   "available_at": 328,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00266",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Coastal Plastics",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00267",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Northwind Components",
+   "available_at": 34,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00268",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Apex Precision",
+   "available_at": 56,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00269",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Northwind Components",
+   "available_at": 81,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00270",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Apex Precision",
+   "available_at": 105,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00271",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Coastal Plastics",
+   "available_at": 130,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00272",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Northwind Components",
+   "available_at": 154,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00273",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Northwind Components",
+   "available_at": 182,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00274",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Northwind Components",
+   "available_at": 204,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00275",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Northwind Components",
+   "available_at": 228,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00276",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Coastal Plastics",
+   "available_at": 255,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00277",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Coastal Plastics",
+   "available_at": 277,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00278",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Coastal Plastics",
+   "available_at": 302,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00279",
+   "item": "KAYAK:HDPE Hull",
+   "quantity": 392,
+   "supplier": "Apex Precision",
+   "available_at": 329,
+   "status": "active",
+   "unit_cost": 40.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00280",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Apex Precision",
+   "available_at": 10,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00281",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Northwind Components",
+   "available_at": 31,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00282",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Northwind Components",
+   "available_at": 60,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00283",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Coastal Plastics",
+   "available_at": 84,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00284",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Northwind Components",
+   "available_at": 105,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00285",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Northwind Components",
+   "available_at": 130,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00286",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Northwind Components",
+   "available_at": 155,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00287",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Apex Precision",
+   "available_at": 182,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00288",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Coastal Plastics",
+   "available_at": 206,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00289",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Coastal Plastics",
+   "available_at": 228,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00290",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Northwind Components",
+   "available_at": 252,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00291",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Coastal Plastics",
+   "available_at": 280,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00292",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Northwind Components",
+   "available_at": 304,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00293",
+   "item": "KAYAK:Paddle",
+   "quantity": 384,
+   "supplier": "Coastal Plastics",
+   "available_at": 326,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00294",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Apex Precision",
+   "available_at": 8,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00295",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Northwind Components",
+   "available_at": 38,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00296",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Northwind Components",
+   "available_at": 70,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00297",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Coastal Plastics",
+   "available_at": 102,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00298",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Apex Precision",
+   "available_at": 131,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00299",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Apex Precision",
+   "available_at": 166,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00300",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Apex Precision",
+   "available_at": 194,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00301",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Northwind Components",
+   "available_at": 225,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00302",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Apex Precision",
+   "available_at": 259,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00303",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Northwind Components",
+   "available_at": 289,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00304",
+   "item": "KAYAK:Seat",
+   "quantity": 513,
+   "supplier": "Northwind Components",
+   "available_at": 321,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00305",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Coastal Plastics",
+   "available_at": 8,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00306",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Northwind Components",
+   "available_at": 37,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00307",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Coastal Plastics",
+   "available_at": 68,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00308",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Apex Precision",
+   "available_at": 95,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00309",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Northwind Components",
+   "available_at": 122,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00310",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Apex Precision",
+   "available_at": 152,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00311",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Apex Precision",
+   "available_at": 180,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00312",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Apex Precision",
+   "available_at": 209,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00313",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Northwind Components",
+   "available_at": 235,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00314",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Northwind Components",
+   "available_at": 268,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00315",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Northwind Components",
+   "available_at": 292,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00316",
+   "item": "RIP:Bushing",
+   "quantity": 8448,
+   "supplier": "Apex Precision",
+   "available_at": 324,
+   "status": "active",
+   "unit_cost": 0.36,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00317",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Northwind Components",
+   "available_at": 8,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00318",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Northwind Components",
+   "available_at": 32,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00319",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Coastal Plastics",
+   "available_at": 53,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00320",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Coastal Plastics",
+   "available_at": 78,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00321",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Northwind Components",
+   "available_at": 102,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00322",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Northwind Components",
+   "available_at": 124,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00323",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Apex Precision",
+   "available_at": 147,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00324",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Coastal Plastics",
+   "available_at": 167,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00325",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Coastal Plastics",
+   "available_at": 191,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00326",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Northwind Components",
+   "available_at": 216,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00327",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Apex Precision",
+   "available_at": 238,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00328",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Coastal Plastics",
+   "available_at": 258,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00329",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Apex Precision",
+   "available_at": 282,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00330",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Apex Precision",
+   "available_at": 305,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00331",
+   "item": "RIP:Handle Grip",
+   "quantity": 3370,
+   "supplier": "Northwind Components",
+   "available_at": 327,
+   "status": "active",
+   "unit_cost": 1.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00332",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00333",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 37,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00334",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 61,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00335",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 86,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00336",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 116,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00337",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 138,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00338",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Coastal Plastics",
+   "available_at": 165,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00339",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Northwind Components",
+   "available_at": 191,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00340",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 220,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00341",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 244,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00342",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 272,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00343",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Apex Precision",
+   "available_at": 298,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00344",
+   "item": "RIP:Steel Rail",
+   "quantity": 1842,
+   "supplier": "Coastal Plastics",
+   "available_at": 324,
+   "status": "active",
+   "unit_cost": 7.2,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00345",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Coastal Plastics",
+   "available_at": 9,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00346",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Apex Precision",
+   "available_at": 38,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00347",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Apex Precision",
+   "available_at": 70,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00348",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Apex Precision",
+   "available_at": 102,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00349",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Northwind Components",
+   "available_at": 132,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00350",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Coastal Plastics",
+   "available_at": 165,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00351",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Apex Precision",
+   "available_at": 198,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00352",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Coastal Plastics",
+   "available_at": 226,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00353",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Northwind Components",
+   "available_at": 256,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00354",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Coastal Plastics",
+   "available_at": 291,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00355",
+   "item": "RIP:Wheel",
+   "quantity": 9287,
+   "supplier": "Northwind Components",
+   "available_at": 318,
+   "status": "active",
+   "unit_cost": 0.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00356",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 46,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.6,
+   "expedite_available_at": 11,
+   "expedite_unit_premium": 6.0
+  },
+  {
+   "id": "PO-00357",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 73,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.6,
+   "expedite_available_at": 38,
+   "expedite_unit_premium": 6.0
+  },
+  {
+   "id": "PO-00358",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 105,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.6,
+   "expedite_available_at": 70,
+   "expedite_unit_premium": 6.0
+  },
+  {
+   "id": "PO-00359",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 139,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.6,
+   "expedite_available_at": 104,
+   "expedite_unit_premium": 6.0
+  },
+  {
+   "id": "PO-00360",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 135,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00361",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 165,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00362",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 196,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00363",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 226,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00364",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 260,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00365",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 291,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00366",
+   "item": "SAFE:Combination Lock",
+   "quantity": 488,
+   "supplier": "Summit Metals",
+   "available_at": 322,
+   "status": "active",
+   "unit_cost": 20.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00367",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Apex Precision",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00368",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Coastal Plastics",
+   "available_at": 32,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00369",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Apex Precision",
+   "available_at": 58,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00370",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Coastal Plastics",
+   "available_at": 84,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00371",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Apex Precision",
+   "available_at": 107,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00372",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Northwind Components",
+   "available_at": 130,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00373",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Northwind Components",
+   "available_at": 156,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00374",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Coastal Plastics",
+   "available_at": 178,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00375",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Coastal Plastics",
+   "available_at": 203,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00376",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Northwind Components",
+   "available_at": 231,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00377",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Coastal Plastics",
+   "available_at": 252,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00378",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Northwind Components",
+   "available_at": 277,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00379",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Northwind Components",
+   "available_at": 301,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00380",
+   "item": "SAFE:Door Panel",
+   "quantity": 449,
+   "supplier": "Coastal Plastics",
+   "available_at": 329,
+   "status": "active",
+   "unit_cost": 28.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00381",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Apex Precision",
+   "available_at": 11,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00382",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Apex Precision",
+   "available_at": 35,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00383",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Northwind Components",
+   "available_at": 68,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00384",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Coastal Plastics",
+   "available_at": 92,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00385",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Coastal Plastics",
+   "available_at": 121,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00386",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Northwind Components",
+   "available_at": 153,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00387",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Northwind Components",
+   "available_at": 181,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00388",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Northwind Components",
+   "available_at": 209,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00389",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Northwind Components",
+   "available_at": 237,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00390",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Apex Precision",
+   "available_at": 267,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00391",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Coastal Plastics",
+   "available_at": 292,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00392",
+   "item": "SAFE:Fireboard Lining",
+   "quantity": 2014,
+   "supplier": "Coastal Plastics",
+   "available_at": 322,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00393",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Northwind Components",
+   "available_at": 10,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00394",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Apex Precision",
+   "available_at": 35,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00395",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Coastal Plastics",
+   "available_at": 65,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00396",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Apex Precision",
+   "available_at": 93,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00397",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Coastal Plastics",
+   "available_at": 123,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00398",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Coastal Plastics",
+   "available_at": 152,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00399",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Coastal Plastics",
+   "available_at": 180,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00400",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Coastal Plastics",
+   "available_at": 207,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00401",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Apex Precision",
+   "available_at": 239,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00402",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Northwind Components",
+   "available_at": 266,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00403",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Apex Precision",
+   "available_at": 293,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00404",
+   "item": "SAFE:Gun Rack",
+   "quantity": 489,
+   "supplier": "Northwind Components",
+   "available_at": 325,
+   "status": "active",
+   "unit_cost": 8.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00405",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Apex Precision",
+   "available_at": 11,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00406",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Coastal Plastics",
+   "available_at": 41,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00407",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Northwind Components",
+   "available_at": 75,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00408",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Apex Precision",
+   "available_at": 109,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00409",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Coastal Plastics",
+   "available_at": 146,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00410",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Coastal Plastics",
+   "available_at": 180,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00411",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Northwind Components",
+   "available_at": 213,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00412",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Northwind Components",
+   "available_at": 247,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00413",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Northwind Components",
+   "available_at": 285,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00414",
+   "item": "SAFE:Handle",
+   "quantity": 644,
+   "supplier": "Apex Precision",
+   "available_at": 316,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00415",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Apex Precision",
+   "available_at": 9,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00416",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Northwind Components",
+   "available_at": 33,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00417",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Northwind Components",
+   "available_at": 60,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00418",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Apex Precision",
+   "available_at": 81,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00419",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Northwind Components",
+   "available_at": 105,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00420",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Apex Precision",
+   "available_at": 131,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00421",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Apex Precision",
+   "available_at": 154,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00422",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Coastal Plastics",
+   "available_at": 181,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00423",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Northwind Components",
+   "available_at": 204,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00424",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Apex Precision",
+   "available_at": 227,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00425",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Apex Precision",
+   "available_at": 255,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00426",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Coastal Plastics",
+   "available_at": 279,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00427",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Coastal Plastics",
+   "available_at": 302,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00428",
+   "item": "SAFE:Hinge Set",
+   "quantity": 426,
+   "supplier": "Apex Precision",
+   "available_at": 325,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00429",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Coastal Plastics",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00430",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Apex Precision",
+   "available_at": 41,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00431",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Northwind Components",
+   "available_at": 76,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00432",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Apex Precision",
+   "available_at": 111,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00433",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Northwind Components",
+   "available_at": 148,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00434",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Northwind Components",
+   "available_at": 180,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00435",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Apex Precision",
+   "available_at": 216,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00436",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Coastal Plastics",
+   "available_at": 248,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00437",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Coastal Plastics",
+   "available_at": 282,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00438",
+   "item": "SAFE:Interior Carpet",
+   "quantity": 578,
+   "supplier": "Coastal Plastics",
+   "available_at": 316,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00439",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Apex Precision",
+   "available_at": 10,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00440",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Apex Precision",
+   "available_at": 38,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00441",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Apex Precision",
+   "available_at": 64,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00442",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Northwind Components",
+   "available_at": 92,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00443",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Apex Precision",
+   "available_at": 124,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00444",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Coastal Plastics",
+   "available_at": 150,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00445",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Coastal Plastics",
+   "available_at": 182,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00446",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Northwind Components",
+   "available_at": 209,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00447",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Northwind Components",
+   "available_at": 239,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00448",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Apex Precision",
+   "available_at": 268,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00449",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Northwind Components",
+   "available_at": 295,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00450",
+   "item": "SAFE:Locking Bolt",
+   "quantity": 3149,
+   "supplier": "Apex Precision",
+   "available_at": 321,
+   "status": "active",
+   "unit_cost": 1.6,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00451",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Coastal Plastics",
+   "available_at": 10,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00452",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Coastal Plastics",
+   "available_at": 42,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00453",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Coastal Plastics",
+   "available_at": 77,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00454",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Coastal Plastics",
+   "available_at": 109,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00455",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Coastal Plastics",
+   "available_at": 144,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00456",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Northwind Components",
+   "available_at": 180,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00457",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Apex Precision",
+   "available_at": 212,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00458",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Coastal Plastics",
+   "available_at": 249,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00459",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Apex Precision",
+   "available_at": 283,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00460",
+   "item": "SAFE:Shipping Crate",
+   "quantity": 576,
+   "supplier": "Coastal Plastics",
+   "available_at": 316,
+   "status": "active",
+   "unit_cost": 4.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00461",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Northwind Components",
+   "available_at": 11,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00462",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Coastal Plastics",
+   "available_at": 39,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00463",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Northwind Components",
+   "available_at": 71,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00464",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Coastal Plastics",
+   "available_at": 100,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00465",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Coastal Plastics",
+   "available_at": 135,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00466",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Coastal Plastics",
+   "available_at": 164,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00467",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Coastal Plastics",
+   "available_at": 198,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00468",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Northwind Components",
+   "available_at": 226,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00469",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Northwind Components",
+   "available_at": 257,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00470",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Coastal Plastics",
+   "available_at": 287,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00471",
+   "item": "SAFE:Steel Body Panel",
+   "quantity": 566,
+   "supplier": "Coastal Plastics",
+   "available_at": 321,
+   "status": "active",
+   "unit_cost": 56.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00472",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Coastal Plastics",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00473",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Coastal Plastics",
+   "available_at": 33,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00474",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Northwind Components",
+   "available_at": 58,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00475",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Apex Precision",
+   "available_at": 80,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00476",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Apex Precision",
+   "available_at": 108,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00477",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Coastal Plastics",
+   "available_at": 130,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00478",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Northwind Components",
+   "available_at": 155,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00479",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Coastal Plastics",
+   "available_at": 179,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00480",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Apex Precision",
+   "available_at": 207,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00481",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Northwind Components",
+   "available_at": 230,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00482",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Apex Precision",
+   "available_at": 252,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00483",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Coastal Plastics",
+   "available_at": 276,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00484",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Apex Precision",
+   "available_at": 305,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00485",
+   "item": "Shipping Carton",
+   "quantity": 2616,
+   "supplier": "Northwind Components",
+   "available_at": 327,
+   "status": "active",
+   "unit_cost": 1.8,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00486",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Apex Precision",
+   "available_at": 9,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00487",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Coastal Plastics",
+   "available_at": 37,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00488",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Northwind Components",
+   "available_at": 63,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00489",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Apex Precision",
+   "available_at": 90,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00490",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Northwind Components",
+   "available_at": 113,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00491",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Apex Precision",
+   "available_at": 141,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00492",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Northwind Components",
+   "available_at": 167,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00493",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Apex Precision",
+   "available_at": 193,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00494",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Apex Precision",
+   "available_at": 221,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00495",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Coastal Plastics",
+   "available_at": 247,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00496",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Apex Precision",
+   "available_at": 270,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00497",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Northwind Components",
+   "available_at": 298,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00498",
+   "item": "VEST:Buckle",
+   "quantity": 4511,
+   "supplier": "Northwind Components",
+   "available_at": 323,
+   "status": "active",
+   "unit_cost": 0.3,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00499",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Coastal Plastics",
+   "available_at": 8,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00500",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Apex Precision",
+   "available_at": 36,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00501",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Northwind Components",
+   "available_at": 60,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00502",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Northwind Components",
+   "available_at": 86,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00503",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Apex Precision",
+   "available_at": 116,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00504",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Coastal Plastics",
+   "available_at": 141,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00505",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Northwind Components",
+   "available_at": 169,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00506",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Coastal Plastics",
+   "available_at": 192,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00507",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Apex Precision",
+   "available_at": 219,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00508",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Apex Precision",
+   "available_at": 248,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00509",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Apex Precision",
+   "available_at": 272,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00510",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Apex Precision",
+   "available_at": 300,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00511",
+   "item": "VEST:Foam Panel",
+   "quantity": 6368,
+   "supplier": "Coastal Plastics",
+   "available_at": 323,
+   "status": "active",
+   "unit_cost": 0.75,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00512",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Apex Precision",
+   "available_at": 8,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00513",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Apex Precision",
+   "available_at": 33,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00514",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Apex Precision",
+   "available_at": 61,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00515",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Northwind Components",
+   "available_at": 90,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00516",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Apex Precision",
+   "available_at": 112,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00517",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Coastal Plastics",
+   "available_at": 140,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00518",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Coastal Plastics",
+   "available_at": 169,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00519",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Coastal Plastics",
+   "available_at": 193,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00520",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Northwind Components",
+   "available_at": 218,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00521",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Northwind Components",
+   "available_at": 244,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00522",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Northwind Components",
+   "available_at": 271,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00523",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Apex Precision",
+   "available_at": 297,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00524",
+   "item": "VEST:Neoprene Shell",
+   "quantity": 1510,
+   "supplier": "Apex Precision",
+   "available_at": 326,
+   "status": "active",
+   "unit_cost": 6.0,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00525",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Apex Precision",
+   "available_at": 9,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00526",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Coastal Plastics",
+   "available_at": 45,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00527",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Coastal Plastics",
+   "available_at": 78,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00528",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Northwind Components",
+   "available_at": 109,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00529",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Coastal Plastics",
+   "available_at": 148,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00530",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Northwind Components",
+   "available_at": 181,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00531",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Apex Precision",
+   "available_at": 216,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00532",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Apex Precision",
+   "available_at": 249,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00533",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Northwind Components",
+   "available_at": 282,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00534",
+   "item": "VEST:Poly Bag",
+   "quantity": 2130,
+   "supplier": "Apex Precision",
+   "available_at": 319,
+   "status": "active",
+   "unit_cost": 0.15,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00535",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Apex Precision",
+   "available_at": 7,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00536",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Apex Precision",
+   "available_at": 39,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00537",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Northwind Components",
+   "available_at": 70,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00538",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Northwind Components",
+   "available_at": 100,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00539",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Coastal Plastics",
+   "available_at": 132,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00540",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Northwind Components",
+   "available_at": 163,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00541",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Northwind Components",
+   "available_at": 194,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00542",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Northwind Components",
+   "available_at": 225,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00543",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Northwind Components",
+   "available_at": 258,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00544",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Coastal Plastics",
+   "available_at": 290,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00545",
+   "item": "VEST:Safety Label",
+   "quantity": 1840,
+   "supplier": "Apex Precision",
+   "available_at": 321,
+   "status": "active",
+   "unit_cost": 0.1,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00546",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Northwind Components",
+   "available_at": 11,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00547",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Coastal Plastics",
+   "available_at": 37,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00548",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Coastal Plastics",
+   "available_at": 62,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00549",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Northwind Components",
+   "available_at": 86,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00550",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Apex Precision",
+   "available_at": 112,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00551",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Northwind Components",
+   "available_at": 141,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00552",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Apex Precision",
+   "available_at": 168,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00553",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Coastal Plastics",
+   "available_at": 192,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00554",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Apex Precision",
+   "available_at": 221,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00555",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Northwind Components",
+   "available_at": 245,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00556",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Apex Precision",
+   "available_at": 270,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00557",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Coastal Plastics",
+   "available_at": 300,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00558",
+   "item": "VEST:Webbing",
+   "quantity": 1420,
+   "supplier": "Apex Precision",
+   "available_at": 324,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00559",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Coastal Plastics",
+   "available_at": 10,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00560",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Northwind Components",
+   "available_at": 38,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00561",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Apex Precision",
+   "available_at": 66,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00562",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Coastal Plastics",
+   "available_at": 92,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00563",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Apex Precision",
+   "available_at": 124,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00564",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Northwind Components",
+   "available_at": 152,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00565",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Apex Precision",
+   "available_at": 181,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00566",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Coastal Plastics",
+   "available_at": 211,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00567",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Apex Precision",
+   "available_at": 236,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00568",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Apex Precision",
+   "available_at": 268,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00569",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Coastal Plastics",
+   "available_at": 296,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  },
+  {
+   "id": "PO-00570",
+   "item": "VEST:Zipper",
+   "quantity": 1610,
+   "supplier": "Coastal Plastics",
+   "available_at": 325,
+   "status": "active",
+   "unit_cost": 0.5,
+   "confidence": 0.95
+  }
+ ],
+ "supply_options": [
+  {
+   "id": "RW-BIKE:Rear Derailleur",
+   "supplier": "In-house rework",
+   "item": "BIKE:Rear Derailleur",
+   "quantity": 727,
+   "lead_time": 10,
+   "unit_cost": 3.15,
+   "qualified": true,
+   "consumes_item": "BIKE:Returned Derailleur"
+  }
+ ],
+ "fixed_tasks": [
+  {
+   "id": "HOLD-SAFE-RETEST",
+   "resource": "SAFE line",
+   "start": 14,
+   "finish": 56
+  }
+ ],
+ "provenance": {
+  "real": "DataCo Smart Supply Chain (doi:10.17632/8gx2fvg2k6.5, CC BY 4.0), sha256 fa6d022ed437155e1a2f0378710602848703c8a7f203f7ff5d77805bf8480aa6",
+  "notional": "BOM, stock, POs, capacity, supplier disruption, quality hold (fixed rules, seed 20161003)"
+ }
+}

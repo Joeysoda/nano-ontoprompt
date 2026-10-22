@@ -13,24 +13,40 @@ from app.services.v2.object_query.normalize import stable_hash
 
 OBJECT_TYPES = {
     "CustomerOrder": {"item": "string", "quantity": "double", "due_at": "double", "priority": "double", "unit_revenue": "double",
-                      "processing_days": "double", "resource": "string", "alternate_resources": "array", "allocation_rank": "double"},
+                      "processing_days": "double", "resource": "string", "alternate_resources": "array", "allocation_rank": "double",
+                      "product_line": "string", "customer": "string", "source_orders": "double"},
     "BOMLine": {"parent_item": "string", "component_item": "string", "quantity_per": "double"},
     "InventoryLot": {"item": "string", "location": "string", "quantity": "double"},
     "Reservation": {"item": "string", "demand_id": "string", "quantity": "double", "status": "string"},
     "SupplyCommitment": {"supplier": "string", "item": "string", "quantity": "double", "available_at": "double", "expires_at": "string",
                          "status": "string", "unit_cost": "double", "expedite_available_at": "double",
-                         "expedite_unit_premium": "double", "expedited": "boolean", "source_option_id": "string"},
-    "SupplyOption": {"supplier": "string", "item": "string", "quantity": "double", "lead_time": "double", "unit_cost": "double", "qualified": "boolean"},
+                         "expedite_unit_premium": "double", "expedited": "boolean", "source_option_id": "string", "confidence": "double",
+                         "rescheduled_from": "double"},
+    "SupplyOption": {"supplier": "string", "item": "string", "quantity": "double", "lead_time": "double", "unit_cost": "double", "qualified": "boolean",
+                     "consumes_item": "string"},
     "FixedTask": {"resource": "string", "start": "double", "finish": "double"},
 }
+# Planning master data used by the portfolio planning model.  ``code`` keeps the
+# business key, because object ids are namespaced per ontology.
+PLANNING_TYPES = {
+    "ProductLine": {"code": "string", "name": "string", "source_product": "string", "policy": "string", "unit_price": "double",
+                    "weekly_rate": "double", "conversion_cost": "double", "resource": "string"},
+    "PlanningPolicy": {"code": "string", "capacity_factor": "double", "pull_in_days": "double", "conversion_factor": "double",
+                       "exclude_low_confidence": "boolean"},
+    "ItemMaster": {"code": "string", "kind": "string", "name": "string", "product_line": "string", "unit_cost": "double",
+                   "lead_time_days": "double", "critical": "boolean"},
+}
+OBJECT_TYPES.update(PLANNING_TYPES)
+CODED_TYPES = set(PLANNING_TYPES)
 # Study input key -> object type, in template order.
 INPUT_TYPES = {"demands": "CustomerOrder", "boms": "BOMLine", "inventory": "InventoryLot", "reservations": "Reservation",
                "supply_commitments": "SupplyCommitment", "supply_options": "SupplyOption", "fixed_tasks": "FixedTask"}
+PLANNING_INPUT_TYPES = {**INPUT_TYPES, "product_lines": "ProductLine", "policy_definitions": "PlanningPolicy", "items": "ItemMaster"}
 # Actions that notify a supplier cannot be undone by reverting Ontology edits.
-EXTERNAL_ACTIONS = {"expedite_supply_commitment", "create_purchase_order"}
+EXTERNAL_ACTIONS = {"expedite_supply_commitment", "create_purchase_order", "reschedule_supply_commitment"}
 
 
-def fixture_objects(fixture: dict, *, id_prefix: str) -> list[dict]:
+def fixture_objects(fixture: dict, *, id_prefix: str, input_types: dict | None = None) -> list[dict]:
     """Turn a fixture into graph instances ({id, entity_type, properties}).
 
     Instance ids are global across ontologies, so every object id (and the one
@@ -38,11 +54,13 @@ def fixture_objects(fixture: dict, *, id_prefix: str) -> list[dict]:
     ``id_prefix``.  Item codes are business keys and stay unprefixed.
     """
     nodes = []
-    for key, kind in INPUT_TYPES.items():
+    for key, kind in (input_types or INPUT_TYPES).items():
         for index, row in enumerate(fixture.get(key, [])):
             local_id = row.get("id") or (f"BOM-{row['parent_item']}-{row['component_item']}" if kind == "BOMLine" else f"{kind}-{index}")
             object_id = f"{id_prefix}{local_id}"
             props = {name: value for name, value in row.items() if name != "id" and value is not None}
+            if kind in CODED_TYPES:
+                props["code"] = local_id
             if kind == "Reservation":
                 props["demand_id"] = f"{id_prefix}{props['demand_id']}"
             unknown = set(props) - set(OBJECT_TYPES[kind])
@@ -52,7 +70,8 @@ def fixture_objects(fixture: dict, *, id_prefix: str) -> list[dict]:
     return nodes
 
 
-def seed_material_shortage_ontology(db, graph_service, ontology_id: str, fixture: dict, *, id_prefix: str) -> list[dict]:
+def seed_material_shortage_ontology(db, graph_service, ontology_id: str, fixture: dict, *, id_prefix: str,
+                                    input_types: dict | None = None) -> list[dict]:
     """Create object types, SQL instances and their graph projection."""
     from app.models.entity import Entity
     from app.models.entity_instance import EntityInstance
@@ -66,7 +85,7 @@ def seed_material_shortage_ontology(db, graph_service, ontology_id: str, fixture
             db.add(entity)
             db.flush()
         entities[name] = entity
-    nodes = fixture_objects(fixture, id_prefix=id_prefix)
+    nodes = fixture_objects(fixture, id_prefix=id_prefix, input_types=input_types)
     for node in nodes:
         db.add(EntityInstance(id=node["id"], entity_id=entities[node["entity_type"]].id, ontology_id=ontology_id,
                               row_identity=node["id"], row_data=dict(node["properties"])))
@@ -114,7 +133,7 @@ def compile_candidate(ontology_id: str, snapshot, candidate: dict, *, run_id: st
     compiled = []
     for action in candidate["actions"]:
         kind = action["action_type"]
-        edits = []
+        edits, internal = [], False
         if kind == "expedite_supply_commitment":
             current = props("SupplyCommitment", action["commitment_id"])
             if current.get("expedite_available_at") is None:
@@ -134,6 +153,27 @@ def compile_candidate(ontology_id: str, snapshot, candidate: dict, *, run_id: st
                                       "available_at": option.get("lead_time", 0), "status": "active",
                                       "unit_cost": option.get("unit_cost", 0), "source_option_id": action["option_id"]}),
                      set_prop("SupplyOption", action["option_id"], "quantity", float(option["quantity"]) - quantity)]
+            if option.get("consumes_item"):
+                internal = True  # in-house conversion: no supplier is notified
+                # Rework converts free stock of another part; take it from that part's lots in a stable order.
+                left = quantity
+                donors = sorted((key[1], row) for key, row in objects.items() if key[0] == "InventoryLot" and row.get("item") == option["consumes_item"])
+                for lot_id, lot in donors:
+                    take = min(left, float(lot.get("quantity", 0)))
+                    if take > 0:
+                        edits.append(set_prop("InventoryLot", lot_id, "quantity", float(lot["quantity"]) - take))
+                        left -= take
+                if left > 1e-9:
+                    raise CompileError("insufficient_rework_stock", f"Not enough {option['consumes_item']} to rework")
+        elif kind == "reschedule_supply_commitment":
+            current = props("SupplyCommitment", action["commitment_id"])
+            edits = [set_prop("SupplyCommitment", action["commitment_id"], "available_at", float(action["available_at"])),
+                     set_prop("SupplyCommitment", action["commitment_id"], "rescheduled_from", current.get("available_at"))]
+        elif kind == "set_product_line_policy":
+            matches = [key[1] for key, row in objects.items() if key[0] == "ProductLine" and row.get("code") == action["product_line"]]
+            if len(matches) != 1:
+                raise CompileError("object_not_found", f"Product line {action['product_line']} is not in the pinned data view")
+            edits = [set_prop("ProductLine", matches[0], "policy", action["policy"])]
         elif kind == "reassign_work_order":
             props("CustomerOrder", action["demand_id"])
             edits = [set_prop("CustomerOrder", action["demand_id"], "resource", action["to_resource"]),
@@ -147,5 +187,5 @@ def compile_candidate(ontology_id: str, snapshot, candidate: dict, *, run_id: st
         else:
             raise CompileError("unsupported_action", f"{kind} cannot be applied as Ontology edits")
         compiled.append({"action_type_id": kind, "invocation": action, "expected_edits": edits,
-                         "external_effect_class": "irreversible" if kind in EXTERNAL_ACTIONS else "none"})
+                         "external_effect_class": "irreversible" if kind in EXTERNAL_ACTIONS and not internal else "none"})
     return compiled

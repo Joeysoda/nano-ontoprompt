@@ -158,13 +158,16 @@ def compile_package_actions(db, run, ontology_id, candidate_id, actor):
         raise DecisionPackageError(exc.code, str(exc), 422) from exc
     outputs = run.result_manifest["nodes"][node_key]["outputs"]
     evidence = [{"evidence_type": "artifact", "content_digest": artifact.content_digest.removeprefix("sha256:"),
-                 "reference": {"artifact_id": artifact.id, "node_key": node_key, "candidate_id": candidate["id"]}},
-                {"evidence_type": "impact_path", "content_digest": outputs["impact_path"]["content_digest"],
-                 "reference": {"artifact_id": artifact.id, "path": f"nodes.{node_key}.outputs.impact_path"}},
-                {"evidence_type": "metric", "content_digest": candidate["content_digest"],
-                 "reference": {"candidate_id": candidate["id"], "revenue_at_risk_before": outputs["revenue_at_risk"],
-                               "revenue_at_risk_after": candidate["revenue_at_risk"], "incremental_cost": candidate["incremental_cost"],
-                               "harmed_orders": [row["demand_id"] for row in candidate["harmed_orders"]]}}]
+                 "reference": {"artifact_id": artifact.id, "node_key": node_key, "candidate_id": candidate["id"]}}]
+    if isinstance(outputs.get("impact_path"), dict):
+        evidence.append({"evidence_type": "impact_path", "content_digest": outputs["impact_path"]["content_digest"],
+                         "reference": {"artifact_id": artifact.id, "path": f"nodes.{node_key}.outputs.impact_path"}})
+    # Before/after figures the candidate carries, whichever model produced it.
+    figures = {key: candidate.get(key) for key in ("revenue_at_risk", "revenue_protected", "incremental_cost", "quarter_revenue_after",
+                                                    "quarter_revenue_delta", "otif_after", "capital_deferred") if candidate.get(key) is not None}
+    evidence.append({"evidence_type": "metric", "content_digest": candidate.get("content_digest") or stable_digest(candidate),
+                     "reference": {"candidate_id": candidate["id"], **figures, "revenue_at_risk_before": outputs.get("revenue_at_risk"),
+                                   "harmed_orders": [row["demand_id"] for row in candidate.get("harmed_orders", [])]}})
     return actions, evidence, candidate["label"]
 
 
