@@ -112,7 +112,8 @@ class _Reader:
         self.db, self.ontology_id, self.user, self.access, self.max_objects = db, ontology_id, user, access, max_objects
         self.metadata = load_sql_metadata(db, ontology_id)
         digest = metadata_digest(self.metadata)
-        self.view = (latest_snapshot(db, ontology_id, app_id, user, digest) or (reuse_any and latest_snapshot(db, ontology_id, None, user, digest))
+        # reuse_any (one-click binding only reads): the newest snapshot of any app, its own included.
+        self.view = (latest_snapshot(db, ontology_id, None if reuse_any else app_id, user, digest)
                      or take_snapshot(db, ontology_id, app_id, user, self.graph))
         self.adapter = _CachedSnapshot(FalkorReadAdapter(self.graph._graph(self.view.graph_key), graph_ontology_id=self.view.graph_key, max_objects=max_objects),
                                        self.view.graph_key)

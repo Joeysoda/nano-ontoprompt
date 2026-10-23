@@ -81,7 +81,8 @@ def profile(db, ontology_id: str, object_type: str, user, access) -> dict:
         lat = next((p for p in props if p.lower() in LAT), None)
         lng = next((p for p in props if p.lower() in LNG), None)
         text = [p for p in props if reader.metadata.resolve_property(reader.metadata.resolve_type("object", target, "type"), p, "f").data_type == "string"]
-        name_field = next((p for p in text if p.lower() in ("name", "city", "title", "label")), text[0] if text else None)
+        # Only a name-like property labels the dimension; any other text (a model, a status) is shared by many objects.
+        name_field = next((p for p in text if p.lower() in ("name", "display_name", "city", "title", "label")), None)
         dimensions.append({"field": field["name"], "object_type": target, "label": labels.get(target, {}).get("label", target),
                            "name_field": name_field, "lat": lat, "lng": lng, "count": len(ids_by_type.get(target, ()))})
     return {"object_type": object_type, "label": names["label"], "count": len(rows), "fields": fields, "dimensions": dimensions,
