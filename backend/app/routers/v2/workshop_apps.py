@@ -37,6 +37,13 @@ WIDGETS: dict[str, set[str]] = {
     "action_list": {"label_field"}, "action_detail": {"variable"}, "rerun_button": {"steps"},
     "donut_chart": {"category_field"}, "rank_bars": {"label_field"}, "alert_list": {"title"}, "geo_map": {"lat_field", "lng_field"},
 }
+# Page template -> region id -> columns it spans (of 24).  Kept in sync with the frontend templates.
+TEMPLATES: dict[str, dict[str, int]] = {
+    "free": {},
+    "scene_kpi_insight": {"scene": 15, "kpi": 9, "insight": 24},
+    "split": {"left": 12, "right": 12},
+    "kpi_top": {"kpi": 24, "main": 24},
+}
 
 
 class Strict(BaseModel):
@@ -49,6 +56,7 @@ class StudyRunSource(Strict):
     label: str = ""
     study_id: str
     node: str = Field(min_length=1, max_length=60)
+    time_field: str | None = Field(default=None, max_length=200)   # rows the app-wide time range applies to
 
 
 class SourceFilter(Strict):
@@ -65,6 +73,7 @@ class ObjectSetSource(Strict):
     select: list[str] = Field(default_factory=list, max_length=200)   # empty: every property of the type
     filters: list[SourceFilter] = Field(default_factory=list, max_length=10)
     limit: int = Field(default=workshop_sources.MAX_OBJECTS, ge=1, le=workshop_sources.MAX_OBJECTS)
+    time_field: str | None = Field(default=None, max_length=200)   # rows the app-wide time range applies to
 
 
 class AlertsSource(Strict):
@@ -74,6 +83,7 @@ class AlertsSource(Strict):
     status: Literal["open", "acknowledged", "resolved"] | None = "open"
     subject_type: str | None = None
     limit: int = Field(default=workshop_sources.MAX_ALERTS, ge=1, le=workshop_sources.MAX_ALERTS)
+    time_field: str | None = Field(default=None, max_length=200)   # rows the app-wide time range applies to
 
 
 DataSource = Annotated[StudyRunSource | ObjectSetSource | AlertsSource, Field(discriminator="kind")]
@@ -99,6 +109,7 @@ class Widget(Strict):
     path: str = ""
     props: dict[str, Any] = Field(default_factory=dict)
     on_select: Event | None = None
+    region: str | None = None         # region of the page template; None on a free page
 
 
 class LayoutItem(Strict):
@@ -113,7 +124,13 @@ class Page(Strict):
     id: str = Field(pattern=ID)
     title: str = Field(min_length=1, max_length=80)
     widgets: list[Widget] = Field(default_factory=list, max_length=40)
-    layout: list[LayoutItem] = Field(default_factory=list)
+    layout: list[LayoutItem] = Field(default_factory=list)   # coordinates are relative to the widget's region
+    template: str = "free"
+
+
+class AppSettings(Strict):
+    time_range: Literal["all", "1d", "7d", "30d"] = "all"   # default of the app-wide time range control
+    refresh_minutes: Literal[0, 1, 5, 15] = 0              # 0: refresh by hand
 
 
 class AppDefinition(Strict):
@@ -121,6 +138,7 @@ class AppDefinition(Strict):
     data_sources: list[DataSource] = Field(default_factory=list, max_length=10)
     variables: list[Variable] = Field(default_factory=list, max_length=40)
     pages: list[Page] = Field(min_length=1, max_length=20)
+    settings: AppSettings = Field(default_factory=AppSettings)
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     @model_validator(mode="after")
@@ -136,12 +154,23 @@ class AppDefinition(Strict):
                 raise ValueError(f"Widget ids must be unique on page {page.id}")
             if {row.i for row in page.layout} - set(ids):
                 raise ValueError(f"Layout on page {page.id} refers to an unknown widget")
+            if page.template not in TEMPLATES:
+                raise ValueError(f"page {page.id}: unknown template {page.template}")
+            regions = TEMPLATES[page.template]
+            spans = {row.id: regions.get(row.region or "", 24) for row in page.widgets}
+            for item in page.layout:
+                if item.x + item.w > spans[item.i]:
+                    raise ValueError(f"page {page.id} widget {item.i}: layout is wider than its region")
             for widget in page.widgets:
                 where = f"page {page.id} widget {widget.id}"
                 if widget.type not in WIDGETS:
                     raise ValueError(f"{where}: unknown widget type {widget.type}")
                 if missing := WIDGETS[widget.type] - set(widget.props):
                     raise ValueError(f"{where}: missing {sorted(missing)}")
+                if regions and widget.region not in regions:
+                    raise ValueError(f"{where}: region must be one of {sorted(regions)}")
+                if not regions and widget.region:
+                    raise ValueError(f"{where}: a free page has no regions")
                 if widget.source and widget.source not in sources:
                     raise ValueError(f"{where}: unknown data source {widget.source}")
                 used = {widget.props.get(key) for key in ("variable", "filter_variable")} - {None}
@@ -191,7 +220,7 @@ def _definition(db, ontology_id, definition: AppDefinition) -> dict:
                 known = set(workshop_sources.object_type_properties(metadata, source.object_type))
             except ObjectQueryError as exc:
                 raise HTTPException(422, {"code": "unknown_type", "message": f"Data source {source.id}: {exc.issue.message}"}) from exc
-            if unknown := (set(source.select) | {row.field for row in source.filters}) - known:
+            if unknown := (set(source.select) | {row.field for row in source.filters} | ({source.time_field} - {None})) - known:
                 raise HTTPException(422, {"code": "unknown_property", "message": f"Data source {source.id}: unknown properties {sorted(unknown)}"})
     return definition.model_dump(mode="json", by_alias=True)
 

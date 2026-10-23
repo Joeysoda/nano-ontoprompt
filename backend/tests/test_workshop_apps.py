@@ -62,6 +62,47 @@ def test_invalid_definitions_are_rejected(client, auth_headers, ontology, study,
     assert response.status_code == 422 and message in response.text
 
 
+def templated(study_id):
+    body = definition(study_id)
+    page = body["pages"][0]
+    page["template"] = "scene_kpi_insight"
+    page["widgets"][0]["region"], page["widgets"][1]["region"] = "kpi", "insight"
+    page["layout"] = [{"i": "kpis", "x": 0, "y": 0, "w": 9, "h": 3}, {"i": "lines", "x": 0, "y": 0, "w": 24, "h": 10}]
+    body["settings"] = {"time_range": "7d", "refresh_minutes": 5}
+    return body
+
+
+def test_region_templates_and_settings_are_saved(client, auth_headers, ontology, study):
+    created = client.post(f"/api/v2/ontologies/{ontology['id']}/workshop-apps", headers=auth_headers, json={"name": "t", "definition": templated(study.id)})
+    assert created.status_code == 201, created.text
+    saved = created.json()["head"]["definition"]
+    assert saved["pages"][0]["template"] == "scene_kpi_insight" and saved["pages"][0]["widgets"][0]["region"] == "kpi"
+    assert saved["settings"] == {"time_range": "7d", "refresh_minutes": 5}
+    plain = client.post(f"/api/v2/ontologies/{ontology['id']}/workshop-apps", headers=auth_headers, json={"name": "p", "definition": definition(study.id)}).json()
+    assert plain["head"]["definition"]["pages"][0]["template"] == "free"   # apps saved before templates stay free-form
+
+
+@pytest.mark.parametrize("mutate,message", [
+    (lambda d: d["pages"][0].update(template="mosaic"), "unknown template"),
+    (lambda d: d["pages"][0]["widgets"][0].update(region="sidebar"), "region must be one of"),
+    (lambda d: d["pages"][0]["widgets"][0].update(region=None), "region must be one of"),
+    (lambda d: d["pages"][0]["layout"][0].update(w=10), "wider than its region"),   # the KPI region spans 9 columns
+    (lambda d: d["settings"].update(refresh_minutes=3), "refresh_minutes"),
+])
+def test_invalid_templates_are_rejected(client, auth_headers, ontology, study, mutate, message):
+    body = templated(study.id)
+    mutate(body)
+    response = client.post(f"/api/v2/ontologies/{ontology['id']}/workshop-apps", headers=auth_headers, json={"name": "x", "definition": body})
+    assert response.status_code == 422 and message in response.text
+
+
+def test_free_page_widgets_have_no_region(client, auth_headers, ontology, study):
+    body = definition(study.id)
+    body["pages"][0]["widgets"][0]["region"] = "kpi"
+    response = client.post(f"/api/v2/ontologies/{ontology['id']}/workshop-apps", headers=auth_headers, json={"name": "x", "definition": body})
+    assert response.status_code == 422 and "free page has no regions" in response.text
+
+
 def test_source_resolves_latest_completed_run_or_pinned_run(client, auth_headers, ontology, study, db, admin_user):
     from datetime import datetime, timedelta, timezone
     from app.models.v2.query_view import QueryDataView
