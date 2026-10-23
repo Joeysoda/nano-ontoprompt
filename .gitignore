@@ -55,7 +55,7 @@ docs/*
 docs/adr/*
 !docs/adr/0019-semantic-core-security-data-plane.md
 !docs/adr/0020-ontology-platform-canonical-core-and-conditional-infrastructure.md
-!docs/adr/0001-flat-task-navigation.md
+!docs/adr/0021-flat-task-navigation.md
 !docs/plans/
 docs/plans/*
 !docs/plans/PALANTIR_ONTOLOGY_PLATFORM_GAP_AUDIT_2026_10_18.md
