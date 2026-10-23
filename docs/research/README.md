@@ -34,6 +34,7 @@
 | 笔记 | 等级 | 一句话要点 | 影响模块 |
 |---|---|---|---|
 | [OntoFlow 孪生应用搭建器截图](unofficial/ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md) | 第三方产品截图 + 本项目推断 | 分区模板 + 组件库 + 一键绑定数据；地图、环形图、排行条、告警列表；按任务划分的一级导航 | Workshop、全局导航 |
+| [可复用查询（Functions）与 Ontology MCP](official/PALANTIR_FUNCTIONS_REUSE_AND_ONTOLOGY_MCP_2026_10_23.md) | 官方文档 | 函数语义化版本、按版本范围引用；组件按结果形状绑定、输入可接页面变量；MCP 按“应用范围 ∩ 用户权限”开放 | 本体查询、Workshop 绑定、MCP |
 | [Workshop 时间筛选与汇总指标建模](official/PALANTIR_WORKSHOP_TIME_FILTERING_2026_10_23.md) | 官方文档 | 时间筛选作用在事件粒度的对象集上，维度指标查询时聚合（Search Around / 派生属性），不预存“维度×日期”汇总对象 | Workshop 数据源、时间范围、本体建模 |
 | [Palantir NHS 供应链视频](official/PALANTIR_NHS_SUPPLY_CHAIN_VIDEO_SCENARIO_REVIEW_2026_10_18.md) | 官方视频 | 本体支撑的情景推理界面和用例，以及和本项目的差距 | 情景研究、决策 |
 | [Palantir 官方工业案例视频](official/PALANTIR_OFFICIAL_INDUSTRIAL_USE_CASE_VIDEO_REVIEW_2026_10_18.md) | 官方视频 | 供应链、生产、工厂场景下的情景决策能力 | 情景研究、决策 |
