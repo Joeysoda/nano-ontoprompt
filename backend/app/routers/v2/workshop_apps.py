@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 
@@ -86,7 +86,54 @@ class AlertsSource(Strict):
     time_field: str | None = Field(default=None, max_length=200)   # rows the app-wide time range applies to
 
 
-DataSource = Annotated[StudyRunSource | ObjectSetSource | AlertsSource, Field(discriminator="kind")]
+class Metric(Strict):
+    key: str = Field(pattern=ID)
+    op: Literal["count", "sum", "avg", "min", "max", "exact_distinct"] = "count"
+    property: str | None = None
+
+    @model_validator(mode="after")
+    def needs_property(self):
+        if (self.op == "count") == bool(self.property):
+            raise ValueError(f"metric {self.key}: count takes no property, every other op needs one")
+        return self
+
+
+class Join(Strict):
+    """Search Around by a shared key: each group picks up properties of the dimension object whose key matches."""
+    object_type: str = Field(min_length=1, max_length=200)
+    on: str                            # the group_by field holding the key
+    key: str | None = None             # property of the dimension object; None: its object id
+    select: list[str] = Field(min_length=1, max_length=20)
+
+
+class Band(Strict):
+    """Turn a number into a category: the first cut whose minimum the value reaches, highest first."""
+    field: str
+    into: str = Field(pattern=ID)
+    cuts: list[tuple[float, str]] = Field(min_length=1, max_length=10)
+    otherwise: str = ""
+
+
+class AggregateSource(Strict):
+    id: str = Field(pattern=ID)
+    kind: Literal["aggregate"]
+    label: str = ""
+    object_type: str = Field(min_length=1, max_length=200)
+    group_by: list[str] = Field(default_factory=list, max_length=5)
+    metrics: list[Metric] = Field(min_length=1, max_length=10)
+    filters: list[SourceFilter] = Field(default_factory=list, max_length=10)
+    time_field: str | None = Field(default=None, max_length=200)
+    join: Join | None = None
+    bands: list[Band] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def references(self):
+        if self.join and self.join.on not in self.group_by:
+            raise ValueError("join.on must be one of group_by")
+        return self
+
+
+DataSource = Annotated[StudyRunSource | ObjectSetSource | AlertsSource | AggregateSource, Field(discriminator="kind")]
 
 
 class Variable(Strict):
@@ -222,6 +269,19 @@ def _definition(db, ontology_id, definition: AppDefinition) -> dict:
                 raise HTTPException(422, {"code": "unknown_type", "message": f"Data source {source.id}: {exc.issue.message}"}) from exc
             if unknown := (set(source.select) | {row.field for row in source.filters} | ({source.time_field} - {None})) - known:
                 raise HTTPException(422, {"code": "unknown_property", "message": f"Data source {source.id}: unknown properties {sorted(unknown)}"})
+        if source.kind == "aggregate":
+            metadata = metadata or load_sql_metadata(db, ontology_id)
+            wanted = {source.object_type: set(source.group_by) | {row.property for row in source.metrics if row.property}
+                      | {row.field for row in source.filters} | ({source.time_field} - {None})}
+            if source.join:
+                wanted[source.join.object_type] = set(source.join.select) | ({source.join.key} - {None})
+            for object_type, fields in wanted.items():
+                try:
+                    known = set(workshop_sources.object_type_properties(metadata, object_type))
+                except ObjectQueryError as exc:
+                    raise HTTPException(422, {"code": "unknown_type", "message": f"Data source {source.id}: {exc.issue.message}"}) from exc
+                if unknown := fields - known:
+                    raise HTTPException(422, {"code": "unknown_property", "message": f"Data source {source.id}: unknown properties {sorted(unknown)} on {object_type}"})
     return definition.model_dump(mode="json", by_alias=True)
 
 
@@ -298,18 +358,24 @@ def refresh_snapshot(ontology_id: str, app_id: str, db: Session = Depends(get_db
 
 @router.get("/{ontology_id}/workshop-apps/{app_id}/sources/{source_id}")
 def resolve_source(ontology_id: str, app_id: str, source_id: str, run: str | None = None, version: int | None = None,
+                   time_range: Literal["all", "1d", "7d", "30d"] = Query("all", alias="range"),
                    db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """Resolve a data source.  Study runs: a pinned run when given, else the latest completed run."""
+    """Resolve a data source.  Study runs: a pinned run when given, else the latest completed run.
+    Ontology sources apply the app-wide time range (``range``) on the server."""
     access = _authorize(ontology_id, db, user)
     row = _app(db, ontology_id, app_id, user)
     found = db.query(WorkshopAppVersion).filter_by(app_id=row.id, version=version or row.head_version).one()
     source = next((item for item in found.definition.get("data_sources", []) if item["id"] == source_id), None)
     if not source:
         raise HTTPException(404, {"code": "source_not_found", "message": "Data source not found"})
-    if source.get("kind") in ("object_set", "alerts"):
+    if source.get("kind") in ("object_set", "alerts", "aggregate"):
         try:
-            resolved = workshop_sources.resolve_object_set(db, ontology_id, app_id, source, user, access) if source["kind"] == "object_set" \
-                else workshop_sources.resolve_alerts(db, ontology_id, source, user)
+            if source["kind"] == "object_set":
+                resolved = workshop_sources.resolve_object_set(db, ontology_id, app_id, source, user, access, time_range)
+            elif source["kind"] == "aggregate":
+                resolved = workshop_sources.resolve_aggregate(db, ontology_id, app_id, source, user, access, time_range)
+            else:
+                resolved = workshop_sources.resolve_alerts(db, ontology_id, source, user, time_range)
         except ObjectQueryError as exc:
             raise http_error(exc) from exc
         return {"source_id": source_id, **resolved}
