@@ -1,7 +1,7 @@
 """Seed a browsable Machinery demo from the Azure PdM sample (simulated data).
 
 Creates one ontology with 100 Machines, failure/maintenance/error Event
-Objects, four telemetry Time Series Properties per machine, a pinned data
+Objects (in the live graph, so later snapshots and apps see them too), four telemetry Time Series Properties per machine, a pinned data
 view, a maintenance Action and four channel rules (approved, scheduled and
 evaluated) so the Object Explorer, alert center, rules page and graph all
 have real content.
@@ -11,6 +11,7 @@ install_surface path as the acceptance test; rules, reviews, schedules and
 evaluations go through the running HTTP API.
 
     python scripts/seed_machinery_demo.py --pdm /pdm --api http://backend:8000
+    python scripts/seed_machinery_demo.py --pdm /pdm --repair-events   # add the events to an ontology seeded before they were live
 """
 from __future__ import annotations
 
@@ -52,6 +53,34 @@ def thresholds(directory: Path) -> dict[str, float]:
     return out
 
 
+def publish_events(db, graph, ontology_id: str, entities: dict, surface) -> int:
+    """Event objects and their links to machines as live Ontology objects (SQL rows and the graph projection)."""
+    db.bulk_save_objects([EntityInstance(id=node["id"], entity_id=entities[node["entity_type"]].id, ontology_id=ontology_id,
+                                         row_identity=node["id"], row_data=dict(node["properties"])) for node in surface.event_nodes])
+    db.commit()
+    for start in range(0, len(surface.event_nodes), 5000):
+        graph.upsert_instances(ontology_id, surface.event_nodes[start:start + 5000])
+    for start in range(0, len(surface.event_links), 5000):
+        graph.upsert_relations(ontology_id, surface.event_links[start:start + 5000])
+    return len(surface.event_nodes)
+
+
+def repair_events(directory: Path) -> None:
+    """Seeds before events were live kept them only in the first data view; publish them to the live graph."""
+    graph = FalkorDBService()
+    surface = load_surface(directory)
+    with SessionLocal() as db:
+        ontology = db.query(OntologyProject).filter_by(name=NAME).first()
+        if ontology is None:
+            raise SystemExit("Machinery demo is not seeded")
+        entities = {row.name_en: row for row in db.query(Entity).filter_by(ontology_id=ontology.id).all()}
+        existing = {row.id for row in db.query(EntityInstance.id).filter(EntityInstance.ontology_id == ontology.id,
+                                                                         EntityInstance.entity_id.in_([entities[t].id for t in EVENT_LINKS])).all()}
+        if existing:
+            raise SystemExit(f"{len(existing)} events already live in ontology {ontology.id}")
+        print(f"published {publish_events(db, graph, ontology.id, entities, surface)} events to ontology {ontology.id}")
+
+
 def seed_data(directory: Path) -> tuple[str, str, str]:
     graph = FalkorDBService()
     if not graph.available:
@@ -84,6 +113,7 @@ def seed_data(directory: Path) -> tuple[str, str, str]:
         db.add(action)
         db.commit()
         graph.upsert_instances(ontology.id, surface.machines)
+        publish_events(db, graph, ontology.id, entities, surface)
         digest = hashlib.sha256(json.dumps(surface.manifest["files"], sort_keys=True).encode()).hexdigest()
         view = build_live_view(db, graph, load_sql_metadata(db, ontology.id), ontology.id, admin.id, digest, 30 * 86400)
         install_surface(db, graph, view, surface.event_nodes, surface.event_links, surface.syncs)
@@ -147,7 +177,11 @@ def main():
     parser.add_argument("--pdm", type=Path)
     parser.add_argument("--api", default="http://backend:8000")
     parser.add_argument("--supplier-only", action="store_true", help="only seed the supplier study demo")
+    parser.add_argument("--repair-events", action="store_true", help="publish the events of an existing Machinery demo to its live graph")
     args = parser.parse_args()
+    if args.repair_events:
+        repair_events(args.pdm)
+        return
     supplier = seed_supplier_study(args.api)
     print(f"OPEN /ontologies/{supplier}/scenario-studies")
     if args.supplier_only:
