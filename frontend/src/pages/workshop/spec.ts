@@ -11,7 +11,11 @@ export type StudyRunSource = { id: string; kind: 'study_run'; label: string; stu
 /** Every object of one type (optionally filtered), read from a snapshot shared by the app's sources. */
 export type ObjectSetSource = { id: string; kind: 'object_set'; label: string; object_type: string; select?: string[]; filters?: SourceFilter[]; limit?: number; time_field?: string | null }
 export type AlertsSource = { id: string; kind: 'alerts'; label: string; status?: 'open' | 'acknowledged' | 'resolved' | null; subject_type?: string | null; limit?: number; time_field?: string | null }
-export type DataSource = StudyRunSource | ObjectSetSource | AlertsSource
+/** Objects grouped on the server (count / sum / avg / min / max); a join picks up a dimension object's properties by key, bands turn numbers into categories. */
+export type AggregateSource = { id: string; kind: 'aggregate'; label: string; object_type: string; group_by: string[]; metrics: Array<{ key: string; op: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'exact_distinct'; property?: string | null }>
+  filters?: SourceFilter[]; time_field?: string | null; join?: { object_type: string; on: string; key?: string | null; select: string[] } | null
+  bands?: Array<{ field: string; into: string; cuts: Array<[number, string]>; otherwise: string }> }
+export type DataSource = StudyRunSource | ObjectSetSource | AlertsSource | AggregateSource
 export type Variable = { id: string; label: string; default?: unknown }
 export type TimeRange = 'all' | '1d' | '7d' | '30d'
 export type AppSettings = { time_range: TimeRange; refresh_minutes: 0 | 1 | 5 | 15 }
@@ -22,7 +26,10 @@ export const REFRESH_OPTIONS: Array<[AppSettings['refresh_minutes'], string]> = 
 export type AppDefinition = { schema: 'workshop-app/v1'; data_sources: DataSource[]; variables: Variable[]; pages: Page[]; settings?: AppSettings }
 export type AppRecord = { id: string; name: string; description: string; head_version: number; head: { version: number; definition: AppDefinition } }
 export type ResolvedStudyRun = { source_id: string; kind: 'study_run'; study_id: string; node: string; run_id: string; status: string; scenario_id: string; scenario_revision: number; completed_at: string | null; outputs: Record<string, unknown> | null; artifacts: Array<{ id: string; artifact_type: string; content_digest: string }> }
-export type ResolvedOntologySource = { source_id: string; kind: 'object_set' | 'alerts'; status: string; completed_at: string | null; data_view_id?: string; outputs: Record<string, unknown> & { count: number } }
+/** time: the window the server applied (anchor = latest time in the source, rows after `after` are kept). */
+export type TimeWindow = { range: string; field?: string | null; anchor?: string | null; after?: string | null }
+export type ResolvedOntologySource = { source_id: string; kind: 'object_set' | 'alerts' | 'aggregate'; status: string; completed_at: string | null; data_view_id?: string
+  outputs: Record<string, unknown> & { count: number; truncated?: boolean; time?: TimeWindow } }
 export type ResolvedSource = ResolvedStudyRun | ResolvedOntologySource
 
 export type FieldKind = 'text' | 'number' | 'boolean' | 'select' | 'scalar_path' | 'field' | 'variable' | 'page' | 'list' | 'color'
