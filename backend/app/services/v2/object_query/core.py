@@ -156,15 +156,18 @@ class FalkorReadAdapter:
             if object_count > self.max_objects:
                 raise ObjectQueryError('query_too_complex', 'execution', 'Object scan budget exceeded')
             objects, concepts = {}, set()
-            after_instance_id = None
+            # Page on the internal node id: FalkorDB orders strings byte-wise but
+            # compares them case-insensitively, so a cursor on _instance_id
+            # re-reads rows once ids mix upper and lower case.
+            after_node = None
             while len(objects) + len(concepts) < object_count:
-                where_after = ' AND n._instance_id > $after' if after_instance_id is not None else ''
+                where_after = ' AND id(n) > $after' if after_node is not None else ''
                 params = {'ontology': graph_ontology_id, 'limit': 10000}
-                if after_instance_id is not None:
-                    params['after'] = after_instance_id
+                if after_node is not None:
+                    params['after'] = after_node
                 result = self.graph.ro_query(
                     'MATCH (n:Instance) WHERE n._ontology_id = $ontology' + where_after +
-                    ' RETURN n ORDER BY n._instance_id LIMIT $limit',
+                    ' RETURN n, id(n) ORDER BY id(n) LIMIT $limit',
                     params=params, timeout=10000,
                 )
                 if not result.result_set:
@@ -182,7 +185,7 @@ class FalkorReadAdapter:
                     if identity in objects:
                         raise ObjectQueryError('invalid_projection_record', 'execution', 'Duplicate object identity')
                     objects[identity] = props
-                after_instance_id = result.result_set[-1][0].properties.get('_instance_id')
+                after_node = result.result_set[-1][1]
 
             edge_count = self.graph.ro_query(
                 'MATCH (a:Instance)-[r]->(b:Instance) WHERE a._ontology_id = $ontology AND b._ontology_id = $ontology RETURN count(r)',
