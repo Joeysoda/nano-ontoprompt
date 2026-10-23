@@ -3,6 +3,7 @@
 Every count and sum is checked against the committed fixture, so a source that
 silently stops at one 200-row page, drops a filter or mixes snapshots fails.
 """
+import json
 import uuid
 from collections import Counter
 from copy import deepcopy
@@ -195,3 +196,48 @@ def test_invalid_aggregate_sources_are_rejected(client, auth_headers, events, mu
     mutate(source)
     response = client.post(events["api"], headers=auth_headers, json={"name": "bad", "definition": app_definition([source])})
     assert response.status_code == 422 and code in response.text
+
+
+# --- one-click binding ----------------------------------------------------------------------------------------------
+
+def test_autobind_rules_profile_the_type_and_compile_a_page_that_runs(client, auth_headers, events):
+    response = client.post(f"{events['api']}:autobind", headers=auth_headers, json={"object_type": "Event", "mode": "rules"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    roles = {f["name"]: f["role"] for f in body["profile"]["fields"]}
+    assert roles == {"at": "time", "site_id": "key", "amount": "measure", "late": "flag"}
+    assert body["profile"]["dimensions"][0]["object_type"] == "Site" and body["profile"]["dimensions"][0]["lng"] is None   # no longitude: no map
+    assert body["plan"]["scene"]["kind"] == "rank" and [k["op"] for k in body["plan"]["kpis"]] == ["count", "sum", "avg"]
+    # Save the proposal as an app and read its sources: the KPIs are the true totals.
+    definition = {"schema": "workshop-app/v1", "data_sources": body["data_sources"], "variables": [], "pages": [body["page"]]}
+    created = client.post(events["api"], headers=auth_headers, json={"name": "auto", "definition": definition})
+    assert created.status_code == 201, created.text
+    totals = client.get(f"{events['api']}/{created.json()['id']}/sources/auto_totals", headers=auth_headers).json()["outputs"]["groups"][0]
+    assert totals["k0"] == EVENT_COUNT and totals["k1"] == pytest.approx(sum(float(i % 7) for i in range(EVENT_COUNT)))
+    assert totals["k2"] == pytest.approx(sum(1 for i in range(EVENT_COUNT) if i % 5 == 0) / EVENT_COUNT)
+    latest = client.get(f"{events['api']}/{created.json()['id']}/sources/auto_latest", headers=auth_headers).json()["outputs"]
+    assert latest["count"] == 20 and not latest["truncated"]   # an ordered top 20, not a truncated set
+    assert latest["objects"][0]["at"].startswith((BASE + timedelta(hours=EVENT_COUNT - 1)).isoformat()[:19])
+
+
+def test_llm_plans_are_checked_and_bad_choices_dropped(db, admin_user, events, monkeypatch):
+    import httpx
+    from app.services.v2 import workshop_autobind as auto
+    from app.services.v2.object_query.authorization import require_ontology_access
+    access = require_ontology_access(db, events["ontology"].id, str(admin_user.id), admin_user.role)
+    prof = auto.profile(db, events["ontology"].id, "Event", admin_user, access)
+    answer = {"page_title": "事件看板", "reasoning": "r", "table_title": "最新事件", "table": ["at", "ghost"],
+              "kpis": [{"op": "count", "field": None, "format": "number", "label": "事件数"}, {"op": "sum", "field": "site_id", "format": "number", "label": "坏"}],
+              "scene": {"kind": "map", "dimension": "site_id", "title": "地图", "metric": {"op": "count", "field": None, "format": "number", "label": "事件数"}},
+              "breakdowns": [{"kind": "donut", "field": "amount", "title": "坏分组", "metric": {"op": "count", "field": None, "format": "number", "label": "n"}},
+                             {"kind": "rank", "field": "site_id", "title": "按站点", "metric": {"op": "avg", "field": "late", "format": "percent", "label": "迟到率"}}]}
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"model": "mock", "choices": [{"message": {"content": json.dumps(answer)}}]}))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    raw, model = auto.llm_plan(prof, client=httpx.Client(transport=transport))
+    plan, dropped = auto.check_plan(raw, prof)
+    assert model == "mock"
+    assert [k["label"] for k in plan["kpis"]] == ["事件数"]                    # sum of a key dropped
+    assert plan["scene"] is None                                                # map without coordinates dropped
+    assert [b["title"] for b in plan["breakdowns"]] == ["按站点"]               # breakdown by a measure dropped
+    assert plan["table"] == ["at"] and len(dropped) == 4
+    auto.compile_plan(plan, prof, "auto_")                                      # what is left still compiles

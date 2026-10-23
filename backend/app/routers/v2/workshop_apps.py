@@ -74,6 +74,8 @@ class ObjectSetSource(Strict):
     filters: list[SourceFilter] = Field(default_factory=list, max_length=10)
     limit: int = Field(default=workshop_sources.MAX_OBJECTS, ge=1, le=workshop_sources.MAX_OBJECTS)
     time_field: str | None = Field(default=None, max_length=200)   # rows the app-wide time range applies to
+    order_by: str | None = None       # with limit: an intentional top N (e.g. the 20 latest), not a truncated set
+    descending: bool = True
 
 
 class AlertsSource(Strict):
@@ -267,7 +269,7 @@ def _definition(db, ontology_id, definition: AppDefinition) -> dict:
                 known = set(workshop_sources.object_type_properties(metadata, source.object_type))
             except ObjectQueryError as exc:
                 raise HTTPException(422, {"code": "unknown_type", "message": f"Data source {source.id}: {exc.issue.message}"}) from exc
-            if unknown := (set(source.select) | {row.field for row in source.filters} | ({source.time_field} - {None})) - known:
+            if unknown := (set(source.select) | {row.field for row in source.filters} | ({source.time_field, source.order_by} - {None})) - known:
                 raise HTTPException(422, {"code": "unknown_property", "message": f"Data source {source.id}: unknown properties {sorted(unknown)}"})
         if source.kind == "aggregate":
             metadata = metadata or load_sql_metadata(db, ontology_id)
@@ -356,18 +358,9 @@ def refresh_snapshot(ontology_id: str, app_id: str, db: Session = Depends(get_db
     return {"data_view_id": view.id, "created_at": view.created_at.isoformat(), "object_count": view.object_count}
 
 
-@router.get("/{ontology_id}/workshop-apps/{app_id}/sources/{source_id}")
-def resolve_source(ontology_id: str, app_id: str, source_id: str, run: str | None = None, version: int | None = None,
-                   time_range: Literal["all", "1d", "7d", "30d"] = Query("all", alias="range"),
-                   db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """Resolve a data source.  Study runs: a pinned run when given, else the latest completed run.
-    Ontology sources apply the app-wide time range (``range``) on the server."""
-    access = _authorize(ontology_id, db, user)
-    row = _app(db, ontology_id, app_id, user)
-    found = db.query(WorkshopAppVersion).filter_by(app_id=row.id, version=version or row.head_version).one()
-    source = next((item for item in found.definition.get("data_sources", []) if item["id"] == source_id), None)
-    if not source:
-        raise HTTPException(404, {"code": "source_not_found", "message": "Data source not found"})
+def _resolve(db, ontology_id: str, app_id: str, source: dict, run: str | None, time_range: str, user, access) -> dict:
+    """Resolve one source definition.  Study runs: a pinned run when given, else the latest completed run.
+    Ontology sources apply the app-wide time range on the server."""
     if source.get("kind") in ("object_set", "alerts", "aggregate"):
         try:
             if source["kind"] == "object_set":
@@ -378,7 +371,7 @@ def resolve_source(ontology_id: str, app_id: str, source_id: str, run: str | Non
                 resolved = workshop_sources.resolve_alerts(db, ontology_id, source, user, time_range)
         except ObjectQueryError as exc:
             raise http_error(exc) from exc
-        return {"source_id": source_id, **resolved}
+        return {"source_id": source["id"], **resolved}
     query = db.query(ScenarioRun).filter_by(study_id=source["study_id"])
     target = query.filter_by(id=run).first() if run else \
         query.filter_by(status="completed").order_by(ScenarioRun.completed_at.desc()).first()
@@ -386,9 +379,72 @@ def resolve_source(ontology_id: str, app_id: str, source_id: str, run: str | Non
         raise HTTPException(404, {"code": "no_completed_run", "message": "The Study has no completed run yet"})
     node = ((target.result_manifest or {}).get("nodes") or {}).get(source["node"])
     artifacts = db.query(ScenarioRunArtifact).filter_by(run_id=target.id).all()
-    return {"source_id": source_id, "kind": "study_run", "study_id": source["study_id"], "node": source["node"], "run_id": target.id,
+    return {"source_id": source["id"], "kind": "study_run", "study_id": source["study_id"], "node": source["node"], "run_id": target.id,
             "status": target.status, "scenario_id": target.scenario_id, "scenario_revision": target.revision,
             "completed_at": target.completed_at.isoformat() if target.completed_at else None,
             "outputs": (node or {}).get("outputs") if target.status == "completed" else None,
             "artifacts": [{"id": item.id, "artifact_type": item.artifact_type, "content_digest": item.content_digest}
                           for item in artifacts if item.artifact_type == f"node:{source['node']}"]}
+
+
+TimeRange = Literal["all", "1d", "7d", "30d"]
+
+
+@router.get("/{ontology_id}/workshop-apps/{app_id}/sources/{source_id}")
+def resolve_source(ontology_id: str, app_id: str, source_id: str, run: str | None = None, version: int | None = None,
+                   time_range: TimeRange = Query("all", alias="range"), db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Resolve a data source of a saved version of the app."""
+    access = _authorize(ontology_id, db, user)
+    row = _app(db, ontology_id, app_id, user)
+    found = db.query(WorkshopAppVersion).filter_by(app_id=row.id, version=version or row.head_version).one()
+    source = next((item for item in found.definition.get("data_sources", []) if item["id"] == source_id), None)
+    if not source:
+        raise HTTPException(404, {"code": "source_not_found", "message": "Data source not found"})
+    return _resolve(db, ontology_id, app_id, source, run, time_range, user, access)
+
+
+class PreviewSource(Strict):
+    source: DataSource
+    run: str | None = None
+    range: TimeRange = "all"
+
+
+@router.post("/{ontology_id}/workshop-apps/{app_id}/sources:preview")
+def preview_source(ontology_id: str, app_id: str, body: PreviewSource, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Resolve a source the editor has not published yet, after the same checks a saved app gets."""
+    access = _authorize(ontology_id, db, user)
+    _app(db, ontology_id, app_id, user)
+    definition = AppDefinition.model_validate({"schema": "workshop-app/v1", "data_sources": [body.source.model_dump(mode="json")], "variables": [],
+                                               "pages": [{"id": "preview", "title": "preview"}]})
+    _definition(db, ontology_id, definition)
+    return _resolve(db, ontology_id, app_id, body.source.model_dump(mode="json"), body.run, body.range, user, access)
+
+
+class Autobind(Strict):
+    object_type: str = Field(min_length=1, max_length=200)
+    mode: Literal["rules", "llm"] = "rules"
+    prefix: str = Field(default="auto_", pattern=r"^[A-Za-z][A-Za-z0-9_]{0,20}$")   # keeps generated ids apart from an app's own
+
+
+@router.post("/{ontology_id}/workshop-apps:autobind")
+def autobind(ontology_id: str, body: Autobind, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Propose a page for an object type: profile its properties, plan (rules or LLM), compile, validate.  Nothing is saved."""
+    from app.services.v2 import workshop_autobind as auto
+    access = _authorize(ontology_id, db, user)
+    try:
+        prof = auto.profile(db, ontology_id, body.object_type, user, access)
+        model = None
+        if body.mode == "llm":
+            raw, model = auto.llm_plan(prof)
+            plan, dropped = auto.check_plan(raw, prof)
+        else:
+            plan, dropped = auto.rule_plan(prof), []
+        fragment = auto.compile_plan(plan, prof, body.prefix)
+    except auto.AutobindError as exc:
+        raise HTTPException(exc.status, {"code": exc.code, "message": exc.message}) from exc
+    except ObjectQueryError as exc:
+        raise http_error(exc) from exc
+    # The proposal must pass the same checks as a saved app.
+    definition = AppDefinition.model_validate({"schema": "workshop-app/v1", "data_sources": fragment["data_sources"], "variables": [], "pages": [fragment["page"]]})
+    _definition(db, ontology_id, definition)
+    return {"mode": body.mode, "model": model, "profile": prof, "plan": plan, "dropped": dropped, **fragment}
