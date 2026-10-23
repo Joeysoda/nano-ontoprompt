@@ -70,12 +70,16 @@ export function CoverageGrid({ columns, rows, label }: { columns: string[]; rows
 export function DonutChart({ slices, label, centerLabel = '合计', onSelect, selected }: { slices: Array<{ key: string; value: number }>; label: string; centerLabel?: string; onSelect?: (key: string) => void; selected?: string | null }) {
   const total = slices.reduce((sum, row) => sum + row.value, 0)
   const ref = useChart(chart => {
-    chart.setOption({
+    chart.setOption({ baseOption: {
       animation: false, tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
       legend: { orient: 'vertical', right: 0, top: 'middle', formatter: (name: string) => { const row = slices.find(item => item.key === name); return `${name}  ${row ? Math.round(row.value / (total || 1) * 100) : 0}%  ${row?.value ?? ''}` } },
       title: { text: formatCell(total, 'number'), subtext: centerLabel, left: '29%', top: '40%', textAlign: 'center', textStyle: { fontSize: 18 }, subtextStyle: { fontSize: 11 } },
       series: [{ type: 'pie', radius: ['45%', '72%'], center: ['30%', '50%'], label: { show: false }, selectedMode: onSelect ? 'single' : false,
         data: slices.map((row, index) => ({ name: row.key, value: row.value, selected: row.key === selected, itemStyle: { color: categoryColor(row.key, index) } })) }],
+    },
+    // Narrow regions: legend under the ring instead of beside it.
+    media: [{ query: { maxWidth: 380 }, option: { legend: { orient: 'horizontal', left: 'center', right: 'auto', top: 'auto', bottom: 0 },
+      title: { left: '50%', top: '34%' }, series: [{ center: ['50%', '44%'], radius: ['40%', '64%'] }] } }],
     })
     if (onSelect) chart.on('click', params => onSelect(String(params.name)))
   }, [slices, total, centerLabel, selected])

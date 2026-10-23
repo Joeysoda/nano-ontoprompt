@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { apiClientV2, formatApiError } from '@/api/client'
 import { AlertList, CoverageGrid, DataTable, DonutChart, GeoMap, KpiStrip, RankBars, StackedBarChart, type MapLink, type MapPoint } from '@/components/dashboard/widgets'
-import { aggregate, asRows, categoryColor, coordinate, formatCell, getPath, groupSeries, groupTotals, matches, plainId, template, tone, type Format, type Row, type ToneRule, type Where } from '@/components/dashboard/binding'
+import { aggregate, asRows, categoryColor, coordinate, formatCell, getPath, groupSeries, groupTotals, matches, plainId, template, tone, withinRange, type Format, type Row, type ToneRule, type Where } from '@/components/dashboard/binding'
 import DecisionPackagePanel from '@/pages/what-if/DecisionPackagePanel'
 import type { DecisionRunContext } from '@/pages/what-if/decisionPackage'
 import type { ResolvedSource, ResolvedStudyRun, Widget } from './spec'
@@ -15,6 +15,9 @@ export type Runtime = {
   navigate: (page: string) => void
   refresh: () => void
   editing?: boolean
+  /** App-wide time range and, per data source, the row field it filters on. */
+  timeRange?: string
+  timeFields?: Record<string, string | null | undefined>
 }
 
 type P = Record<string, unknown>
@@ -26,7 +29,8 @@ function useData(widget: Widget, rt: Runtime) {
   const outputs = source?.outputs ?? null
   const value = outputs ? getPath(outputs, widget.path) : undefined
   const p = widget.props as P
-  const rows = asRows(value).filter(row => matches(row, str(p.filter_field), rt.vars[str(p.filter_variable)]))
+  const timed = withinRange(asRows(value), widget.source ? rt.timeFields?.[widget.source] : null, rt.timeRange ?? 'all')
+  const rows = timed.filter(row => matches(row, str(p.filter_field), rt.vars[str(p.filter_variable)]))
   return { source, outputs, value, rows, p }
 }
 

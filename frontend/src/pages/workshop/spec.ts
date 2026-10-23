@@ -1,17 +1,25 @@
 /** Workshop-style app definition (mirrors backend workshop_apps.AppDefinition) and the widget catalogue. */
 
 export type Event = { set_variable?: string | null; field?: string | null; navigate?: string | null }
-export type Widget = { id: string; type: WidgetType; title: string; source?: string | null; path: string; props: Record<string, unknown>; on_select?: Event | null }
+export type Widget = { id: string; type: WidgetType; title: string; source?: string | null; path: string; props: Record<string, unknown>; on_select?: Event | null; region?: string | null }
 export type LayoutItem = { i: string; x: number; y: number; w: number; h: number }
-export type Page = { id: string; title: string; widgets: Widget[]; layout: LayoutItem[] }
+/** layout coordinates are relative to the widget's region (see templates.ts); a page without a template is one 24-column grid. */
+export type Page = { id: string; title: string; widgets: Widget[]; layout: LayoutItem[]; template?: string }
 export type SourceFilter = { field: string; op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in'; value: unknown }
-export type StudyRunSource = { id: string; kind: 'study_run'; label: string; study_id: string; node: string }
+/** time_field: the row field the app-wide time range filters on. */
+export type StudyRunSource = { id: string; kind: 'study_run'; label: string; study_id: string; node: string; time_field?: string | null }
 /** Every object of one type (optionally filtered), read from a snapshot shared by the app's sources. */
-export type ObjectSetSource = { id: string; kind: 'object_set'; label: string; object_type: string; select?: string[]; filters?: SourceFilter[]; limit?: number }
-export type AlertsSource = { id: string; kind: 'alerts'; label: string; status?: 'open' | 'acknowledged' | 'resolved' | null; subject_type?: string | null; limit?: number }
+export type ObjectSetSource = { id: string; kind: 'object_set'; label: string; object_type: string; select?: string[]; filters?: SourceFilter[]; limit?: number; time_field?: string | null }
+export type AlertsSource = { id: string; kind: 'alerts'; label: string; status?: 'open' | 'acknowledged' | 'resolved' | null; subject_type?: string | null; limit?: number; time_field?: string | null }
 export type DataSource = StudyRunSource | ObjectSetSource | AlertsSource
 export type Variable = { id: string; label: string; default?: unknown }
-export type AppDefinition = { schema: 'workshop-app/v1'; data_sources: DataSource[]; variables: Variable[]; pages: Page[] }
+export type TimeRange = 'all' | '1d' | '7d' | '30d'
+export type AppSettings = { time_range: TimeRange; refresh_minutes: 0 | 1 | 5 | 15 }
+export const DEFAULT_SETTINGS: AppSettings = { time_range: 'all', refresh_minutes: 0 }
+/** Ranges end at the latest timestamp in the data, not today, so historical datasets still have a "last 7 days". */
+export const TIME_RANGES: Array<[TimeRange, string]> = [['all', '全部时间'], ['1d', '最近 24 小时'], ['7d', '最近 7 天'], ['30d', '最近 30 天']]
+export const REFRESH_OPTIONS: Array<[AppSettings['refresh_minutes'], string]> = [[0, '手动刷新'], [1, '每 1 分钟'], [5, '每 5 分钟'], [15, '每 15 分钟']]
+export type AppDefinition = { schema: 'workshop-app/v1'; data_sources: DataSource[]; variables: Variable[]; pages: Page[]; settings?: AppSettings }
 export type AppRecord = { id: string; name: string; description: string; head_version: number; head: { version: number; definition: AppDefinition } }
 export type ResolvedStudyRun = { source_id: string; kind: 'study_run'; study_id: string; node: string; run_id: string; status: string; scenario_id: string; scenario_revision: number; completed_at: string | null; outputs: Record<string, unknown> | null; artifacts: Array<{ id: string; artifact_type: string; content_digest: string }> }
 export type ResolvedOntologySource = { source_id: string; kind: 'object_set' | 'alerts'; status: string; completed_at: string | null; data_view_id?: string; outputs: Record<string, unknown> & { count: number } }

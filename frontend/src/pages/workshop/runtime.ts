@@ -2,7 +2,11 @@ import { useCallback, useMemo } from 'react'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { apiClientV2 } from '@/api/client'
-import type { AppDefinition, AppRecord, ResolvedSource } from './spec'
+import { DEFAULT_SETTINGS, type AppDefinition, type AppRecord, type ResolvedSource, type TimeRange } from './spec'
+
+/** Per source, the row field the app-wide time range filters on (alerts default to their window end). */
+export const timeFieldsOf = (definition: AppDefinition | undefined) =>
+  Object.fromEntries((definition?.data_sources ?? []).map(source => [source.id, source.time_field ?? (source.kind === 'alerts' ? 'window_end' : null)]))
 
 export const appsUrl = (ontologyId: string) => `/ontologies/${ontologyId}/workshop-apps`
 
@@ -41,5 +45,10 @@ export function useUrlState(definition: AppDefinition | undefined) {
   const pageId = params.get('page') ?? definition?.pages[0]?.id ?? ''
   const navigate = useCallback((page: string) => setParams(current => { current.set('page', page); return current }), [setParams])
   const pinned = useMemo(() => Object.fromEntries((definition?.data_sources ?? []).map(source => [source.id, params.get(`run.${source.id}`) ?? undefined])), [definition, params])
-  return { vars, setVar, pageId, navigate, pinned, params }
+  // App-wide controls: the URL wins, then the app's saved defaults.
+  const settings = definition?.settings ?? DEFAULT_SETTINGS
+  const timeRange = (params.get('t') ?? settings.time_range) as TimeRange
+  const refreshMinutes = Number(params.get('r') ?? settings.refresh_minutes)
+  const setControl = useCallback((key: 't' | 'r', value: string) => setParams(current => { current.set(key, value); return current }), [setParams])
+  return { vars, setVar, pageId, navigate, pinned, params, timeRange, refreshMinutes, setControl }
 }

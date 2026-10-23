@@ -1,9 +1,10 @@
+import { useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { formatApiError } from '@/api/client'
 import PageCanvas from './PageCanvas'
-import { useApp, useSources, useUrlState } from './runtime'
-import type { ResolvedSource } from './spec'
+import { timeFieldsOf, useApp, useSources, useUrlState } from './runtime'
+import { REFRESH_OPTIONS, TIME_RANGES, type ResolvedSource } from './spec'
 
 const stamp = (iso: string | null) => (iso ? ` · ${iso.slice(0, 16).replace('T', ' ')}` : '')
 
@@ -26,6 +27,12 @@ export default function WorkshopAppPage() {
   const sources = useSources(ontologyId, appId, definition, state.pinned, version)
   const page = definition?.pages.find(row => row.id === state.pageId) ?? definition?.pages[0]
   const reload = useMutation({ mutationFn: sources.reload })
+  const { mutate: reloadNow } = reload
+  useEffect(() => {
+    if (!state.refreshMinutes) return
+    const timer = window.setInterval(() => reloadNow(), state.refreshMinutes * 60_000)
+    return () => window.clearInterval(timer)
+  }, [state.refreshMinutes, reloadNow])
   if (app.error) return <p role="alert" className="p-6 text-sm text-rose-700">{formatApiError(app.error)}</p>
   if (!definition || !page) return <p role="status" className="p-6 text-sm text-slate-500">应用加载中…</p>
   return <div className="flex min-h-full flex-col bg-slate-100" data-testid="workshop-app">
@@ -34,10 +41,12 @@ export default function WorkshopAppPage() {
       <nav className="flex flex-wrap gap-1" aria-label="应用页面">{definition.pages.map(row => <button key={row.id} onClick={() => state.navigate(row.id)}
         className={`rounded px-3 py-1.5 text-sm ${row.id === page.id ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{row.title}</button>)}</nav>
       <span className="ml-auto min-w-0 truncate text-xs text-slate-500">{definition.data_sources.map(source => <span key={source.id} className="ml-3">{source.label || source.id}：{sourceStatus(sources.resolved[source.id], sources.errors.includes(source.id))}</span>)}</span>
+      <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-slate-500" title="以每个数据源里最新的时间为终点往前算；没有设置时间字段的数据源不受影响">时间<select className="wb-input py-1 text-xs" aria-label="时间范围" value={state.timeRange} onChange={event => state.setControl('t', event.target.value)}>{TIME_RANGES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-slate-500">刷新<select className="wb-input py-1 text-xs" aria-label="刷新方式" value={state.refreshMinutes} onChange={event => state.setControl('r', event.target.value)}>{REFRESH_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <button className="wb-button-secondary shrink-0" disabled={reload.isPending} onClick={() => reload.mutate()} title="重新拍一份本体快照并重新加载全部数据源">{reload.isPending ? '刷新中…' : '刷新数据'}</button>
       <span className="text-xs text-slate-400">v{app.data!.head.version}</span>
       <Link className="wb-button-secondary shrink-0" to={`/apps/workshop/${appId}/edit?ontology=${ontologyId}`}>编辑</Link>
     </header>
-    <main className="p-3"><PageCanvas page={page} rt={{ ontologyId, sources: sources.resolved, vars: state.vars, setVar: state.setVar, navigate: state.navigate, refresh: sources.refresh }} /></main>
+    <main className="p-3"><PageCanvas page={page} rt={{ ontologyId, sources: sources.resolved, vars: state.vars, setVar: state.setVar, navigate: state.navigate, refresh: sources.refresh, timeRange: state.timeRange, timeFields: timeFieldsOf(definition) }} /></main>
   </div>
 }

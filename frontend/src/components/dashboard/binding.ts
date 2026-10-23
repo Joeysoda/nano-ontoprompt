@@ -64,6 +64,29 @@ export function groupTotals(rows: Row[], field: string, valueField?: string): Ar
   return [...totals].map(([key, value]) => ({ key, value })).sort((a, b) => b.value - a.value || a.key.localeCompare(b.key))
 }
 
+/** Epoch milliseconds of a timestamp: ISO strings, or numbers in seconds (< 1e11) or milliseconds. */
+export function toTime(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value < 1e11 ? value * 1000 : value
+  if (typeof value === 'string' && value) { const time = Date.parse(value); return Number.isNaN(time) ? null : time }
+  return null
+}
+
+export const RANGE_DAYS: Record<string, number> = { '1d': 1, '7d': 7, '30d': 30 }
+
+/**
+ * Rows in the last N days ending at the latest timestamp in the rows themselves, so historical
+ * datasets still have a "last 7 days".  Rows without a time are dropped once a range applies.
+ */
+export function withinRange(rows: Row[], field: string | null | undefined, range: string): Row[] {
+  const days = RANGE_DAYS[range]
+  if (!field || !days) return rows
+  const times = rows.map(row => toTime(getPath(row, field)))
+  const anchor = Math.max(...times.filter((time): time is number => time !== null))
+  if (!Number.isFinite(anchor)) return []
+  const cutoff = anchor - days * 86_400_000
+  return rows.filter((_, index) => times[index] !== null && times[index]! > cutoff)
+}
+
 /** A finite coordinate or null; strings such as "18.25" count, blanks and out-of-range values do not. */
 export function coordinate(value: unknown, limit: number): number | null {
   if (value === null || value === undefined || value === '') return null

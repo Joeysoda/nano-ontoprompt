@@ -1,4 +1,5 @@
 import { specOf, type AppDefinition, type Page, type Widget } from './spec'
+import { regionsOf, spanOf } from './templates'
 
 export type DefinitionIssue = { location: string; message: string }
 
@@ -36,6 +37,10 @@ export function validateDefinition(definition: AppDefinition): DefinitionIssue[]
       if (!spec) issues.push({ location, message: `未知组件类型 ${widget.type}` })
       for (const key of REQUIRED_PROPS[widget.type] ?? []) if (!(key in widget.props)) issues.push({ location, message: `缺少必要配置 ${key}` })
       if (widget.source && !sources.has(widget.source)) issues.push({ location, message: `数据源 ${widget.source} 不存在` })
+      const regions = regionsOf(page)
+      if (regions.length && !regions.some(row => row.id === widget.region)) issues.push({ location, message: '组件不在本页模板的任何区域里' })
+      const item = page.layout.find(row => row.i === widget.id)
+      if (item && item.x + item.w > spanOf(page, widget.region)) issues.push({ location, message: `宽度超出所在区域（${spanOf(page, widget.region)} 列）` })
       const usedVariables = [widget.props.variable, widget.props.filter_variable, widget.on_select?.set_variable].filter(Boolean) as string[]
       for (const id of usedVariables) if (!variables.has(id)) issues.push({ location, message: `变量 ${id} 不存在` })
       for (const id of [widget.props.navigate, widget.on_select?.navigate].filter(Boolean) as string[]) if (!pages.has(id)) issues.push({ location, message: `目标页面 ${id} 不存在` })
