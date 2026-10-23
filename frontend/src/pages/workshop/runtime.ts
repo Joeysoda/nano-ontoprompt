@@ -23,13 +23,17 @@ export function useApp(ontologyId: string, appId: string, version?: number) {
 /**
  * Resolve every data source; a `run.<source>` URL parameter pins a run, otherwise the Study's latest completed run is used.
  * Ontology sources with a time field get the time range applied on the server, over all their objects.
+ * In the editor (`draft`), sources resolve from their current definition, so unpublished ones show data too.
  */
-export function useSources(ontologyId: string, appId: string, definition: AppDefinition | undefined, pinned: Record<string, string | undefined>, version?: number, timeRange: TimeRange = 'all') {
+export function useSources(ontologyId: string, appId: string, definition: AppDefinition | undefined, pinned: Record<string, string | undefined>, version?: number,
+  timeRange: TimeRange = 'all', draft = false) {
   const queryClient = useQueryClient()
   const sources = definition?.data_sources ?? []
   const results = useQueries({ queries: sources.map(source => ({
     queryKey: ['workshop-source', ontologyId, appId, version ?? 'head', source.id, pinned[source.id] ?? 'latest', JSON.stringify(source), rangeFor(source, timeRange)],
-    queryFn: () => apiClientV2.get<ResolvedSource>(`${appsUrl(ontologyId)}/${appId}/sources/${source.id}`, { params: { ...(pinned[source.id] ? { run: pinned[source.id] } : {}), ...(version ? { version } : {}), range: rangeFor(source, timeRange) } }),
+    queryFn: () => draft
+      ? apiClientV2.post<ResolvedSource>(`${appsUrl(ontologyId)}/${appId}/sources:preview`, { source, run: pinned[source.id] ?? null, range: rangeFor(source, timeRange) })
+      : apiClientV2.get<ResolvedSource>(`${appsUrl(ontologyId)}/${appId}/sources/${source.id}`, { params: { ...(pinned[source.id] ? { run: pinned[source.id] } : {}), ...(version ? { version } : {}), range: rangeFor(source, timeRange) } }),
     retry: false,
   })) })
   const resolved = Object.fromEntries(sources.map((source, index) => [source.id, results[index]?.data]))

@@ -1,4 +1,4 @@
-import { specOf, type AppDefinition, type Page, type Widget } from './spec'
+import { specOf, type AppDefinition, type DataSource, type Page, type Widget } from './spec'
 import { regionsOf, spanOf } from './templates'
 
 export type DefinitionIssue = { location: string; message: string }
@@ -60,3 +60,18 @@ export function duplicateWidget(page: Page, widget: Widget, allWidgetIds: string
     layout: current ? { ...current, i: id, x: Math.min(23, current.x + 1), y: current.y + 1 } : { i: id, x: 0, y: 0, w: specOf(widget.type)?.w ?? 8, h: specOf(widget.type)?.h ?? 6 },
   }
 }
+
+export type AutobindField = { name: string; label: string; data_type: string; role: string; distinct: number; samples: string[]; dimension: string | null }
+export type AutobindResult = {
+  mode: 'rules' | 'llm'; model: string | null; dropped: string[]; data_sources: DataSource[]; page: Page
+  profile: { object_type: string; label: string; count: number; fields: AutobindField[]; time_field: string | null }
+  plan: { page_title: string; reasoning?: string }
+}
+
+/** Keep only the chosen widgets, and the data sources they still use. */
+export function pickWidgets(result: AutobindResult, keep: Set<string>): { data_sources: DataSource[]; page: Page } {
+  const widgets = result.page.widgets.filter(row => keep.has(row.id))
+  const used = new Set(widgets.map(row => row.source))
+  return { data_sources: result.data_sources.filter(row => used.has(row.id)), page: { ...result.page, widgets, layout: result.page.layout.filter(row => keep.has(row.i)) } }
+}
+

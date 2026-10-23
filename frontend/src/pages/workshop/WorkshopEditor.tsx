@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { apiClientV2, formatApiError } from '@/api/client'
 import { asRows, discoverFields, discoverPaths, getPath } from '@/components/dashboard/binding'
+import AutobindDialog from './AutobindDialog'
 import PageCanvas from './PageCanvas'
 import { duplicateWidget, resourceReferences, validateDefinition } from './editorModel'
 import { appsUrl, timeFieldOf, timeFieldsOf, useApp, useSources } from './runtime'
@@ -27,13 +28,14 @@ export default function WorkshopEditor() {
   const [chosenPage, setPageId] = useState('')
   const [selected, setSelected] = useState('')
   const [chosenRegion, setRegion] = useState<string | null>(null)
+  const [autobinding, setAutobinding] = useState(false)
   const [preview, setPreview] = useState(false)
   const [vars, setVars] = useState<Record<string, string | null>>({})
   const [comment, setComment] = useState('')
   const [history, setHistory] = useState<{ version: number; past: AppDefinition[]; future: AppDefinition[] }>({ version: 0, past: [], future: [] })
   const [notice, setNotice] = useState('')
   const pageId = chosenPage || draft?.pages[0]?.id || ''
-  const sources = useSources(ontologyId, appId, draft ?? undefined, {}, undefined, (draft?.settings ?? DEFAULT_SETTINGS).time_range)
+  const sources = useSources(ontologyId, appId, draft ?? undefined, {}, undefined, (draft?.settings ?? DEFAULT_SETTINGS).time_range, true)
   const publish = useMutation({
     mutationFn: () => apiClientV2.post<{ head_version: number; unchanged: boolean }>(`${appsUrl(ontologyId)}/${appId}/versions`, { expected_version: baseVersion, definition: draft, comment }),
     onSuccess: async () => { setComment(''); await queryClient.invalidateQueries({ queryKey: ['workshop-app', ontologyId, appId] }); sources.refresh() },
@@ -94,8 +96,11 @@ export default function WorkshopEditor() {
     {publish.error && <p role="alert" className="bg-rose-50 px-4 py-2 text-sm text-rose-700">{formatApiError(publish.error)}</p>}
     {notice && <p role="status" className="bg-amber-50 px-4 py-2 text-sm text-amber-800">{notice}</p>}
     {issues.length > 0 && <div role="alert" className="bg-rose-50 px-4 py-2 text-sm text-rose-800"><strong>发布前需修复 {issues.length} 个问题：</strong> {issues.slice(0, 3).map(issue => `${issue.location}：${issue.message}`).join('；')}{issues.length > 3 ? '…' : ''}</div>}
+    {autobinding && <AutobindDialog ontologyId={ontologyId} prefix={freePrefix(draft)} applyLabel="添加为新页面" onClose={() => setAutobinding(false)}
+      onApply={picked => { update({ ...draft, data_sources: [...draft.data_sources, ...picked.data_sources], pages: [...draft.pages, picked.page] }); setPageId(picked.page.id); setSelected(''); setAutobinding(false) }} />}
     <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)_340px]">
       <aside className="space-y-4 overflow-auto border-r bg-white p-3" aria-label="组件库">
+        <button className="wb-button-primary w-full" onClick={() => setAutobinding(true)} title="选一类对象，自动生成一页配好数据的组件">一键绑定…</button>
         <section><h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">添加组件</h2>
           {regions.length > 0 && <p className="mb-2 text-[11px] text-slate-500" data-testid="add-target">添加到：{activeRegion ? regions.find(row => row.id === activeRegion)!.label : '按组件类型自动选区域'}</p>}
           {WIDGETS.map(spec => <button key={spec.type} onClick={() => addWidget(spec.type)} title={spec.description} className="mb-1 block w-full rounded border px-2 py-1.5 text-left text-sm hover:border-blue-400">＋ {spec.label}</button>)}</section>
@@ -122,6 +127,14 @@ export default function WorkshopEditor() {
       </aside>
     </div>
   </div>
+}
+
+/** auto1_, auto2_, ...: the first prefix no data source or page of the app uses yet. */
+function freePrefix(definition: AppDefinition) {
+  const taken = [...definition.data_sources.map(row => row.id), ...definition.pages.map(row => row.id)]
+  let index = 1
+  while (taken.some(id => id.startsWith(`auto${index}_`))) index += 1
+  return `auto${index}_`
 }
 
 function PageInspector({ page, canDelete, onChange, onDelete }: { page: Page; canDelete: boolean; onChange: (patch: Partial<Page>) => void; onDelete: () => void }) {
