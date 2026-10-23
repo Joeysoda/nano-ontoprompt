@@ -61,6 +61,8 @@ from app.routers.v2 import scenario_studies as scenario_studies_v2
 from app.routers.v2 import rule_runtime as rule_runtime_v2
 from app.routers.v2 import graph_views as graph_views_v2
 from app.routers.v2 import workshop_apps as workshop_apps_v2
+from app.routers.v2 import ontology_queries as ontology_queries_v2
+from app.services.v2 import mcp_server
 from app.routers.v2 import dynamic_ontology as dynamic_ontology_v2
 from app.routers.v2 import temporal_replays as temporal_replays_v2
 from app.routers.v2 import temporal_streams as temporal_streams_v2
@@ -375,7 +377,9 @@ async def lifespan(app: FastAPI):
         setup_indexes()
     except Exception:
         logger.warning("Neo4j index setup skipped (unavailable); startup continues", exc_info=True)
-    yield
+    # The Ontology MCP endpoint (streamable HTTP) needs its session manager running for the app's lifetime.
+    async with mcp_server.start().run():
+        yield
 
 app = FastAPI(title="OntoPrompt API", version="0.1.0", lifespan=lifespan)
 
@@ -453,6 +457,8 @@ app.include_router(scenario_studies_v2.router, prefix="/api/v2/ontologies", tags
 app.include_router(rule_runtime_v2.router, prefix="/api/v2/ontologies", tags=["v2-rule-runtime"])
 app.include_router(graph_views_v2.router, prefix="/api/v2/ontologies", tags=["v2-graph-views"])
 app.include_router(workshop_apps_v2.router, prefix="/api/v2/ontologies", tags=["v2-workshop-apps"])
+app.include_router(ontology_queries_v2.router, prefix="/api/v2/ontologies", tags=["v2-ontology-queries"])
+app.mount("/api/v2/mcp", mcp_server.http_app)
 app.include_router(dynamic_ontology_v2.router, prefix="/api/v2/ontologies", tags=["v2-ontology-editor"])
 app.include_router(what_if_v2.router, prefix="/api/v2/ontologies", tags=["v2-what-if"])
 app.include_router(semantic_core_v2.router, prefix="/api/v2/ontologies", tags=["v2-semantic-core"])

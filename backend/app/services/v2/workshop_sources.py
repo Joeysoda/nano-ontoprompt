@@ -191,11 +191,11 @@ def shift(anchor, data_type: str, days: int):
     return float(anchor) - days * 86_400
 
 
-def resolve_object_set(db, ontology_id: str, app_id: str, source: dict, user, access, time_range: str = "all") -> dict:
+def resolve_object_set(db, ontology_id: str, app_id: str, source: dict, user, access, time_range: str = "all", reuse_any: bool = False) -> dict:
     # The scan budget covers the whole snapshot; at most MAX_OBJECTS objects are returned.
     select = source.get("select") or object_type_properties(load_sql_metadata(db, ontology_id), source["object_type"])
     reader = _Reader(db, ontology_id, app_id, user, access, [*select, *[row["field"] for row in source.get("filters") or []],
-                                                             *[source[key] for key in ("time_field", "order_by") if source.get(key)]])
+                                                             *[source[key] for key in ("time_field", "order_by") if source.get(key)]], reuse_any=reuse_any)
     filters, window = reader.time_filter(source["object_type"], source.get("filters") or [], source.get("time_field"), time_range)
     objects, truncated = reader.materialize(source["object_type"], select, filters, int(source.get("limit") or MAX_OBJECTS), source.get("order_by"),
                                             source.get("descending", True)) if filters is not None else ([], False)
@@ -211,11 +211,11 @@ def band(value, cuts: list, otherwise: str):
     return next((label for minimum, label in cuts if value >= minimum), otherwise)
 
 
-def resolve_aggregate(db, ontology_id: str, app_id: str, source: dict, user, access, time_range: str = "all") -> dict:
+def resolve_aggregate(db, ontology_id: str, app_id: str, source: dict, user, access, time_range: str = "all", reuse_any: bool = False) -> dict:
     join = source.get("join") or {}
     reader = _Reader(db, ontology_id, app_id, user, access, [*source["group_by"], *[row["property"] for row in source["metrics"] if row.get("property")],
                                                              *[row["field"] for row in source.get("filters") or []], *([source["time_field"]] if source.get("time_field") else []),
-                                                             *join.get("select", []), *([join["key"]] if join.get("key") else [])])
+                                                             *join.get("select", []), *([join["key"]] if join.get("key") else [])], reuse_any=reuse_any)
     filters, window = reader.time_filter(source["object_type"], source.get("filters") or [], source.get("time_field"), time_range)
     groups = reader.aggregate(source["object_type"], filters, source["group_by"], source["metrics"]) if filters is not None else []
     if join:

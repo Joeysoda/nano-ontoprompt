@@ -28,6 +28,7 @@ from app.models.v2.security import OntologySecurityPolicy
 from app.models.v2.schema_migration import SchemaDependency, SchemaMigrationInstruction, SchemaMigrationPlan, SchemaMigrationRun
 from app.models.v2.time_series import TimeSeriesSync
 from app.models.v2.workshop_app import WorkshopApp, WorkshopAppVersion
+from app.models.v2.ontology_query import McpScope, OntologyQuery, OntologyQueryVersion
 from app.models.v2.decision import DecisionPackage, DecisionPackageAction, DecisionPackageEvidence, DecisionPackageEvent, DecisionOutbox
 
 __all__ = [

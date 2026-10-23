@@ -135,7 +135,23 @@ class AggregateSource(Strict):
         return self
 
 
-DataSource = Annotated[StudyRunSource | ObjectSetSource | AlertsSource | AggregateSource, Field(discriminator="kind")]
+class QuerySource(Strict):
+    """A shared ontology query.  version: a range such as "^1" (empty = the current major, fixed on save);
+    params: a value, or {"variable": id} to follow an app variable."""
+    id: str = Field(pattern=ID)
+    kind: Literal["query"]
+    label: str = ""
+    query: str = Field(pattern=r"^[a-z][a-z0-9_]{1,62}$")
+    version: str = ""
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+def query_variables(source) -> set[str]:
+    params = source.params if hasattr(source, "params") else source.get("params") or {}
+    return {value["variable"] for value in params.values() if isinstance(value, dict) and value.get("variable")}
+
+
+DataSource = Annotated[StudyRunSource | ObjectSetSource | AlertsSource | AggregateSource | QuerySource, Field(discriminator="kind")]
 
 
 class Variable(Strict):
@@ -197,6 +213,9 @@ class AppDefinition(Strict):
         pages = [row.id for row in self.pages]
         if len(set(pages)) != len(pages) or len(sources) != len(self.data_sources) or len(variables) != len(self.variables):
             raise ValueError("Page, data source and variable ids must be unique")
+        for source in self.data_sources:
+            if source.kind == "query" and (unknown := query_variables(source) - variables):
+                raise ValueError(f"data source {source.id}: unknown variables {sorted(unknown)}")
         for page in self.pages:
             ids = [row.id for row in page.widgets]
             if len(set(ids)) != len(ids):
@@ -259,8 +278,22 @@ def _app(db, ontology_id, app_id, user) -> WorkshopApp:
 
 
 def _definition(db, ontology_id, definition: AppDefinition) -> dict:
-    metadata = None
+    from app.models.v2.ontology_query import OntologyQuery
+    from app.services.v2 import ontology_queries
+    metadata, pinned = None, {}
     for source in definition.data_sources:
+        if source.kind == "query":
+            query = db.query(OntologyQuery).filter_by(ontology_id=ontology_id, api_name=source.query).first()
+            if query is None:
+                raise HTTPException(422, {"code": "query_not_found", "message": f"Data source {source.id}: query {source.query} does not exist"})
+            wanted = source.version or f"^{ontology_queries.parse(query.latest_version)[0]}"   # follow the current major by default
+            try:
+                version = ontology_queries.pick(db, query, wanted)
+            except ontology_queries.QueryError as exc:
+                raise HTTPException(422, {"code": exc.code, "message": f"Data source {source.id}: {exc.message}"}) from exc
+            if unknown := set(source.params) - {p["name"] for p in version.definition.get("params", [])}:
+                raise HTTPException(422, {"code": "unknown_parameter", "message": f"Data source {source.id}: unknown parameters {sorted(unknown)}"})
+            pinned[source.id] = wanted
         if source.kind == "study_run" and not db.query(StudyDefinition).filter_by(id=source.study_id, ontology_id=ontology_id).first():
             raise HTTPException(422, {"code": "unknown_study", "message": f"Data source {source.id} points to a Study outside this ontology"})
         if source.kind == "object_set":
@@ -284,7 +317,11 @@ def _definition(db, ontology_id, definition: AppDefinition) -> dict:
                     raise HTTPException(422, {"code": "unknown_type", "message": f"Data source {source.id}: {exc.issue.message}"}) from exc
                 if unknown := fields - known:
                     raise HTTPException(422, {"code": "unknown_property", "message": f"Data source {source.id}: unknown properties {sorted(unknown)} on {object_type}"})
-    return definition.model_dump(mode="json", by_alias=True)
+    dumped = definition.model_dump(mode="json", by_alias=True)
+    for source in dumped["data_sources"]:
+        if source["id"] in pinned:
+            source["version"] = pinned[source["id"]]
+    return dumped
 
 
 def _version(v: WorkshopAppVersion) -> dict:
@@ -358,9 +395,27 @@ def refresh_snapshot(ontology_id: str, app_id: str, db: Session = Depends(get_db
     return {"data_view_id": view.id, "created_at": view.created_at.isoformat(), "object_count": view.object_count}
 
 
-def _resolve(db, ontology_id: str, app_id: str, source: dict, run: str | None, time_range: str, user, access) -> dict:
+def _resolve(db, ontology_id: str, app_id: str, source: dict, run: str | None, time_range: str, user, access, values: dict | None = None) -> dict:
     """Resolve one source definition.  Study runs: a pinned run when given, else the latest completed run.
-    Ontology sources apply the app-wide time range on the server."""
+    Ontology sources apply the app-wide time range on the server; query sources take app variable values."""
+    if source.get("kind") == "query":
+        from app.models.v2.ontology_query import OntologyQuery
+        from app.services.v2 import ontology_queries
+        query = db.query(OntologyQuery).filter_by(ontology_id=ontology_id, api_name=source["query"]).first()
+        if query is None:
+            raise HTTPException(404, {"code": "query_not_found", "message": f"Query {source['query']} not found"})
+        params = {}
+        for name, value in (source.get("params") or {}).items():
+            value = (values or {}).get(value["variable"]) if isinstance(value, dict) and value.get("variable") else value
+            if value not in (None, ""):
+                params[name] = value
+        try:
+            version = ontology_queries.pick(db, query, source.get("version") or "latest")
+            return {"source_id": source["id"], "query": query.api_name, **ontology_queries.run(db, ontology_id, version, params, time_range, user, access)}
+        except ontology_queries.QueryError as exc:
+            raise HTTPException(exc.status, {"code": exc.code, "message": exc.message}) from exc
+        except ObjectQueryError as exc:
+            raise http_error(exc) from exc
     if source.get("kind") in ("object_set", "alerts", "aggregate"):
         try:
             if source["kind"] == "object_set":
@@ -392,7 +447,8 @@ TimeRange = Literal["all", "1d", "7d", "30d"]
 
 @router.get("/{ontology_id}/workshop-apps/{app_id}/sources/{source_id}")
 def resolve_source(ontology_id: str, app_id: str, source_id: str, run: str | None = None, version: int | None = None,
-                   time_range: TimeRange = Query("all", alias="range"), db: Session = Depends(get_db), user=Depends(get_current_user)):
+                   time_range: TimeRange = Query("all", alias="range"), values: str | None = Query(None, description="JSON object of app variable values"),
+                   db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Resolve a data source of a saved version of the app."""
     access = _authorize(ontology_id, db, user)
     row = _app(db, ontology_id, app_id, user)
@@ -400,13 +456,15 @@ def resolve_source(ontology_id: str, app_id: str, source_id: str, run: str | Non
     source = next((item for item in found.definition.get("data_sources", []) if item["id"] == source_id), None)
     if not source:
         raise HTTPException(404, {"code": "source_not_found", "message": "Data source not found"})
-    return _resolve(db, ontology_id, app_id, source, run, time_range, user, access)
+    import json
+    return _resolve(db, ontology_id, app_id, source, run, time_range, user, access, json.loads(values) if values else None)
 
 
 class PreviewSource(Strict):
     source: DataSource
     run: str | None = None
     range: TimeRange = "all"
+    values: dict[str, Any] = Field(default_factory=dict)   # app variable values for query parameters
 
 
 @router.post("/{ontology_id}/workshop-apps/{app_id}/sources:preview")
@@ -414,10 +472,10 @@ def preview_source(ontology_id: str, app_id: str, body: PreviewSource, db: Sessi
     """Resolve a source the editor has not published yet, after the same checks a saved app gets."""
     access = _authorize(ontology_id, db, user)
     _app(db, ontology_id, app_id, user)
-    definition = AppDefinition.model_validate({"schema": "workshop-app/v1", "data_sources": [body.source.model_dump(mode="json")], "variables": [],
-                                               "pages": [{"id": "preview", "title": "preview"}]})
-    _definition(db, ontology_id, definition)
-    return _resolve(db, ontology_id, app_id, body.source.model_dump(mode="json"), body.run, body.range, user, access)
+    definition = AppDefinition.model_validate({"schema": "workshop-app/v1", "data_sources": [body.source.model_dump(mode="json")],
+                                               "variables": [{"id": name} for name in query_variables(body.source)], "pages": [{"id": "preview", "title": "preview"}]})
+    source = _definition(db, ontology_id, definition)["data_sources"][0]
+    return _resolve(db, ontology_id, app_id, source, body.run, body.range, user, access, body.values)
 
 
 class Autobind(Strict):

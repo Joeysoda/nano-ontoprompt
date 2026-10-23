@@ -12,6 +12,8 @@ cryptography==43.0.1
 celery==5.4.0
 redis==5.1.1
 httpx==0.27.2
+# Ontology MCP endpoint (official SDK). 1.12.4 is the newest release compatible with the pinned fastapi/starlette/pydantic.
+mcp==1.12.4
 pydantic-settings==2.5.2
 pydantic[email]==2.9.2
 pytest==8.3.3

@@ -241,3 +241,33 @@ def test_llm_plans_are_checked_and_bad_choices_dropped(db, admin_user, events, m
     assert [b["title"] for b in plan["breakdowns"]] == ["按站点"]               # breakdown by a measure dropped
     assert plan["table"] == ["at"] and len(dropped) == 4
     auto.compile_plan(plan, prof, "auto_")                                      # what is left still compiles
+
+
+# --- ontology queries ---------------------------------------------------------------------------------------------------
+
+def test_ontology_queries_run_version_and_feed_apps(client, auth_headers, events):
+    api = events["api"].replace("/workshop-apps", "/queries")
+    source = {k: v for k, v in PER_SITE.items() if k != "id"}
+    created = client.post(api, headers=auth_headers, json={"api_name": "events_by_site", "name": "各站点事件",
+                                                           "definition": {"source": source, "params": [{"name": "site", "field": "site_id"}]}})
+    assert created.status_code == 201, created.text
+    assert created.json()["latest_version"] == "1.0.0" and created.json()["output_schema"]["shape"] == "2d"
+    run = client.post(f"{api}/events_by_site:run", headers=auth_headers, json={"params": {"site": "site-North"}, "range": "7d"}).json()
+    assert [g["site_id"] for g in run["outputs"]["groups"]] == ["site-North"] and run["outputs"]["groups"][0]["events"] == expected(7)["site-North"]["events"]
+    # Compatible addition -> minor; removing a column needs a major release.
+    more = dict(source, metrics=source["metrics"] + [{"key": "biggest", "op": "max", "property": "amount"}])
+    assert client.post(f"{api}/events_by_site/versions", headers=auth_headers, json={"definition": {"source": more, "params": [{"name": "site", "field": "site_id"}]}}).json()["published"] == "1.1.0"
+    fewer = dict(source, metrics=source["metrics"][:1], bands=[])
+    refused = client.post(f"{api}/events_by_site/versions", headers=auth_headers, json={"definition": {"source": fewer, "params": []}, "bump": "minor"})
+    assert refused.status_code == 409 and refused.json()["detail"]["code"] == "breaking_change"
+    # An app saved now follows ^1, keeps reading 1.x after 2.0.0, and passes a variable as the parameter.
+    definition = {"schema": "workshop-app/v1", "variables": [{"id": "s"}], "data_sources": [{"id": "q", "kind": "query", "query": "events_by_site", "params": {"site": {"variable": "s"}}}],
+                  "pages": [{"id": "p", "title": "p", "widgets": [{"id": "t", "type": "table", "source": "q", "path": "groups", "props": {"columns": [{"label": "站点", "field": "name"}]}}]}]}
+    app = client.post(events["api"], headers=auth_headers, json={"name": "q", "definition": definition}).json()
+    assert app["head"]["definition"]["data_sources"][0]["version"] == "^1"
+    assert client.post(f"{api}/events_by_site/versions", headers=auth_headers, json={"definition": {"source": fewer, "params": []}, "bump": "major"}).json()["published"] == "2.0.0"
+    out = client.get(f"{events['api']}/{app['id']}/sources/q", headers=auth_headers, params={"values": json.dumps({"s": "site-East"})}).json()
+    assert out["version"] == "1.1.0" and [g["site_id"] for g in out["outputs"]["groups"]] == ["site-East"] and "biggest" in out["outputs"]["groups"][0]
+    assert [r["app_name"] for r in client.get(f"{api}/events_by_site", headers=auth_headers).json()["references"]] == ["q"]
+    bad = client.post(events["api"], headers=auth_headers, json={"name": "bad", "definition": {**definition, "data_sources": [{**definition["data_sources"][0], "params": {"planet": "x"}}]}})
+    assert bad.status_code == 422 and bad.json()["detail"]["code"] == "unknown_parameter"
