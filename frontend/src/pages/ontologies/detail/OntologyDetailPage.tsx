@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ontologyApi } from "@/api/ontologies";
-import { apiClientV2, getApiErrorStatus } from "@/api/client";
+import { getApiErrorStatus } from "@/api/client";
 import StatusBadge from "@/components/StatusBadge";
 import EntitiesTab from "./tabs/EntitiesTab";
 import LogicTab from "./tabs/LogicTab";
@@ -17,6 +17,7 @@ import OntologyEditorPanel from "./OntologyEditorPanel";
 import ChangeHistoryDrawer from "./ChangeHistoryDrawer";
 import SemanticControlPanel from "./SemanticControlPanel";
 import { useAuthStore } from "@/stores/authStore";
+import { NAV_ENTRIES } from "@/components/navigation";
 
 const GraphTab = lazy(() => import("./tabs/GraphTabV2"));
 const DataModelTab = lazy(() => import("./tabs/DataModelTab"));
@@ -29,7 +30,6 @@ const SourcesTab = lazy(() => import("./tabs/SourcesTab"));
 type Tab = "overview" | "sources" | "graph" | "data_model" | "dynamic" | "entities" | "objects" | "logic" | "audit" | "what_if" | "reasoning" | "decisions" | "agent" | "manufacturing" | "logic-assets" | "alerts" | "rules";
 // Like Ontology Manager's Discover view: land on what this ontology contains.
 const DEFAULT_TAB: Tab = "overview";
-type NavEntry = { key: Tab; label: string; hint?: string } | { href: string; label: string; hint?: string };
 
 class OntologyCanvasBoundary extends React.Component<
   { children: React.ReactNode },
@@ -77,9 +77,6 @@ export default function OntologyDetailPage() {
   });
   const temporal = ontology?.data_class === "temporal";
   const commonTabs = ["overview", "sources", "graph", "data_model", "entities", "objects", "logic", "audit", "reasoning", "decisions", "agent", "manufacturing", "logic-assets", "alerts", "rules"];
-  const ontologyList = useQuery({ queryKey: ["ontologies", "switcher"], queryFn: () => ontologyApi.list({ page_size: 200 }) });
-  const openAlerts = useQuery({ queryKey: ["alerts", id, "open-count"], enabled: !!id,
-    queryFn: () => apiClientV2.get<{ total: number }>(`/ontologies/${id}/alerts?status=open&limit=1`) });
   const validTabs = temporal ? [...commonTabs, "dynamic", "what_if"] : commonTabs;
   const activeTab: Tab = validTabs.includes(requested) ? (requested as Tab) : DEFAULT_TAB;
   useEffect(() => {
@@ -100,33 +97,10 @@ export default function OntologyDetailPage() {
     </div>;
   if (!ontology)
     return <div className="p-6 text-sm text-red-600">未找到本体</div>;
-  // Ontology Manager layout: overview, resources (schema), data brought into
-  // this ontology, the applications that run on it, then governance.
-  const navGroups: Array<{ label: string; entries: NavEntry[] }> = [
-    { label: "", entries: [{ key: "overview", label: "总览" }] },
-    { label: "资源", entries: [
-      { key: "entities", label: "对象类型" },
-      { key: "graph", label: "链接与本体图" },
-      { key: "data_model", label: "数据模型" },
-      { key: "logic", label: "逻辑规则" },
-      { key: "rules", label: "运行规则", hint: "定时检查与告警" },
-      { key: "logic-assets", label: "函数" },
-    ] },
-    { label: "数据", entries: [
-      { key: "sources", label: "数据源", hint: "导入数据到这个本体" },
-      { key: "manufacturing", label: "业务数据" },
-      ...(temporal ? [{ key: "dynamic" as Tab, label: "动态演化（实验）" }] : []),
-    ] },
-    { label: "应用", entries: [
-      { key: "objects", label: "对象浏览器", hint: "查找、筛选、关系图与操作" },
-      { key: "alerts", label: "告警中心", hint: "规则命中的异常" },
-      { href: `/ontologies/${id}/scenario-studies`, label: "情景研究", hint: "版本化的假设推演与已保存案例" },
-      { key: "decisions", label: "决策与影响链" },
-      { key: "reasoning", label: "推理验证" },
-      { key: "agent", label: "Agent 决策" },
-    ] },
-    { label: "治理", entries: [{ key: "audit", label: "质量审查" }] },
-  ];
+  // Sections are picked from the primary sidebar (docs/adr/0001-flat-task-navigation.md);
+  // this page only renders the chosen one for the current ontology.
+  const sectionLabel = NAV_ENTRIES.find((entry) => entry.tab === activeTab)?.label
+    ?? ({ what_if: "What-if（旧版）" } as Record<string, string>)[activeTab] ?? "";
   const select = (tab: Tab, extra = "") => {
     const entity = searchParams.get("entity");
     const at = searchParams.get("at");
@@ -140,20 +114,10 @@ export default function OntologyDetailPage() {
   return (
     <div className="wb-page max-w-[1540px]">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <button
-          onClick={() => navigate("/ontologies")}
-          className="text-sm text-slate-500 hover:text-slate-900"
-        >
-          返回本体库
-        </button>
-        <span className="text-slate-300">/</span>
-        <h1 className="text-xl font-semibold text-slate-900">
-          {ontology.name}
-        </h1>
-        {(ontologyList.data?.items.length ?? 0) > 1 && <select aria-label="切换本体" value={id} onChange={(event) => navigate(`/ontologies/${event.target.value}`)}
-          className="max-w-[220px] rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600">
-          {ontologyList.data!.items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>}
+        <div className="min-w-0">
+          <p className="truncate text-xs text-slate-500">{ontology.name}</p>
+          <h1 className="text-xl font-semibold text-slate-900">{sectionLabel}</h1>
+        </div>
         {ontology.status && <StatusBadge status={ontology.status} />}
         <div className="ml-auto flex items-center gap-2"><details className="relative">
           <summary className="cursor-pointer list-none rounded-md bg-slate-900 px-3 py-2 text-xs text-white">新建 ▾</summary>
@@ -166,24 +130,6 @@ export default function OntologyDetailPage() {
       </div>
       {editing && canEdit && <OntologyEditorPanel ontologyId={id!} onChanged={() => setRefreshKey((value) => value + 1)} />}
       {editing && canEdit && <SemanticControlPanel ontologyId={id!} />}
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-      <nav aria-label="本体导航" className="shrink-0 lg:sticky lg:top-4 lg:w-[196px]">
-        {navGroups.map((group) => <div key={group.label || "home"} className="mb-4">
-          {group.label && <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-400">{group.label}</p>}
-          <ul className="flex flex-wrap gap-1 lg:block lg:space-y-0.5">{group.entries.map((entry) => {
-            const active = "key" in entry && activeTab === entry.key;
-            const badge = "key" in entry && entry.key === "alerts" && (openAlerts.data?.total ?? 0) > 0 ? openAlerts.data!.total : null;
-            return <li key={entry.label}>
-              <button type="button" onClick={() => ("key" in entry ? select(entry.key) : navigate(entry.href))} title={entry.hint}
-                aria-current={active ? "page" : undefined}
-                className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors ${active ? "bg-slate-900 font-medium text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}>
-                <span className="truncate">{entry.label}{"href" in entry && <span aria-hidden="true" className="ml-1 text-[10px] text-slate-400">↗</span>}</span>
-                {badge !== null && <span aria-label={`${badge} 条待处理告警`} className={`rounded-full px-1.5 text-[10px] font-semibold ${active ? "bg-white text-slate-900" : "bg-red-600 text-white"}`}>{badge}</span>}
-              </button>
-            </li>;
-          })}</ul>
-        </div>)}
-      </nav>
       <div className="min-w-0 flex-1">
       {activeTab === "graph" && (
         <OntologyCanvasBoundary>
@@ -214,7 +160,6 @@ export default function OntologyDetailPage() {
       {activeTab === "sources" && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载数据源</div>}><SourcesTab ontologyId={id!} dataClass={ontology.data_class} onOpen={(tab) => select(tab as Tab)} /></Suspense>}
       {activeTab === "alerts" && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载告警中心</div>}><AlertsTab ontologyId={id!} onOpenRules={() => select("rules")} /></Suspense>}
       {activeTab === "rules" && <Suspense fallback={<div role="status" className="py-12 text-center text-sm text-slate-500">正在加载运行规则</div>}><RulesTab ontologyId={id!} onOpenAlerts={() => select("alerts")} /></Suspense>}
-      </div>
       </div>
       {showHistory && <ChangeHistoryDrawer ontologyId={id!} onClose={() => setShowHistory(false)} />}
     </div>
