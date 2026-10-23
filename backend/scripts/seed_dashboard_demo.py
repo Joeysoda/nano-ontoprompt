@@ -44,6 +44,9 @@ TYPES = {
     "StoreCity": ("门店城市", {"city": "string", "state": "string", "country": "string", "latitude": "double", "longitude": "double"}),
     "Order": ("订单", {"order_time": "timestamp", "city_id": "string", "state": "string", "sales": "double", "late": "double"}),
 }
+# Display names an ontology designer would give the properties (one-click binding titles use them).
+LABELS = {"city": "城市", "state": "州", "country": "国家", "latitude": "纬度", "longitude": "经度",
+          "order_time": "下单时间", "city_id": "门店城市", "sales": "销售额", "late": "是否迟交"}
 LATE_BANDS = [{"field": "late_rate", "into": "late_level", "cuts": [[0.6, "高"], [0.5, "中"]], "otherwise": "低"}]
 
 
@@ -81,7 +84,7 @@ def seed_dataco(client: httpx.Client, csv_path: Path) -> tuple[str, list[dict], 
     with SessionLocal() as db:
         for api_name, (name_cn, props) in TYPES.items():
             entity = Entity(ontology_id=ontology["id"], name_cn=name_cn, name_en=api_name, canonical_id=f"ontology:{api_name}", type="EntityType",
-                            properties={"property_definitions": [{"id": key, "type": kind} for key, kind in props.items()]})
+                            properties={"property_definitions": [{"id": key, "type": kind, "name": LABELS[key]} for key, kind in props.items()]})
             db.add(entity); db.flush()
             db.bulk_save_objects([EntityInstance(id=node["id"], entity_id=entity.id, ontology_id=ontology["id"], row_identity=node["id"],
                                                  row_data=dict(node["properties"])) for node in (cities if api_name == "StoreCity" else orders)])
