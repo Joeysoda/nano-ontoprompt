@@ -4,7 +4,7 @@
 > 本清单和 [`originals.sha256`](originals.sha256) 进 git，让组员知道有哪些原件、来源在哪、被哪些笔记引用。
 > 拿到原件后核对完整性：`cd docs/research && sha256sum -c originals.sha256`。
 
-共 19 组、164 个文件、303.2 MB。
+共 20 组、165 个文件、303.2 MB。
 
 | 位置 | 内容 | 等级 | 来源 | 日期 | 文件 | 引用它的笔记 |
 |---|---|---|---|---|---|---|
@@ -24,6 +24,7 @@
 | `official/evidence/palantir_official_industrial_videos/xZBaOenSZ9I/` | Sovereign AI for the Compute Supply Chain / NVIDIA at AIPCon 11 | 官方视频 | [Palantir](https://www.youtube.com/watch?v=xZBaOenSZ9I) | 发布 2026-09-11 | 8 个 · 26.5 MB | [PALANTIR_OFFICIAL_INDUSTRIAL_USE_CASE_VIDEO_REVIEW_2026_10_18.md](official/PALANTIR_OFFICIAL_INDUSTRIAL_USE_CASE_VIDEO_REVIEW_2026_10_18.md) |
 | `official/evidence/vertex-scenario-research-2026-10-12/` | Palantir Vertex 情景推演资料：截图、培训页、油气白皮书 | 官方文档 / 官方白皮书 | [项目调研](https://www.palantir.com/docs/foundry/vertex/scenarios-getting-started) | 获取 2026-10-12 | 11 个 · 18.8 MB | [VERTEX_SCENARIO_REFERENCE_GALLERY_2026_10_12.md](official/VERTEX_SCENARIO_REFERENCE_GALLERY_2026_10_12.md) |
 | `official/evidence/youtube_lKOU7LPsaC4/` | Securing the Supply Chain with Palantir Foundry | 官方视频 | [Palantir](https://www.youtube.com/watch?v=lKOU7LPsaC4) | 发布 2021-12-10 | 65 个 · 48.1 MB | [PALANTIR_NHS_SUPPLY_CHAIN_VIDEO_SCENARIO_REVIEW_2026_10_18.md](official/PALANTIR_NHS_SUPPLY_CHAIN_VIDEO_SCENARIO_REVIEW_2026_10_18.md) |
+| `unofficial/evidence/ontoflow-github-readme-2026-10-23/` | OntoFlow 官方 GitHub 仓库 README（只有文档和图片，没有源码） | 第三方（厂商自述） | [北京图特摩斯科技（厂商自述）](https://github.com/ThutmoseAI/OntoFlow) | 获取 2026-10-23 | 1 个 · 8 KB | [ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md](unofficial/ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md) |
 | `unofficial/evidence/ontoflow-twin-app-builder-2026-10-22/` | OntoFlow 孪生应用搭建器编辑态截图（经营风险总览页） | 第三方产品截图 | 用户在对话中提供 | 获取 2026-10-22 | 1 个 · 143 KB | [ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md](unofficial/ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md) |
 | `unofficial/evidence/ontoflow-whitepaper/` | OntoFlow 本体智能开发平台 + AbutionGraph 本体数据库 技术与应用白皮书 | 第三方（厂商白皮书） | 用户提供 | 获取 2026-10 之前 | 1 个 · 10.4 MB | [ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md](unofficial/ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md) |
 | `unofficial/evidence/ontology-intelligence-report/` | 本体智能研究报告 | 第三方分析 | 用户提供 | 获取 2026-10 之前 | 1 个 · 2.5 MB | **未被任何笔记引用** |
