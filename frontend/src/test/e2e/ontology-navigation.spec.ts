@@ -37,12 +37,13 @@ async function mount(page: Page, path = `/ontologies/${ONT}`) {
   return posts;
 }
 
-test('ontology opens on an overview with Ontology Manager style groups', async ({ page }) => {
+test('ontology opens on its overview; the sidebar is grouped by task and follows the current ontology', async ({ page }) => {
   await mount(page);
-  const nav = page.getByRole('navigation', { name: '本体导航' });
-  for (const group of ['资源', '数据', '应用', '治理']) await expect(nav.getByText(group, { exact: true })).toBeVisible();
-  await expect(nav.getByRole('button', { name: /总览/ })).toHaveAttribute('aria-current', 'page');
+  const nav = page.getByRole('navigation', { name: '主导航' });
+  for (const group of ['数据接入', '本体建模', '探索', '推演', '应用', '告警', '智能体', '系统管理']) await expect(nav.getByText(group, { exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: '本体总览' })).toHaveAttribute('aria-current', 'page');
   await expect(nav.getByLabel('3 条待处理告警')).toBeVisible();
+  await expect(page.getByLabel('当前本体', { exact: true })).toHaveValue(ONT);
   const overview = page.getByRole('region', { name: '本体总览' });
   await expect(overview.getByText('待处理告警')).toBeVisible();
   await overview.getByRole('button', { name: /Machine/ }).click();
@@ -67,7 +68,7 @@ test('alert center lists, filters and acknowledges; rules page manages schedule 
   await expect.poll(() => posts.some(p => p.endsWith('/alerts/a1:acknowledge'))).toBeTruthy();
   await page.screenshot({ path: 'test-results/nav-alerts.png', fullPage: true });
 
-  await page.getByRole('navigation', { name: '本体导航' }).getByRole('button', { name: /运行规则/ }).click();
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '运行规则' }).click();
   await expect(page).toHaveURL(/tab=rules/);
   const rules = page.getByRole('region', { name: '运行规则' });
   await expect(rules.getByRole('heading', { name: '振动漂移' })).toBeVisible();
@@ -77,19 +78,19 @@ test('alert center lists, filters and acknowledges; rules page manages schedule 
   await page.screenshot({ path: 'test-results/nav-rules.png', fullPage: true });
 });
 
-test('old tab links still work and scenario studies open from the Use group', async ({ page }) => {
+test('old tab links still work; scenario studies and Workshop apps open for the current ontology', async ({ page }) => {
   await mount(page, `/ontologies/${ONT}?tab=logic-assets`);
-  const nav = page.getByRole('navigation', { name: '本体导航' });
-  await expect(nav.getByRole('button', { name: '函数', exact: true })).toHaveAttribute('aria-current', 'page');
-  await nav.getByRole('button', { name: /情景研究/ }).click();
+  const nav = page.getByRole('navigation', { name: '主导航' });
+  await expect(nav.getByRole('link', { name: '函数', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(nav.getByRole('link', { name: 'Workshop 应用' })).toHaveAttribute('href', `/apps/workshop?ontology=${ONT}`);
+  await nav.getByRole('link', { name: '情景研究' }).click();
   await expect(page).toHaveURL(new RegExp(`/ontologies/${ONT}/scenario-studies`));
 });
 
-test('global sidebar is platform level: home, library, applications, system; no standalone demo or data tool', async ({ page }) => {
-  await mount(page);
+test('without a current ontology, ontology features ask to pick one first', async ({ page }) => {
+  await mount(page, '/overview');
   const main = page.getByRole('navigation', { name: '主导航' });
-  for (const group of ['工作台', '应用', '系统']) await expect(main.getByText(group, { exact: true })).toBeVisible();
-  for (const link of ['首页', '本体库', '对象浏览器', '告警中心', '情景研究', '通用情景']) await expect(main.getByRole('link', { name: link, exact: true })).toBeVisible();
+  for (const link of ['首页', '本体库', '数据源', '对象浏览器', '关系图', '情景研究', 'Workshop 应用', '告警中心', '智能体决策', '模型与审查', '设置']) await expect(main.getByRole('link', { name: link, exact: true })).toBeVisible();
   await expect(main.getByText('供应商推演演示')).toHaveCount(0);
   await expect(main.getByText('数据工具')).toHaveCount(0);
   await main.getByRole('link', { name: '告警中心', exact: true }).click();
