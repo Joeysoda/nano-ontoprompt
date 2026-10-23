@@ -20,8 +20,8 @@ function useChart(build: (chart: echarts.ECharts) => void, deps: unknown[], read
 
 export function KpiStrip({ items }: { items: Kpi[] }) {
   return <div className="grid border-b border-slate-200 bg-white" style={{ gridTemplateColumns: `minmax(300px, 1.6fr) repeat(${items.length - 1}, minmax(0, 1fr))` }} data-testid="kpi-strip">
-    {items.map(item => <div key={item.label} className={`flex items-center gap-3 px-5 py-4 ${item.tone === 'bad' ? 'bg-rose-700 text-white' : item.tone === 'good' ? 'bg-emerald-700 text-white' : ''}`}>
-      <strong className="text-3xl font-semibold tabular-nums">{item.value}</strong>
+    {items.map(item => <div key={item.label} className={`flex min-w-0 flex-wrap items-center gap-x-3 overflow-hidden px-5 py-4 ${item.tone === 'bad' ? 'bg-rose-700 text-white' : item.tone === 'good' ? 'bg-emerald-700 text-white' : ''}`}>
+      <strong className="whitespace-nowrap text-3xl font-semibold tabular-nums">{item.value}</strong>
       <span className={`text-xs leading-tight ${item.tone ? 'text-white/85' : 'text-slate-500'}`}>{item.label}{item.note && <><br /><span className={item.tone ? '' : item.noteTone === 'good' ? 'text-emerald-700' : 'text-rose-700'}>{item.note}</span></>}</span>
     </div>)}
   </div>

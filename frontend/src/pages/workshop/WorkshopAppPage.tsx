@@ -15,8 +15,10 @@ function sourceStatus(source: DataSource, resolved: ResolvedSource | undefined, 
   if (resolved.kind === 'study_run') return `Run ${resolved.run_id.slice(0, 8)}${stamp(resolved.completed_at)}`
   const cut = resolved.outputs.truncated ? '（已截断，统计不完整）' : ''
   const window = resolved.outputs.time
-  const time = !timeFieldOf(source) ? ' · 不受时间范围影响' : window?.range && window.range !== 'all' ? (window.anchor ? ` · 截至 ${window.anchor.slice(0, 10)}` : ' · 没有时间数据') : ''
-  return `${resolved.outputs.count} ${UNIT[resolved.kind]}${cut}${time}`
+  const timeAware = source.kind === 'query' ? !!window?.field : !!timeFieldOf(source)
+  const version = resolved.version ? ` · v${resolved.version}` : ''
+  const time = !timeAware ? ' · 不受时间范围影响' : window?.range && window.range !== 'all' ? (window.anchor ? ` · 截至 ${window.anchor.slice(0, 10)}` : ' · 没有时间数据') : ''
+  return `${resolved.outputs.count} ${UNIT[resolved.kind]}${cut}${time}${version}`
 }
 
 /** Runs a published app: pages of bound widgets; selections and page live in the URL. */
@@ -28,8 +30,8 @@ export default function WorkshopAppPage() {
   const app = useApp(ontologyId, appId, version)
   const definition = app.data?.head.definition
   const state = useUrlState(definition)
-  const sources = useSources(ontologyId, appId, definition, state.pinned, version, state.timeRange)
-  const timed = (definition?.data_sources ?? []).some(source => timeFieldOf(source))
+  const sources = useSources(ontologyId, appId, definition, state.pinned, version, state.timeRange, false, state.vars)
+  const timed = (definition?.data_sources ?? []).some(source => source.kind === 'query' || timeFieldOf(source))
   const page = definition?.pages.find(row => row.id === state.pageId) ?? definition?.pages[0]
   const reload = useMutation({ mutationFn: sources.reload })
   const { mutate: reloadNow } = reload

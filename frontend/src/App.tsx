@@ -28,6 +28,7 @@ const DynamicDataPage = React.lazy(() => import("@/pages/data-management/dynamic
 const BenchmarksPage = React.lazy(() => import("@/pages/benchmarks/BenchmarksPage"));
 const AppLauncherPage = React.lazy(() => import("@/pages/apps/AppLauncherPage"));
 const WorkshopListPage = React.lazy(() => import("@/pages/workshop/WorkshopListPage"));
+const QueryLibraryPage = React.lazy(() => import("@/pages/queries/QueryLibraryPage"));
 const WorkshopAppPage = React.lazy(() => import("@/pages/workshop/WorkshopAppPage"));
 const WorkshopEditor = React.lazy(() => import("@/pages/workshop/WorkshopEditor"));
 const GenericScenarioWorkbenchPage = React.lazy(() => import("@/pages/what-if/GenericScenarioWorkbenchPage"));
@@ -293,6 +294,7 @@ export default function App() {
               path="/ontologies/:id/what-if"
               element={<OntologyStudiesRedirect />}
             />
+            <Route path="/apps/queries" element={<ProtectedRoute><QueryLibraryPage /></ProtectedRoute>} />
             <Route path="/apps/workshop" element={<ProtectedRoute><WorkshopListPage /></ProtectedRoute>} />
             <Route path="/apps/workshop/:appId" element={<ProtectedRoute><WorkshopAppPage /></ProtectedRoute>} />
             <Route path="/apps/workshop/:appId/edit" element={<ProtectedRoute><WorkshopEditor /></ProtectedRoute>} />

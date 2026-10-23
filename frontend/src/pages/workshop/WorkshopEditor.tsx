@@ -5,10 +5,10 @@ import { apiClientV2, formatApiError } from '@/api/client'
 import { asRows, discoverFields, discoverPaths, getPath } from '@/components/dashboard/binding'
 import AutobindDialog from './AutobindDialog'
 import PageCanvas from './PageCanvas'
-import { duplicateWidget, resourceReferences, validateDefinition } from './editorModel'
+import { bindFromSchema, duplicateWidget, resourceReferences, suggestWidgets, validateDefinition } from './editorModel'
 import { appsUrl, timeFieldOf, timeFieldsOf, useApp, useSources } from './runtime'
 import { applyTemplate, defaultRegion, moveToRegion, placeBox, placeNew, regionsOf, spanOf, TEMPLATES, type TemplateId } from './templates'
-import { nextId, specOf, WIDGETS, type AppDefinition, type DataSource, type FieldSpec, type LayoutItem, type Page, type Widget, DEFAULT_SETTINGS, REFRESH_OPTIONS, TIME_RANGES, type AppSettings, type WidgetType } from './spec'
+import { nextId, specOf, WIDGETS, type AppDefinition, type DataSource, type FieldSpec, type LayoutItem, type OutputSchema, type Page, type Widget, type AggregateSource, type ObjectSetSource, type QuerySource, type QuerySummary, DEFAULT_SETTINGS, REFRESH_OPTIONS, TIME_RANGES, type AppSettings, type WidgetType } from './spec'
 
 type Study = { id: string; name: string }
 type StudyDetail = { versions: Array<{ version: number; spec: { nodes: Array<{ key: string; kind: string }> } }> }
@@ -35,7 +35,7 @@ export default function WorkshopEditor() {
   const [history, setHistory] = useState<{ version: number; past: AppDefinition[]; future: AppDefinition[] }>({ version: 0, past: [], future: [] })
   const [notice, setNotice] = useState('')
   const pageId = chosenPage || draft?.pages[0]?.id || ''
-  const sources = useSources(ontologyId, appId, draft ?? undefined, {}, undefined, (draft?.settings ?? DEFAULT_SETTINGS).time_range, true)
+  const sources = useSources(ontologyId, appId, draft ?? undefined, {}, undefined, (draft?.settings ?? DEFAULT_SETTINGS).time_range, true, vars)
   const publish = useMutation({
     mutationFn: () => apiClientV2.post<{ head_version: number; unchanged: boolean }>(`${appsUrl(ontologyId)}/${appId}/versions`, { expected_version: baseVersion, definition: draft, comment }),
     onSuccess: async () => { setComment(''); await queryClient.invalidateQueries({ queryKey: ['workshop-app', ontologyId, appId] }); sources.refresh() },
@@ -80,6 +80,18 @@ export default function WorkshopEditor() {
       layout: [...page.layout, placeNew(page, spec.type as WidgetType, region, id)] })
     setSelected(id)
   }
+  const schemaOf = (sourceId?: string | null) => { const resolved = sourceId ? sources.resolved[sourceId] : undefined; return resolved && resolved.kind !== 'study_run' ? resolved.output_schema : undefined }
+  const addBoundWidget = (type: string, sourceId: string) => {
+    const schema = schemaOf(sourceId), spec = specOf(type)!
+    const binding = schema ? bindFromSchema(type, schema) : null
+    if (!binding || 'error' in binding) { setNotice(binding?.error ?? '数据源还没有返回结果结构'); return }
+    const id = nextId(type.replace(/_.*/, ''), draft.pages.flatMap(row => row.widgets.map(item => item.id)))
+    const region = regions.length ? activeRegion ?? defaultRegion(page, spec.type) : null
+    const label = draft.data_sources.find(row => row.id === sourceId)?.label ?? ''
+    updatePage({ widgets: [...page.widgets, { id, type: spec.type, title: `${label}${type === 'kpi_strip' ? '' : ` · ${spec.label}`}`, source: sourceId, path: binding.path, props: { ...structuredClone(spec.defaults), ...binding.props }, region }],
+      layout: [...page.layout, placeNew(page, spec.type as WidgetType, region, id)] })
+    setSelected(id)
+  }
   const settings = draft.settings ?? DEFAULT_SETTINGS
   const rt = { ontologyId, sources: sources.resolved, vars, setVar: (id: string, value: string | null) => setVars(current => ({ ...current, [id]: value })),
     navigate: (target: string) => setPageId(target), refresh: sources.refresh, timeRange: settings.time_range, timeFields: timeFieldsOf(draft) }
@@ -104,7 +116,7 @@ export default function WorkshopEditor() {
         <section><h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">添加组件</h2>
           {regions.length > 0 && <p className="mb-2 text-[11px] text-slate-500" data-testid="add-target">添加到：{activeRegion ? regions.find(row => row.id === activeRegion)!.label : '按组件类型自动选区域'}</p>}
           {WIDGETS.map(spec => <button key={spec.type} onClick={() => addWidget(spec.type)} title={spec.description} className="mb-1 block w-full rounded border px-2 py-1.5 text-left text-sm hover:border-blue-400">＋ {spec.label}</button>)}</section>
-        <DataSources draft={draft} update={update} ontologyId={ontologyId} errors={sources.errors} onBlocked={setNotice} />
+        <DataSources draft={draft} update={update} ontologyId={ontologyId} errors={sources.errors} onBlocked={setNotice} schemaOf={schemaOf} onCreateWidget={addBoundWidget} />
         <Variables draft={draft} update={update} onBlocked={setNotice} />
         <SettingsPanel settings={settings} onChange={patch => update({ ...draft, settings: { ...settings, ...patch } })} />
       </aside>
@@ -118,7 +130,7 @@ export default function WorkshopEditor() {
           activeRegion={activeRegion} onActiveRegion={setRegion} onAddToRegion={setRegion} />
       </main>
       <aside className="overflow-auto border-l bg-white p-3" aria-label="属性">
-        {widget ? <WidgetInspector widget={widget} draft={draft} page={page} onRegion={region => updatePage(moveToRegion(page, widget.id, region))} source={widget.source ? sources.resolved[widget.source]?.outputs : undefined} onChange={updateWidget}
+        {widget ? <WidgetInspector widget={widget} draft={draft} page={page} schema={schemaOf(widget.source)} onRegion={region => updatePage(moveToRegion(page, widget.id, region))} source={widget.source ? sources.resolved[widget.source]?.outputs : undefined} onChange={updateWidget}
           layout={page.layout.find(item => item.i === widget.id)} onLayout={item => updatePage({ layout: [...page.layout.filter(row => row.i !== widget.id), item] })}
           onDuplicate={() => { const copy = duplicateWidget(page, widget, draft.pages.flatMap(row => row.widgets.map(item => item.id))); const withCopy = { ...page, widgets: [...page.widgets, copy.widget] }
             updatePage({ widgets: withCopy.widgets, layout: [...page.layout, placeBox(withCopy, copy.widget.region ?? null, copy.layout.w, copy.layout.h, copy.widget.id)] }); setSelected(copy.widget.id) }}
@@ -148,7 +160,7 @@ function PageInspector({ page, canDelete, onChange, onDelete }: { page: Page; ca
     {canDelete && <button className="text-xs text-rose-700" onClick={onDelete}>删除此页面</button>}</div>
 }
 
-const SOURCE_KINDS = [['study_run', 'Study 运行结果'], ['object_set', '本体对象集'], ['alerts', '规则告警']] as const
+const SOURCE_KINDS = [['query', '本体查询（推荐，可复用）'], ['object_set', '本体对象集'], ['alerts', '规则告警'], ['study_run', 'Study 运行结果']] as const
 type AddableKind = (typeof SOURCE_KINDS)[number][0]
 type CatalogType = { api_name: string; properties: Array<{ api_name: string }> }
 
@@ -156,14 +168,20 @@ function sourceSummary(source: DataSource) {
   if (source.kind === 'study_run') return `Study · ${source.node}`
   if (source.kind === 'object_set') return `对象 · ${source.object_type}${source.filters?.length ? ` · ${source.filters.map(row => `${row.field}=${String(row.value)}`).join('、')}` : ''}`
   if (source.kind === 'aggregate') return `汇总 · ${source.object_type} 按 ${source.group_by.join('、') || '全部'}`
+  if (source.kind === 'query') return `本体查询 · ${source.query}${source.version ? ` ${source.version}` : ''}`
   return `告警 · ${source.status ?? '全部'}`
 }
 
 const timeNote = (source: DataSource) => { const field = timeFieldOf(source); return field ? ` · 时间=${field}` : '' }
 
-function DataSources({ draft, update, ontologyId, errors, onBlocked }: { draft: AppDefinition; update: (next: AppDefinition) => void; ontologyId: string; errors: string[]; onBlocked: (message: string) => void }) {
+function DataSources({ draft, update, ontologyId, errors, onBlocked, schemaOf, onCreateWidget }: { draft: AppDefinition; update: (next: AppDefinition) => void; ontologyId: string; errors: string[]
+  onBlocked: (message: string) => void; schemaOf: (sourceId: string) => OutputSchema | undefined; onCreateWidget: (type: string, sourceId: string) => void }) {
   // Aggregate sources are generated by one-click binding, not typed in here.
-  const [kind, setKind] = useState<AddableKind>('object_set')
+  const [kind, setKind] = useState<AddableKind>('query')
+  const queries = useQuery({ queryKey: ['queries', ontologyId], enabled: kind === 'query', queryFn: () => apiClientV2.get<{ queries: QuerySummary[] }>(`/ontologies/${ontologyId}/queries`) })
+  const [queryName, setQueryName] = useState('')
+  const [bindings, setBindings] = useState<Record<string, string>>({})   // "" unset, "var:<id>" a variable, anything else a fixed value
+  const chosenQuery = queries.data?.queries.find(row => row.api_name === queryName)
   const studies = useQuery({ queryKey: ['studies', ontologyId], enabled: kind === 'study_run', queryFn: () => apiClientV2.get<{ items: Study[] }>(`/ontologies/${ontologyId}/scenario-study-definitions`) })
   const catalog = useQuery({ queryKey: ['query-catalog', ontologyId], enabled: kind === 'object_set', queryFn: () => apiClientV2.get<{ types: CatalogType[] }>(`/ontologies/${ontologyId}/object-query/catalog`) })
   const [study, setStudy] = useState('')
@@ -176,19 +194,37 @@ function DataSources({ draft, update, ontologyId, errors, onBlocked }: { draft: 
   const [alertStatus, setAlertStatus] = useState('open')
   const [timeField, setTimeField] = useState('')
   const fields = catalog.data?.types.find(row => row.api_name === objectType)?.properties.map(row => row.api_name) ?? []
-  const ready = kind === 'study_run' ? !!study && !!node : kind === 'object_set' ? !!objectType : true
+  const ready = kind === 'study_run' ? !!study && !!node : kind === 'object_set' ? !!objectType : kind === 'query' ? !!chosenQuery : true
   const add = () => {
     const id = nextId('source', draft.data_sources.map(row => row.id))
-    const source: DataSource = kind === 'study_run' ? { id, kind, label: studies.data?.items.find(row => row.id === study)?.name ?? id, study_id: study, node }
+    const params = Object.fromEntries(Object.entries(bindings).map(([name, value]) => [name, value.startsWith('var:') ? { variable: value.slice(4) } : value.trim()] as const)
+      .filter(([, value]) => value !== ''))
+    const source: DataSource = kind === 'query' ? { id, kind, label: chosenQuery?.name ?? queryName, query: queryName, params }
+      : kind === 'study_run' ? { id, kind, label: studies.data?.items.find(row => row.id === study)?.name ?? id, study_id: study, node }
       : kind === 'object_set' ? { id, kind, label: objectType, object_type: objectType, ...(filter.field ? { filters: [{ field: filter.field, op: 'eq' as const, value: filter.value }] } : {}), ...(timeField ? { time_field: timeField } : {}) }
       : { id, kind, label: '告警', status: alertStatus ? alertStatus as 'open' : null }
     update({ ...draft, data_sources: [...draft.data_sources, source] })
-    setStudy(''); setNode(''); setObjectType(''); setFilter({ field: '', value: '' }); setTimeField('')
+    setStudy(''); setNode(''); setObjectType(''); setFilter({ field: '', value: '' }); setTimeField(''); setQueryName(''); setBindings({})
   }
   return <section><h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">数据源</h2>
-    {draft.data_sources.map(source => <div key={source.id} className="mb-1 rounded border px-2 py-1 text-xs"><strong>{source.label || source.id}</strong> · {sourceSummary(source)}{timeNote(source)}{errors.includes(source.id) && <span className="block text-amber-700">{source.kind === 'study_run' ? '还没有完成的运行' : '加载失败'}</span>}
+    {draft.data_sources.map(source => <div key={source.id} className="mb-1 rounded border px-2 py-1 text-xs"><strong>{source.label || source.id}</strong> · {sourceSummary(source)}{timeNote(source)}
+      {source.kind === 'query' && schemaOf(source.id) && <select className="wb-input mt-1 w-full py-0.5 text-xs" aria-label={`用 ${source.label || source.id} 生成组件`} value=""
+        onChange={event => event.target.value && onCreateWidget(event.target.value, source.id)}>
+        <option value="">＋ 生成组件（自动绑定）…</option>{suggestWidgets(schemaOf(source.id)!).map(type => <option key={type} value={type}>{specOf(type)?.label}</option>)}</select>}
+      {(source.kind === 'object_set' || source.kind === 'aggregate') && <SaveAsQuery ontologyId={ontologyId} source={source}
+        onSaved={saved => update({ ...draft, data_sources: draft.data_sources.map(row => row.id === source.id ? saved : row) })} />}{errors.includes(source.id) && <span className="block text-amber-700">{source.kind === 'study_run' ? '还没有完成的运行' : '加载失败'}</span>}
       <button className="float-right text-rose-700" onClick={() => { const refs = resourceReferences(draft, 'source', source.id); if (refs.length) onBlocked(`不能删除数据源“${source.label || source.id}”：${refs.join('、')} 仍在使用它。`); else update({ ...draft, data_sources: draft.data_sources.filter(row => row.id !== source.id) }) }} aria-label={`删除数据源 ${source.id}`}>×</button></div>)}
     <select className="wb-input mt-1 w-full" aria-label="数据源类型" value={kind} onChange={event => setKind(event.target.value as AddableKind)}>{SOURCE_KINDS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+    {kind === 'query' && <>
+      <select className="wb-input mt-1 w-full" aria-label="选择本体查询" value={queryName} onChange={event => { setQueryName(event.target.value); setBindings({}) }}>
+        <option value="">选择查询…</option>{queries.data?.queries.map(row => <option key={row.api_name} value={row.api_name}>{row.name}（v{row.latest_version}）</option>)}</select>
+      {queries.data && !queries.data.queries.length && <p className="mt-1 text-[11px] text-slate-500">还没有本体查询：先加一个对象集，再点它旁边的“存为查询”。</p>}
+      {chosenQuery?.params.map(param => <label key={param.name} className="mt-1 block text-[11px] text-slate-500">参数 {param.label || param.field}{param.required ? '（必填）' : ''}
+        <div className="flex gap-1"><select className="wb-input min-w-0 flex-1" aria-label={`参数 ${param.name} 取值方式`} value={bindings[param.name]?.startsWith('var:') ? bindings[param.name] : bindings[param.name] ? 'fixed' : ''}
+          onChange={event => setBindings(current => ({ ...current, [param.name]: event.target.value === 'fixed' ? ' ' : event.target.value }))}>
+          <option value="">不设</option><option value="fixed">固定值</option>{draft.variables.map(row => <option key={row.id} value={`var:${row.id}`}>跟随变量 {row.id}</option>)}</select>
+          {bindings[param.name] && !bindings[param.name].startsWith('var:') && <input className="wb-input min-w-0 flex-1" aria-label={`参数 ${param.name} 固定值`} value={bindings[param.name].trim()}
+            onChange={event => setBindings(current => ({ ...current, [param.name]: event.target.value || ' ' }))} />}</div></label>)}</>}
     {kind === 'study_run' && <>
       <select className="wb-input mt-1 w-full" aria-label="选择 Study" value={study} onChange={event => { setStudy(event.target.value); setNode('') }}><option value="">选择 Study…</option>{studies.data?.items.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
       {study && <select className="wb-input mt-1 w-full" aria-label="选择函数节点" value={node} onChange={event => setNode(event.target.value)}><option value="">选择输出节点…</option>{nodes.map(key => <option key={key} value={key}>{key}</option>)}</select>}</>}
@@ -199,6 +235,38 @@ function DataSources({ draft, update, ontologyId, errors, onBlocked }: { draft: 
       {objectType && <select className="wb-input mt-1 w-full" aria-label="时间字段" value={timeField} onChange={event => setTimeField(event.target.value)}><option value="">不受时间范围影响</option>{fields.map(name => <option key={name} value={name}>时间字段：{name}</option>)}</select>}</>}
     {kind === 'alerts' && <select className="wb-input mt-1 w-full" aria-label="告警状态" value={alertStatus} onChange={event => setAlertStatus(event.target.value)}><option value="open">未处理</option><option value="acknowledged">已确认</option><option value="resolved">已解决</option><option value="">全部</option></select>}
     <button className="mt-1 w-full rounded border px-2 py-1 text-sm disabled:opacity-50" disabled={!ready} onClick={add}>＋ 添加数据源</button></section>
+}
+
+/** Publish an app's own source as a shared ontology query and point the app at it (widgets keep their bindings). */
+function SaveAsQuery({ ontologyId, source, onSaved }: { ontologyId: string; source: ObjectSetSource | AggregateSource; onSaved: (next: QuerySource) => void }) {
+  const [open, setOpen] = useState(false)
+  const [apiName, setApiName] = useState('')
+  const [name, setName] = useState(source.label)
+  const save = useMutation({
+    mutationFn: () => { const { id: _id, label: _label, ...definition } = source; void _id; void _label
+      return apiClientV2.post<QuerySummary>(`/ontologies/${ontologyId}/queries`, { api_name: apiName, name, definition: { source: definition, params: [] }, note: '从应用数据源保存' }) },
+    onSuccess: row => { onSaved({ id: source.id, kind: 'query', label: row.name, query: row.api_name, params: {} }); setOpen(false) },
+  })
+  if (!open) return <button className="ml-1 text-blue-700" onClick={() => setOpen(true)} title="保存为本体查询，其他页面、接口和智能体也能复用">存为查询</button>
+  return <div className="mt-1 space-y-1">
+    <input className="wb-input w-full" aria-label="查询英文名" placeholder="英文名，如 orders_by_city" value={apiName} onChange={event => setApiName(event.target.value.trim())} />
+    <input className="wb-input w-full" aria-label="查询名称" placeholder="中文名称" value={name} onChange={event => setName(event.target.value)} />
+    <div className="flex gap-1"><button className="wb-button-primary py-0.5 text-xs" disabled={!/^[a-z][a-z0-9_]{1,62}$/.test(apiName) || !name.trim() || save.isPending} onClick={() => save.mutate()}>保存</button>
+      <button className="wb-button-secondary py-0.5 text-xs" onClick={() => setOpen(false)}>取消</button></div>
+    {save.error && <p role="alert" className="text-rose-700">{formatApiError(save.error)}</p>}
+  </div>
+}
+
+const SHAPE_LABEL = { single: '单行指标', '2d': '按一个字段分组', '3d': '按两个字段分组', table: '明细表' }
+
+/** OntoFlow-style binding: the query's output schema fills this widget's fields in one click. */
+function BindPanel({ type, schema, onBind }: { type: string; schema: OutputSchema; onBind: (binding: { path: string; props: Record<string, unknown> }) => void }) {
+  const binding = bindFromSchema(type, schema)
+  return <div className="rounded border border-blue-200 bg-blue-50/60 p-2 text-xs" data-testid="bind-panel">
+    <p className="text-slate-600">数据来自本体查询 · {SHAPE_LABEL[schema.shape]} · {schema.columns.length} 列</p>
+    {'error' in binding ? <p className="mt-1 text-amber-800">{binding.error}</p>
+      : <button className="wb-button-secondary mt-1 w-full py-1 text-xs" onClick={() => onBind(binding)}>按查询结构自动填写</button>}
+  </div>
 }
 
 function Variables({ draft, update, onBlocked }: { draft: AppDefinition; update: (next: AppDefinition) => void; onBlocked: (message: string) => void }) {
@@ -212,7 +280,7 @@ function Variables({ draft, update, onBlocked }: { draft: AppDefinition; update:
       <button className="rounded border px-2 text-sm disabled:opacity-50" disabled={!valid} onClick={() => { update({ ...draft, variables: [...draft.variables, { id: name, label: name }] }); setName('') }}>添加</button></div></section>
 }
 
-function WidgetInspector({ widget, draft, page, onRegion, source, onChange, onDelete, onDuplicate, layout, onLayout }: { widget: Widget; draft: AppDefinition; page: Page; onRegion: (region: string) => void
+function WidgetInspector({ widget, draft, page, schema, onRegion, source, onChange, onDelete, onDuplicate, layout, onLayout }: { widget: Widget; draft: AppDefinition; page: Page; schema?: OutputSchema; onRegion: (region: string) => void
   source: unknown; onChange: (patch: Partial<Widget>) => void; onDelete: () => void; onDuplicate: () => void; layout?: LayoutItem; onLayout: (item: LayoutItem) => void }) {
   const regions = regionsOf(page)
   const spec = specOf(widget.type)!
@@ -230,6 +298,7 @@ function WidgetInspector({ widget, draft, page, onRegion, source, onChange, onDe
     {layout && <fieldset className="grid grid-cols-4 gap-1 rounded border p-2"><legend className="px-1 text-xs text-slate-500">位置与大小（{regions.length ? '区域内 ' : ''}{spanOf(page, widget.region)} 列网格）</legend>
       {(['x', 'y', 'w', 'h'] as const).map(key => <Text key={key} label={{ x: '列', y: '行', w: '宽', h: '高' }[key]} type="number" value={String(layout[key])}
         onChange={value => onLayout({ ...layout, [key]: Math.max(key === 'w' || key === 'h' ? 1 : 0, Number(value) || 0) })} />)}</fieldset>}
+    {schema && <BindPanel type={widget.type} schema={schema} onBind={binding => onChange({ path: binding.path, props: { ...widget.props, ...binding.props } })} />}
     <Choice label="数据源" value={widget.source ?? ''} options={['', ...draft.data_sources.map(row => row.id)]} onChange={value => onChange({ source: value || null })} />
     {spec.usesArray && <Choice label="列表路径" value={widget.path} options={['', ...paths.filter(row => row.kind === 'array').map(row => row.path)]} onChange={value => onChange({ path: value })} />}
     {spec.props.map(field => <FieldInput key={field.key} field={field} value={widget.props[field.key]} ctx={ctx} onChange={value => setProp(field.key, value)} />)}

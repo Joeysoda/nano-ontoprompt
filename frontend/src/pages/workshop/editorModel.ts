@@ -1,4 +1,4 @@
-import { specOf, type AppDefinition, type DataSource, type Page, type Widget } from './spec'
+import { specOf, type AppDefinition, type DataSource, type OutputColumn, type OutputSchema, type Page, type Widget } from './spec'
 import { regionsOf, spanOf } from './templates'
 
 export type DefinitionIssue = { location: string; message: string }
@@ -18,6 +18,9 @@ export function resourceReferences(definition: AppDefinition, kind: 'source' | '
     if (kind === 'source' && widget.source === id) found.push(where)
     if (kind === 'page' && (widget.on_select?.navigate === id || widget.props.navigate === id)) found.push(where)
     if (kind === 'variable' && (widget.on_select?.set_variable === id || widget.props.variable === id || widget.props.filter_variable === id)) found.push(where)
+  }
+  if (kind === 'variable') for (const source of definition.data_sources) {
+    if (source.kind === 'query' && Object.values(source.params ?? {}).some(value => (value as { variable?: string } | null)?.variable === id)) found.push(`数据源 ${source.label || source.id} 的参数`)
   }
   return found
 }
@@ -75,3 +78,50 @@ export function pickWidgets(result: AutobindResult, keep: Set<string>): { data_s
   return { data_sources: result.data_sources.filter(row => used.has(row.id)), page: { ...result.page, widgets, layout: result.page.layout.filter(row => keep.has(row.i)) } }
 }
 
+
+// --- deterministic binding: a query's output schema fills a widget ---------------------------------------------------
+
+type Binding = { path: string; props: Record<string, unknown> } | { error: string }
+const first = (schema: OutputSchema, ...roles: string[]) => roles.map(role => schema.columns.find(col => col.role === role)).find(Boolean)
+const metricFormat = (col?: OutputColumn) => !col ? 'number' : /rate|ratio|率|比例/i.test(col.name + col.label) ? 'percent' : 'number'
+
+/**
+ * Fill a widget from what a query returns: the result's shape decides which widgets fit, column roles fill the fields.
+ * Same idea as Workshop's function-backed charts, which take a 2D/3D aggregation (Palantir docs).
+ */
+export function bindFromSchema(type: string, schema: OutputSchema): Binding {
+  const metric = first(schema, 'metric', 'measure')
+  const label = first(schema, 'name', 'dimension')
+  const grouped = schema.shape === '2d' || schema.shape === '3d'
+  switch (type) {
+    case 'kpi_strip':
+      if (schema.shape !== 'single') return { error: '指标条需要单行指标的查询（不分组的汇总）' }
+      return { path: '', props: { items: schema.columns.filter(col => col.role === 'metric').map(col => ({ label: col.label, path: `${schema.path}.0.${col.name}`, format: metricFormat(col) })) } }
+    case 'table':
+      return { path: schema.path, props: { columns: schema.columns.filter(col => col.role !== 'identifier').map(col => ({ label: col.label, field: col.name, format: col.role === 'time' ? 'date' : col.role === 'metric' ? metricFormat(col) : 'text' })), max_rows: 50 } }
+    case 'rank_bars':
+      if (!grouped || !label || !metric) return { error: '排行条需要按字段分组、带指标的查询' }
+      return { path: schema.path, props: { label_field: label.name, value_field: metric.name, max_rows: 10, format: metricFormat(metric) } }
+    case 'donut_chart': {
+      // Only a few-valued category reads as shares; names and ids (cities, machines) belong in a ranking.
+      const category = first(schema, 'category')
+      if (!grouped || !category || !metric) return { error: '环形图需要按“类别”列（取值只有几种，如高/中/低）分组的查询；按城市、设备等分组请用横向排行条' }
+      return { path: schema.path, props: { category_field: category.name, value_field: metric.name, center_label: metric.label } }
+    }
+    case 'geo_map': {
+      const lat = first(schema, 'latitude'), lng = first(schema, 'longitude')
+      if (!lat || !lng) return { error: '这条查询的结果没有经纬度列，不能画地图' }
+      return { path: schema.path, props: { lat_field: lat.name, lng_field: lng.name, label_field: (label ?? lat).name, size_field: metric?.name ?? '', color_field: first(schema, 'category')?.name ?? '',
+        key_field: first(schema, 'dimension', 'identifier')?.name ?? 'id' } }
+    }
+    case 'bar_chart':
+      if (!grouped || !label) return { error: '柱状图需要按字段分组的查询' }
+      return { path: schema.path, props: { x_field: first(schema, 'dimension')?.name ?? label.name, series: schema.columns.filter(col => col.role === 'metric').map(col => ({ label: col.label, value_field: col.name })) } }
+    default:
+      return { error: '这个组件不支持按查询自动填写' }
+  }
+}
+
+/** Widgets a query can feed, in the order a builder most likely wants them. */
+export const suggestWidgets = (schema: OutputSchema) =>
+  ['kpi_strip', 'geo_map', 'rank_bars', 'donut_chart', 'bar_chart', 'table'].filter(type => !('error' in bindFromSchema(type, schema)))

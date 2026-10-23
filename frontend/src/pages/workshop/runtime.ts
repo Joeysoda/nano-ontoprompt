@@ -13,7 +13,11 @@ export const timeFieldsOf = (definition: AppDefinition | undefined) =>
 export const appsUrl = (ontologyId: string) => `/ontologies/${ontologyId}/workshop-apps`
 
 // A source without a time field always asks for everything, so changing the range does not refetch it.
-const rangeFor = (source: DataSource, range: TimeRange) => (source.kind !== 'study_run' && timeFieldOf(source) ? range : 'all')
+const rangeFor = (source: DataSource, range: TimeRange) => (source.kind === 'query' || (source.kind !== 'study_run' && timeFieldOf(source)) ? range : 'all')
+
+/** Values of the app variables a query source's parameters follow. */
+const variableValues = (source: DataSource, vars: Record<string, string | null>) => source.kind !== 'query' ? {}
+  : Object.fromEntries(Object.values(source.params ?? {}).flatMap(value => { const id = (value as { variable?: string } | null)?.variable; return id ? [[id, vars[id] ?? null]] : [] }))
 
 export function useApp(ontologyId: string, appId: string, version?: number) {
   return useQuery({ queryKey: ['workshop-app', ontologyId, appId, version ?? 'head'], enabled: !!ontologyId && !!appId,
@@ -26,14 +30,15 @@ export function useApp(ontologyId: string, appId: string, version?: number) {
  * In the editor (`draft`), sources resolve from their current definition, so unpublished ones show data too.
  */
 export function useSources(ontologyId: string, appId: string, definition: AppDefinition | undefined, pinned: Record<string, string | undefined>, version?: number,
-  timeRange: TimeRange = 'all', draft = false) {
+  timeRange: TimeRange = 'all', draft = false, vars: Record<string, string | null> = {}) {
   const queryClient = useQueryClient()
   const sources = definition?.data_sources ?? []
   const results = useQueries({ queries: sources.map(source => ({
-    queryKey: ['workshop-source', ontologyId, appId, version ?? 'head', source.id, pinned[source.id] ?? 'latest', JSON.stringify(source), rangeFor(source, timeRange)],
+    queryKey: ['workshop-source', ontologyId, appId, version ?? 'head', source.id, pinned[source.id] ?? 'latest', JSON.stringify(source), rangeFor(source, timeRange), JSON.stringify(variableValues(source, vars))],
     queryFn: () => draft
-      ? apiClientV2.post<ResolvedSource>(`${appsUrl(ontologyId)}/${appId}/sources:preview`, { source, run: pinned[source.id] ?? null, range: rangeFor(source, timeRange) })
-      : apiClientV2.get<ResolvedSource>(`${appsUrl(ontologyId)}/${appId}/sources/${source.id}`, { params: { ...(pinned[source.id] ? { run: pinned[source.id] } : {}), ...(version ? { version } : {}), range: rangeFor(source, timeRange) } }),
+      ? apiClientV2.post<ResolvedSource>(`${appsUrl(ontologyId)}/${appId}/sources:preview`, { source, run: pinned[source.id] ?? null, range: rangeFor(source, timeRange), values: variableValues(source, vars) })
+      : apiClientV2.get<ResolvedSource>(`${appsUrl(ontologyId)}/${appId}/sources/${source.id}`, { params: { ...(pinned[source.id] ? { run: pinned[source.id] } : {}), ...(version ? { version } : {}),
+        range: rangeFor(source, timeRange), ...(source.kind === 'query' ? { values: JSON.stringify(variableValues(source, vars)) } : {}) } }),
     retry: false,
   })) })
   const resolved = Object.fromEntries(sources.map((source, index) => [source.id, results[index]?.data]))

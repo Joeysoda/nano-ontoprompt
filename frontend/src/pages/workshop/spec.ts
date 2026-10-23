@@ -15,7 +15,16 @@ export type AlertsSource = { id: string; kind: 'alerts'; label: string; status?:
 export type AggregateSource = { id: string; kind: 'aggregate'; label: string; object_type: string; group_by: string[]; metrics: Array<{ key: string; op: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'exact_distinct'; property?: string | null }>
   filters?: SourceFilter[]; time_field?: string | null; join?: { object_type: string; on: string; key?: string | null; select: string[] } | null
   bands?: Array<{ field: string; into: string; cuts: Array<[number, string]>; otherwise: string }> }
-export type DataSource = StudyRunSource | ObjectSetSource | AlertsSource | AggregateSource
+/** A shared ontology query. version: a range such as "^1" (empty = the current major, fixed on save); params: a value or { variable }. */
+export type QuerySource = { id: string; kind: 'query'; label: string; query: string; version?: string; params?: Record<string, unknown>; time_field?: null }
+export type ColumnRole = 'dimension' | 'name' | 'category' | 'metric' | 'measure' | 'time' | 'latitude' | 'longitude' | 'identifier'
+export type OutputColumn = { name: string; type: string; role: ColumnRole; label: string }
+/** What a query returns: single = one row of metrics, 2d / 3d = grouped by one / two fields, table = rows. */
+export type OutputSchema = { shape: 'single' | '2d' | '3d' | 'table'; path: string; columns: OutputColumn[] }
+export type QueryParam = { name: string; field: string; label?: string; required?: boolean; default?: unknown }
+export type QuerySummary = { api_name: string; name: string; description: string; latest_version: string; kind: string; object_type: string | null
+  params: QueryParam[]; output_schema: OutputSchema; references?: number; updated_at: string }
+export type DataSource = StudyRunSource | ObjectSetSource | AlertsSource | AggregateSource | QuerySource
 export type Variable = { id: string; label: string; default?: unknown }
 export type TimeRange = 'all' | '1d' | '7d' | '30d'
 export type AppSettings = { time_range: TimeRange; refresh_minutes: 0 | 1 | 5 | 15 }
@@ -29,6 +38,7 @@ export type ResolvedStudyRun = { source_id: string; kind: 'study_run'; study_id:
 /** time: the window the server applied (anchor = latest time in the source, rows after `after` are kept). */
 export type TimeWindow = { range: string; field?: string | null; anchor?: string | null; after?: string | null }
 export type ResolvedOntologySource = { source_id: string; kind: 'object_set' | 'alerts' | 'aggregate'; status: string; completed_at: string | null; data_view_id?: string
+  query?: string; version?: string; output_schema?: OutputSchema
   outputs: Record<string, unknown> & { count: number; truncated?: boolean; time?: TimeWindow } }
 export type ResolvedSource = ResolvedStudyRun | ResolvedOntologySource
 

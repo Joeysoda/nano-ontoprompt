@@ -1,30 +1,8 @@
-import {
-  BellRing,
-  Bot,
-  Boxes,
-  Brain,
-  Database,
-  FileSearch,
-  GitCompareArrows,
-  LayoutDashboard,
-  LayoutGrid,
-  Library,
-  ListChecks,
-  Network,
-  Route,
-  Settings,
-  ShieldCheck,
-  Shapes,
-  Sparkles,
-  SquareFunction,
-  Table2,
-  Timer,
-  Workflow,
-} from 'lucide-react'
+import { BellRing, Bot, Boxes, Brain, Database, FileSearch, GitCompareArrows, LayoutDashboard, LayoutGrid, Library, ListChecks, Network, Route, Settings, ShieldCheck, Shapes, Sparkles, SquareFunction, Table2, Timer, Workflow, SearchCode } from 'lucide-react'
 
 /**
  * Primary navigation, grouped by what the user is doing (see
- * docs/adr/0001-flat-task-navigation.md). Every ontology-scoped entry still
+ * docs/adr/0021-flat-task-navigation.md). Every ontology-scoped entry still
  * opens an existing page of the current ontology; only the entry point moved
  * from the ontology page's second-level nav to this sidebar.
  */
@@ -63,6 +41,7 @@ export const NAV_GROUPS: NavGroup[] = [
     { key: 'data_model', label: '数据模型', icon: Boxes, tab: 'data_model' },
     { key: 'logic', label: '逻辑规则', icon: Workflow, tab: 'logic' },
     { key: 'logic-assets', label: '函数', icon: SquareFunction, tab: 'logic-assets' },
+    { key: 'queries', label: '本体查询', icon: SearchCode, path: id => `/apps/queries?ontology=${id}`, activeOn: /^\/apps\/queries/, hint: '可复用的数据查询，页面、接口和智能体共用' },
     { key: 'audit', label: '质量审查', icon: ShieldCheck, tab: 'audit' },
   ] },
   { label: '探索', entries: [
