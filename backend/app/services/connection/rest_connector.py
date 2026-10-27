@@ -132,6 +132,21 @@ class RestConnector(ConnectorBase):
             logger.warning(f"REST pull_delta 失败: {e}")
             return []
 
+    def send(self, key: str, payload: dict, *, resource: str) -> dict:
+        """Deliver one outbox item to an explicitly configured endpoint."""
+        endpoints = self._config.get("endpoints", [])
+        if resource not in endpoints:
+            raise ValueError("writeback resource is not declared by this connection")
+        response = self._get_session().post(resource, json=payload, headers={"Idempotency-Key": key})
+        response.raise_for_status()
+        try:
+            body = response.json()
+        except Exception:
+            body = {}
+        external_id = body.get("id") if isinstance(body, dict) else None
+        return {"connector": "rest", "external_id": str(external_id or key), "idempotency_key": key,
+                "status_code": response.status_code}
+
     def _extract_records(self, data: Any) -> list[dict]:
         """从 API 响应中提取记录列表"""
         if isinstance(data, list):

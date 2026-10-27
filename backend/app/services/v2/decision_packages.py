@@ -31,6 +31,17 @@ def package_digest(*, ontology_id, scenario_id, scenario_revision, run_id, title
                           "run_id": run_id, "title": title, "rationale": rationale, "actions": actions, "evidence": evidence})
 
 
+def execution_plan_digest(actions, *, include_delivery: bool | None = None) -> str:
+    """Freeze ontology edits and, when configured, external delivery routing."""
+    if include_delivery is None:
+        include_delivery = any((row.get("invocation") or {}).get("_external_delivery") for row in actions)
+    if not include_delivery:
+        return stable_digest([row["expected_edits"] for row in actions])
+    return stable_digest([{"action_type_id": row["action_type_id"], "invocation": row["invocation"],
+                           "expected_edits": row["expected_edits"], "external_effect_class": row["external_effect_class"]}
+                          for row in actions])
+
+
 def transition(package, event: str, actor_id: str, *, expected_etag: int, reason: str = "") -> tuple[str, str]:
     if package.etag != expected_etag:
         raise DecisionPackageError("stale_etag", "Decision package changed; reload before retrying", 409)
@@ -204,8 +215,10 @@ def apply_package(db, package, user, *, expected_etag: int, request_id: str, con
     run = db.get(ScenarioRun, package.run_id)
     candidate_id = package_candidate_id(db, package)
     actions, _, _ = compile_package_actions(db, run, package.ontology_id, candidate_id, user)
-    if stable_digest([row["expected_edits"] for row in actions]) != package.preview_digest:
-        raise DecisionPackageError("preview_digest_mismatch", "Recompiled edits differ from the reviewed preview", 409)
+    stored = db.query(DecisionPackageAction).filter_by(package_id=package.id).order_by(DecisionPackageAction.sequence).all()
+    include_delivery = any((row.invocation or {}).get("_external_delivery") for row in stored)
+    if execution_plan_digest(actions, include_delivery=include_delivery) != package.preview_digest:
+        raise DecisionPackageError("preview_digest_mismatch", "Recompiled execution plan differs from the reviewed preview", 409)
 
     before_digest = package.content_digest
     transition(package, "begin_apply" if package.status == "approved" else "retry_apply", user.id, expected_etag=expected_etag)
@@ -218,8 +231,6 @@ def apply_package(db, package, user, *, expected_etag: int, request_id: str, con
         if not staged:
             service.revision(scenario, RevisionRequest(base_revision=scenario.head_revision, expected_etag=scenario.etag,
                                                        client_request_id=staged_id, edits=edits), replace_all=True)
-        stored = db.query(DecisionPackageAction).filter_by(package_id=package.id).order_by(DecisionPackageAction.sequence).all()
-
         def record(before, applied):
             decision = DecisionRecord(ontology_id=package.ontology_id, payload={
                 "kind": "decision_package_applied", "package_id": package.id, "run_id": package.run_id,
@@ -258,7 +269,8 @@ def deliver_outbox(db, package, connector=None) -> dict:
     for row in pending:
         row.attempts += 1
         try:
-            receipt = connector.send(row.id, row.payload)
+            current_connector = connector or _writeback_connector(db, row.payload)
+            receipt = current_connector.send(row.id, row.payload)
         except Exception as exc:  # recorded for retry; never reported as delivered
             failed.append({"outbox_id": row.id, "error": type(exc).__name__})
             db.commit()
@@ -270,6 +282,27 @@ def deliver_outbox(db, package, connector=None) -> dict:
     delivered = db.query(DecisionOutbox).filter_by(package_id=package.id, delivered=True).count()
     return {"external_effects": total, "delivered": delivered, "failed": failed,
             "status": "complete" if delivered == total else "external_effect_partial"}
+
+
+def _writeback_connector(db, payload):
+    delivery = ((payload or {}).get("invocation") or {}).get("_external_delivery")
+    if not delivery:
+        return procurement_connector
+    from app.models.v2.connection import Connection
+    from app.routers.v2.connections import _connection_config
+    from app.services.connection.rest_connector import RestConnector
+    connection = db.get(Connection, delivery["connection_id"])
+    if not connection or connection.kind != "rest" or connection.status != "active":
+        raise ConnectionError("configured writeback connection is unavailable")
+    resource = delivery["resource"]
+    connector = RestConnector(_connection_config(connection))
+
+    class BoundRestWriteback:
+        def send(self, key, body):
+            receipt = connector.send(key, body, resource=resource)
+            return {**receipt, "connection_id": connection.id, "resource": resource}
+
+    return BoundRestWriteback()
 
 
 def revert_package(db, package, user, *, expected_etag: int, request_id: str) -> dict:

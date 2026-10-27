@@ -10,6 +10,37 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Older development databases were maintained with ``metadata.create_all``.
+    # They can already contain this complete table set while Alembic still
+    # reports the preceding revision.  Treat that state as reconciled instead
+    # of aborting the whole (transactional) upgrade on the first duplicate.
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    expected_tables = {
+        "v2_study_definitions",
+        "v2_study_versions",
+        "v2_case_definitions",
+        "v2_scenario_run_plans",
+    }
+    if expected_tables.issubset(set(inspector.get_table_names())):
+        run_columns = {column["name"] for column in inspector.get_columns("v2_scenario_runs")}
+        if "run_plan_id" not in run_columns:
+            with op.batch_alter_table("v2_scenario_runs") as batch:
+                batch.add_column(
+                    sa.Column(
+                        "run_plan_id",
+                        sa.String(36),
+                        sa.ForeignKey(
+                            "v2_scenario_run_plans.id",
+                            ondelete="RESTRICT",
+                            name="fk_v2_scenario_runs_run_plan_id_v2_scenario_run_plans",
+                        ),
+                        nullable=True,
+                    )
+                )
+                batch.create_index("ix_v2_scenario_runs_run_plan_id", ["run_plan_id"])
+        return
+
     op.create_table(
         "v2_study_definitions",
         sa.Column("id", sa.String(36), primary_key=True),

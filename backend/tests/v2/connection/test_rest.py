@@ -74,3 +74,29 @@ def test_rest_test_connection_failure():
 def test_rest_registry_registered():
     from app.services.connection.registry import CONNECTOR_REGISTRY
     assert "rest" in CONNECTOR_REGISTRY
+
+
+def test_rest_writeback_is_endpoint_bounded_and_idempotency_keyed():
+    conn = make_connector()
+    response = MagicMock(status_code=202)
+    response.json.return_value = {"id": "erp-42"}
+    response.raise_for_status = MagicMock()
+    session = MagicMock(); session.post.return_value = response; conn._session = session
+    receipt = conn.send("outbox-1", {"action": "release"}, resource="/orders")
+    session.post.assert_called_once_with("/orders", json={"action": "release"}, headers={"Idempotency-Key": "outbox-1"})
+    assert receipt == {"connector": "rest", "external_id": "erp-42", "idempotency_key": "outbox-1", "status_code": 202}
+    with pytest.raises(ValueError, match="not declared"):
+        conn.send("outbox-2", {}, resource="/undeclared")
+
+
+def test_rest_writeback_is_endpoint_bounded_and_idempotency_keyed():
+    conn = make_connector()
+    response = MagicMock(status_code=202)
+    response.json.return_value = {"id": "erp-42"}
+    response.raise_for_status = MagicMock()
+    session = MagicMock(); session.post.return_value = response; conn._session = session
+    receipt = conn.send("outbox-1", {"action": "release"}, resource="/orders")
+    session.post.assert_called_once_with("/orders", json={"action": "release"}, headers={"Idempotency-Key": "outbox-1"})
+    assert receipt == {"connector": "rest", "external_id": "erp-42", "idempotency_key": "outbox-1", "status_code": 202}
+    with pytest.raises(ValueError, match="not declared"):
+        conn.send("outbox-2", {}, resource="/undeclared")

@@ -188,7 +188,10 @@ def _execute_study_node(db, run, plan, node, inputs, graph_snapshot):
     kind = node["kind"]
     config = node.get("config") or {}
     outputs = {}
-    if kind == "object_query":
+    if kind == "row_mapping":
+        from app.services.v2.row_mapping import map_rows
+        outputs = map_rows(config, inputs.get("rows"), max_rows=plan["budgets"]["max_objects"])
+    elif kind == "object_query":
         from app.models.user import User
         from app.schemas.v2.object_query import BaseObjectSet, ExecutionContext, LoadObjectSetRequest, PropertyRef, ReadOptions, TypeRef
         from app.services.v2.graph.falkordb_service import FalkorDBService
@@ -477,9 +480,14 @@ def _execute_study_run(db, run, started):
             stage.status = "failed"
             stage.completed_at = _now()
             stage.duration_ms = _duration_ms(stage.started_at, stage.completed_at)
-            stage.error_json = {"code": "node_execution_failed", "message": str(exc), "node_key": node_key}
+            from app.services.v2.row_mapping import MappingError
+            error = {"code": exc.code if isinstance(exc, MappingError) else "node_execution_failed",
+                     "message": str(exc), "node_key": node_key}
+            if isinstance(exc, MappingError):
+                error["path"] = exc.path
+            stage.error_json = error
             run.status = "failed"
-            run.error_json = {"code": "node_execution_failed", "message": str(exc), "node_key": node_key}
+            run.error_json = error
             run.completed_at = _now()
             run.duration_ms = int((monotonic() - started) * 1000)
             db.commit()

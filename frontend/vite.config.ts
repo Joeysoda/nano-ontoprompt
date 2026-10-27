@@ -2,6 +2,9 @@ import { defineConfig, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import fs from 'fs'
+import { fileURLToPath } from 'node:url'
+
+const configDir = fileURLToPath(new URL('.', import.meta.url))
 
 // Docker 内代理目标需指向 backend service, 本机直跑则用 localhost
 const apiTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000'
@@ -11,7 +14,7 @@ export default defineConfig(async ({ command }) => {
   // for the production artifact. Keeping them out of `vite` dev mode avoids
   // crashing the local Docker development server on unsupported hosts.
   const plugins: PluginOption[] = [react()]
-  if (command === 'build' && fs.existsSync(path.resolve(__dirname, './wrangler.json'))) {
+  if (command === 'build' && fs.existsSync(path.resolve(configDir, './wrangler.json'))) {
     // These hosting integrations are optional in a local checkout. If their
     // packages are installed, retain the production integration; otherwise a
     // normal Vite build should still validate and bundle the application.
@@ -27,7 +30,7 @@ export default defineConfig(async ({ command }) => {
   }
   return {
     plugins,
-    resolve: { alias: { '@': path.resolve(__dirname, './src') } },
+    resolve: { alias: { '@': path.resolve(configDir, './src') } },
     server: { host: true, port: 5173, proxy: { '/api': apiTarget } }
   }
 })

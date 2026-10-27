@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import StudyGraphCanvas from './StudyGraphCanvas'
+import RowMappingEditor from './RowMappingEditor'
 import { nodeKinds } from './studyNodeKinds'
 import { removeStudyEdges } from './studyGraphEditing'
 
@@ -71,6 +72,7 @@ export default function StudySpecBuilder({ spec, onChange, scope = 'draft', asse
         while (spec.nodes.some(node => node.key === `step_${number}`)) number++
         const key = `step_${number}`
         const node: Row = { key, kind: newKind, inputs: newKind === 'compare' ? { left: 0, right: 0 } : { value: 0 }, outputs: { value: 'number' }, config: newKind === 'aggregate_metric' ? { operation: 'sum' } : newKind === 'compare' ? { operation: 'delta' } : {} }
+        if (newKind === 'row_mapping') { node.inputs = { rows: [] }; node.outputs = { rows: 'rows', lineage: 'lineage' }; node.config = { fields: [] } }
         if (nodeKinds[newKind].logic) node.implementation = { key: '', version: '' }
         addRow('nodes', node); setSelectedKey(key)
       }}>＋ 添加计算节点</button></div></div>
@@ -79,6 +81,7 @@ export default function StudySpecBuilder({ spec, onChange, scope = 'draft', asse
         <label className="text-xs">节点类型<select aria-label="节点类型" className="wb-input mt-1 w-full" value={text(node.kind)} onChange={event => changeRow('nodes', index, { kind: event.target.value, implementation: nodeKinds[event.target.value]?.logic ? node.implementation ?? { key: '', version: '' } : null })}>{Object.entries(nodeKinds).map(([kind, info]) => <option key={kind} value={kind}>{info.label}</option>)}</select></label>
         <div className="flex items-end justify-between"><span className="mb-2 text-xs text-slate-500">{Object.keys(row(node.outputs)).map(port => `${node.key}.${port}`).join(', ') || '尚无输出'}</span><button className="mb-2 text-xs text-rose-700" onClick={() => removeRow('nodes', index)}>删除</button></div>
       </div>
+        {node.kind === 'row_mapping' && <RowMappingEditor config={row(node.config)} onChange={config => changeRow('nodes', index, { config })} />}
         {nodeKinds[text(node.kind)]?.logic && <div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="text-xs">{node.kind === 'action_preview' ? 'Action ID' : 'Logic Asset'}<input className="wb-input mt-1 w-full" value={text(row(node.implementation).key)} onChange={event => changeRow('nodes', index, { implementation: { ...row(node.implementation), key: event.target.value } })} /></label><label className="text-xs">固定版本<input className="wb-input mt-1 w-full" value={text(row(node.implementation).version)} onChange={event => changeRow('nodes', index, { implementation: { ...row(node.implementation), version: event.target.value } })} /></label></div>}
         {['function', 'time_series'].includes(text(node.kind)) && <label className="mt-3 block text-xs">选择已发布逻辑<select aria-label="选择已发布逻辑" className="wb-input mt-1 w-full" value="" onChange={event => {
           const asset = assets.find(asset => `${asset.asset_key}@${asset.version}` === event.target.value)

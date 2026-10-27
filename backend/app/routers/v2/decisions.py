@@ -176,7 +176,7 @@ def _insert_package(db, oid, user, *, scenario_id, scenario_revision, run_id, ti
         run_id=run_id, title=title, rationale=rationale, actions=actions, evidence=evidence)
     item = DecisionPackage(ontology_id=oid, scenario_id=scenario_id, scenario_revision=scenario_revision,
         run_id=run_id, title=title, rationale=rationale, content_digest=digest,
-        preview_digest=stable_digest([row["expected_edits"] for row in actions]), created_by=user.id)
+        preview_digest=package_service.execution_plan_digest(actions), created_by=user.id)
     db.add(item); db.flush()
     for sequence, row in enumerate(actions):
         db.add(DecisionPackageAction(package_id=item.id, sequence=sequence, **row))

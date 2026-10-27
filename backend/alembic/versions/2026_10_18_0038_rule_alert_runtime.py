@@ -14,6 +14,24 @@ def _ts(name, nullable=False):
 
 
 def upgrade() -> None:
+    legacy_tables = {
+        "v2_rules", "v2_rule_versions", "v2_rule_proposals",
+        "v2_rule_evaluations", "v2_rule_alerts", "v2_rule_alert_events",
+    }
+    if legacy_tables.issubset(set(sa.inspect(op.get_bind()).get_table_names())):
+        return
+    legacy_tables = {
+        "v2_rules", "v2_rule_versions", "v2_rule_proposals",
+        "v2_rule_evaluations", "v2_rule_alerts", "v2_rule_alert_events",
+    }
+    if legacy_tables.issubset(set(sa.inspect(op.get_bind()).get_table_names())):
+        return
+    legacy_tables = {
+        "v2_rules", "v2_rule_versions", "v2_rule_proposals",
+        "v2_rule_evaluations", "v2_rule_alerts", "v2_rule_alert_events",
+    }
+    if legacy_tables.issubset(set(sa.inspect(op.get_bind()).get_table_names())):
+        return
     op.create_table(
         "v2_rules",
         sa.Column("id", sa.String(36), primary_key=True),

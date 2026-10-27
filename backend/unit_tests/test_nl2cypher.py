@@ -13,9 +13,8 @@ def test_rule_translate_all_nodes():
 
 def test_rule_translate_default():
     svc = NL2CypherService()
-    plan = svc._rule_translate("随便一个查询")
-    assert "MATCH (n)" in plan.cypher
-    assert plan.confidence == 0.3
+    with pytest.raises(ValueError, match="Unsupported"):
+        svc._rule_translate("随便一个查询")
 
 
 def test_validate_read_only_blocks_create():
@@ -32,15 +31,27 @@ def test_validate_read_only_blocks_delete():
 
 def test_validate_read_only_allows_match():
     svc = NL2CypherService()
-    svc._validate_read_only("MATCH (n) WHERE n.id = $id RETURN n LIMIT 10")
+    svc._validate_read_only("MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n LIMIT 10")
 
 
-def test_translate_falls_back_on_llm_error():
+def test_translate_reports_model_failure_without_returning_unrelated_data():
     svc = NL2CypherService()
     with patch.object(svc, '_llm_translate', side_effect=Exception("no API")):
-        plan = svc.translate("有哪些供应商")
-    assert isinstance(plan, CypherPlan)
-    assert "MATCH" in plan.cypher
+        with pytest.raises(RuntimeError, match="unavailable"):
+            svc.translate("有哪些供应商")
+
+
+@pytest.mark.parametrize("query", [
+    "MATCH (n) RETURN n LIMIT 10",
+    "CALL db.labels()",
+    "MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n",
+    "MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n LIMIT 201",
+    "MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n LIMIT 0",
+    "MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n; MATCH (m) RETURN m LIMIT 10",
+])
+def test_rejects_unscoped_unbounded_or_procedural_drafts(query):
+    with pytest.raises(ValueError):
+        NL2CypherService._validate_read_only(query)
 
 
 def test_translate_uses_llm_when_available():

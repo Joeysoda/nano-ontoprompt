@@ -123,6 +123,10 @@ def compile_decision_candidate(db, ontology_id: str, scenario_id: str, snapshot,
     for action, invocation, group in zip(candidate["actions"], invocations, groups):
         action_type = types[invocation["action_type_id"]]
         external = (action_type.side_effects or {}).get("external")
-        compiled.append({"action_type_id": action_type.name, "invocation": {**action, "action_type_version": action_type.version},
+        invocation = {**action, "action_type_version": action_type.version}
+        if external and external.get("connection_id"):
+            invocation["_external_delivery"] = {"connection_id": external["connection_id"], "resource": external["resource"],
+                                                "kind": external["kind"]}
+        compiled.append({"action_type_id": action_type.name, "invocation": invocation,
                          "expected_edits": group, "external_effect_class": "irreversible" if external else "none"})
     return compiled

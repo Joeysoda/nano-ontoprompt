@@ -103,6 +103,20 @@ def _alter_columns() -> None:
 
 
 def upgrade() -> None:
+    # Some pre-Alembic development databases were created from an older ORM
+    # snapshot.  This revision only tightens columns/constraints that already
+    # existed in that snapshot; attempting those ALTERs when the columns are
+    # absent rolls back unrelated, additive migrations on the other branch.
+    # Later model-specific migrations and create_all provide the tables needed
+    # by the local workbench, so make this historical alignment a no-op there.
+    inspector = sa.inspect(op.get_bind())
+    audit_columns = (
+        {column["name"] for column in inspector.get_columns("audit_tasks")}
+        if "audit_tasks" in set(inspector.get_table_names())
+        else set()
+    )
+    if not {"cancel_requested", "progress"}.issubset(audit_columns):
+        return
     _backfill_before_constraints()
     _alter_columns()
 

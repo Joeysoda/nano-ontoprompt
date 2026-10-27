@@ -9,6 +9,10 @@ depends_on = None
 
 
 def upgrade():
+    if {"v2_workshop_apps", "v2_workshop_app_versions"}.issubset(
+        set(sa.inspect(op.get_bind()).get_table_names())
+    ):
+        return
     op.create_table("v2_workshop_apps",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("ontology_id", sa.String(), sa.ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False),

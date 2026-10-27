@@ -20,7 +20,7 @@ from app.schemas.v2.scenario_study import StudySpec
 
 EXECUTOR_VERSION = "scenario-dag/v1"
 IMPLEMENTATION_KINDS = {"function", "action_preview", "action_apply_scenario", "time_series", "solver"}
-RUNNABLE_NODE_KINDS = {"object_query", "function", "action_preview", "aggregate_metric", "compare", "time_series"}
+RUNNABLE_NODE_KINDS = {"object_query", "function", "action_preview", "aggregate_metric", "compare", "time_series", "row_mapping"}
 
 
 class StudyError(Exception):
@@ -68,6 +68,14 @@ def validate_spec(spec: StudySpec, *, require_nodes: bool = True) -> list[str]:
 
     nodes = {node.key: node for node in spec.nodes}
     for index, node in enumerate(spec.nodes):
+        if node.kind == "row_mapping":
+            from app.services.v2.row_mapping import MappingError, parse_mapping
+            try:
+                parse_mapping(node.config)
+            except MappingError as exc:
+                raise StudyError(exc.code, "Invalid field mapping", path=f"nodes.{index}.config.{exc.path}") from None
+            if set(node.inputs) != {"rows"} or node.outputs != {"rows": "rows", "lineage": "lineage"}:
+                raise StudyError("invalid_mapping_ports", "Field mapping requires rows input and rows/lineage outputs", path=f"nodes.{index}")
         if node.kind in IMPLEMENTATION_KINDS and node.implementation is None:
             raise StudyError("implementation_required", f"{node.kind} requires a pinned implementation", path=f"nodes.{index}.implementation")
         if node.kind == "object_query":
@@ -110,6 +118,25 @@ def validate_spec(spec: StudySpec, *, require_nodes: bool = True) -> list[str]:
                     raise StudyError("unknown_input_source", "Node input references an unknown output", path=f"nodes.{node_index}.inputs.{input_name}")
                 if (source_endpoint, f"{node.key}.{input_name}") not in edge_keys:
                     raise StudyError("edge_required", "Every from binding must have a matching Study edge", path=f"nodes.{node_index}.inputs.{input_name}")
+
+    for node_index, node in enumerate(spec.nodes):
+        if node.kind != "row_mapping":
+            continue
+        binding = node.inputs.get("rows")
+        if not isinstance(binding, dict) or set(binding) != {"from"}:
+            continue
+        source_key, _ = _node_part(binding["from"], f"nodes.{node_index}.inputs.rows")
+        source = nodes[source_key]
+        if source.kind == "object_query":
+            from app.services.v2.row_mapping import parse_mapping
+            for field in parse_mapping(node.config).fields:
+                # Object Query outputs contain identities and only explicitly
+                # selected properties. Never silently read outside that boundary.
+                valid = (field.source in (["object_id"], ["object_type"]) or
+                         len(field.source) >= 2 and field.source[0] == "properties" and
+                         field.source[1] in source.config["select"])
+                if not valid:
+                    raise StudyError("mapping_source_not_selected", "Mapping source must be selected by the upstream query", path=f"nodes.{node_index}.config.fields.{field.target}")
 
     position = {node.key: index for index, node in enumerate(spec.nodes)}
     ready = sorted((key for key, degree in indegree.items() if degree == 0), key=position.get)

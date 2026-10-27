@@ -55,7 +55,7 @@ function WidgetGrid({ page, rt, editing = false, selected, onSelect, onLayout, w
       {widgets.map(widget => <div key={widget.id} data-testid={`widget-${widget.id}`} onMouseDown={() => editing && onSelect?.(widget.id)}
         className={`flex flex-col overflow-hidden rounded border bg-white ${editing && selected === widget.id ? 'border-blue-500 ring-2 ring-blue-200' : 'border-slate-200'}`}>
         {(widget.title || editing) && <div className={`widget-handle flex items-center gap-2 border-b px-3 py-1.5 text-xs font-semibold text-slate-600 ${editing ? 'cursor-move bg-slate-50' : ''}`}>
-          <span className="truncate">{widget.title || specOf(widget.type)?.label}</span>{editing && <span className="ml-auto font-normal text-slate-400">{widget.id}</span>}</div>}
+          <span className="truncate">{widget.title || specOf(widget.type)?.label}</span>{editing && <><button type="button" className="ml-auto cursor-pointer font-normal text-blue-700" aria-label={`编辑组件 ${widget.title || widget.id}`} onMouseDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); onSelect?.(widget.id) }}>配置</button><span className="font-normal text-slate-400">{widget.id}</span></>}</div>}
         <div className="min-h-0 flex-1 overflow-auto p-2"><WidgetView widget={widget} rt={{ ...rt, editing }} /></div>
       </div>)}
     </GridLayout>}

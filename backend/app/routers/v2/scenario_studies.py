@@ -11,6 +11,8 @@ from app.schemas.v2.scenario_study import (
     CreateCaseRequest,
     CreateStudyRequest,
     PublishStudyRequest,
+    InspectStudyPackageRequest,
+    InstallStudyPackageRequest,
     StartStudyRunRequest,
     RetryStudyRunRequest,
     UpdateCaseRequest,
@@ -27,6 +29,7 @@ from app.services.v2.scenario_studies import (
 )
 from app.tasks.v2.scenario import run_scenario
 from app.services.v2.scenario_study_templates import templates
+from app.services.v2.study_packages import export_package, inspect_package, install_package
 
 
 router = APIRouter()
@@ -124,6 +127,36 @@ def get_version(ontology_id: str, study_id: str, version: int, svc: StudyService
         study = svc.get_study(study_id)
         return version_summary(svc.get_version(study, version))
     except StudyError as exc:
+        _raise(exc)
+
+
+@router.get("/{ontology_id}/scenario-study-definitions/{study_id}/versions/{version}:export")
+def export_study_package(ontology_id: str, study_id: str, version: int, svc: StudyService = Depends(service)):
+    try:
+        study = svc.get_study(study_id)
+        return export_package(svc.db, study, svc.get_version(study, version))
+    except StudyError as exc:
+        _raise(exc)
+
+
+@router.post("/{ontology_id}/scenario-study-packages:inspect")
+def inspect_study_package(ontology_id: str, request: InspectStudyPackageRequest,
+                          svc: StudyService = Depends(service)):
+    try:
+        return inspect_package(svc.db, ontology_id, request.package, request.bindings)
+    except StudyError as exc:
+        _raise(exc)
+
+
+@router.post("/{ontology_id}/scenario-study-packages:install", status_code=201)
+def install_study_package(ontology_id: str, request: InstallStudyPackageRequest,
+                          svc: StudyService = Depends(service)):
+    try:
+        return study_summary(install_package(
+            svc.db, ontology_id, svc.user.id, request.package, request.bindings, name=request.name,
+        ))
+    except StudyError as exc:
+        svc.db.rollback()
         _raise(exc)
 
 

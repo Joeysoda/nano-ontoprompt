@@ -29,7 +29,7 @@ class StudyNode(StrictModel):
     key: str = Field(min_length=1, max_length=60, pattern=r"^[A-Za-z][A-Za-z0-9_.-]*$")
     kind: Literal[
         "object_query", "function", "action_preview", "action_apply_scenario",
-        "aggregate_metric", "compare", "time_series", "solver",
+        "aggregate_metric", "compare", "time_series", "solver", "row_mapping",
     ]
     implementation: NodeImplementation | None = None
     inputs: dict[str, Any] = Field(default_factory=dict)
@@ -106,6 +106,15 @@ class PublishStudyRequest(StrictModel):
     expected_etag: int = Field(ge=1)
     change_note: str = Field(default="", max_length=10_000)
     compatibility: Literal["compatible", "breaking"] = "compatible"
+
+
+class InspectStudyPackageRequest(StrictModel):
+    package: dict[str, Any]
+    bindings: dict[str, Any] = Field(default_factory=dict)
+
+
+class InstallStudyPackageRequest(InspectStudyPackageRequest):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class OrderedAction(StrictModel):

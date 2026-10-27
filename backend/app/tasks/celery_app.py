@@ -14,6 +14,7 @@ celery_app = Celery("ontoprompt",
                         "app.tasks.v2.scenario",
                         "app.tasks.v2.scenario_tracking",
                         "app.tasks.v2.rule_schedule",
+                        "app.tasks.v2.derived_projection_schedule",
                         "app.tasks.v2.temporal_replay",
                         "app.tasks.v2.temporal_stream",
                     ])
@@ -25,4 +26,5 @@ celery_app.conf.beat_schedule = {
     'tracking-scenarios-every-ten-minutes': {'task': 'scenario_tracking.rebase_due', 'schedule': 600.0},
     # Rules carry their own 5-1440 minute interval; the tick only selects due rules.
     'rules-due-every-minute': {'task': 'rule_runtime.evaluate_due', 'schedule': 60.0},
+    'derived-projections-due-every-minute': {'task': 'derived_projection.run_due', 'schedule': 60.0},
 }

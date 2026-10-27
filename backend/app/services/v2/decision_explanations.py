@@ -1,11 +1,12 @@
-"""LLM explanations of a run's candidate action, grounded and checked.
+"""Evidence-linked model commentary, with limited mechanical checks.
 
 The model sees only evidence assembled from the run output (baseline, the
 candidate's re-simulated result, its actions, affected orders and the
 coverage of the parts involved).  It must cite evidence ids for every claim.
 The platform then checks, without the model, that every cited id exists and
-that every number in a claim appears in the cited evidence.  An explanation
-that fails the check is stored and shown as unverified, never as fact.
+that numbers in reasoning/risks occur in cited evidence. These checks do not
+establish meaning, entity attribution, direction, units or summary accuracy.
+Free-form model commentary is always semantically unverified.
 There is no template fallback: if the model is unavailable the call fails.
 """
 from __future__ import annotations
@@ -23,7 +24,8 @@ NUMBER = re.compile(r"(?<![A-Za-z0-9_.])-?\$?\d[\d,]*(?:\.\d+)?%?")
 SYSTEM = (
     "You are a manufacturing planning analyst. Explain why the proposed action should or should not be taken, "
     "using ONLY the evidence provided. Every claim must cite the evidence ids it relies on. Do not invent numbers, "
-    "orders, parts or suppliers; copy figures exactly as they appear in the cited evidence. Mention trade-offs "
+    "orders, parts or suppliers; copy figures exactly as they appear in the cited evidence. Do not round, rescale, "
+    "or convert numeric units. Mention trade-offs "
     "(cost, harmed orders, irreversible supplier notifications). Evidence labelled 基线 describes the situation BEFORE the action. Answer in Chinese."
 )
 SCHEMA = {
@@ -91,7 +93,12 @@ def _numbers(value) -> list[float]:
 
 
 def verify(answer: dict, evidence: list[dict]) -> dict:
-    """Check citations and figures against the evidence, independently of the model."""
+    """Check reference existence and numeric occurrence, never semantic truth.
+
+    `verified` stays false for compatibility with stored v1 explanations.
+    Consumers must use the scoped check result rather than promote a matching
+    number to a verified business assertion. Summary is outside this check.
+    """
     by_id = {row["id"]: row for row in evidence}
     issues = []
     for section in ("reasoning", "risks"):
@@ -105,13 +112,17 @@ def verify(answer: dict, evidence: list[dict]) -> dict:
                 continue
             allowed = [n for ref in item["evidence_ids"] for n in _numbers(by_id[ref]["value"])]
             for number in _numbers(re.sub(r"E\d+", "", item["claim"])):
-                if abs(number) <= 12 and float(number).is_integer():
-                    continue  # small counts/ordinals ("2 个 PO", "第 3 周") are checked via the cited ids
-                ok = any(abs(number - a) <= max(0.5, abs(a) * 0.005) or abs(number - a * 100) <= 0.6 or abs(number * 1000 - a) <= abs(a) * 0.01
-                         or abs(number * 10000 - a) <= abs(a) * 0.01 for a in allowed)
+                ok = any(number == a for a in allowed)
                 if not ok:
                     issues.append({"where": f"{section}[{index}]", "problem": "unsupported_number", "value": number})
-    return {"verified": not issues, "issues": issues}
+    return {
+        "verified": False,
+        "checks_passed": not issues,
+        "verification_scope": "citation_existence_and_numeric_occurrence",
+        "semantic_status": "not_checked",
+        "unchecked_sections": ["summary"],
+        "issues": issues,
+    }
 
 
 def explain(outputs: dict, candidate: dict, *, client: httpx.Client | None = None) -> dict:

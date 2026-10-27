@@ -10,6 +10,18 @@ depends_on = None
 
 
 def upgrade() -> None:
+    if {"v2_graph_views", "v2_graph_view_versions"}.issubset(
+        set(sa.inspect(op.get_bind()).get_table_names())
+    ):
+        return
+    if {"v2_graph_views", "v2_graph_view_versions"}.issubset(
+        set(sa.inspect(op.get_bind()).get_table_names())
+    ):
+        return
+    if {"v2_graph_views", "v2_graph_view_versions"}.issubset(
+        set(sa.inspect(op.get_bind()).get_table_names())
+    ):
+        return
     op.create_table(
         "v2_graph_views",
         sa.Column("id", sa.String(36), primary_key=True),

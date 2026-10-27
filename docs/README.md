@@ -10,6 +10,11 @@
 | `reports/` | 当前仍有效的验收记录、实验报告、指标 | 对应功能大改后移入 `archive/` |
 | `archive/` | 过期的计划、手册、报告，只作历史备查 | — |
 
+## Project 4 整体方案参考
+
+- [组员原稿：主路线图与 PRD](plans/PROJECT4_PLAN_A_2_0_BASELINE_MASTER_ROADMAP_AND_PRD.md)：原样保留，属于待评审提案，基于较旧的 Plan A 2.0 进度，不取代当前执行计划。
+- [架构速读与当前基线差异](plans/PROJECT4_PLAN_READING_GUIDE_2026_10_24.md)：整体架构、阶段目标和与当前合并代码的静态对照；不包含 OntoAct。
+
 ## 使用规则
 
 - **设计时官方资料优先**：`research/official/` 的结论权重高于 `research/unofficial/`，两者冲突时以官方为准，并注明冲突。

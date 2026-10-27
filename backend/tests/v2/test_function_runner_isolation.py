@@ -14,9 +14,19 @@ pytestmark = pytest.mark.skipif(not URL, reason="needs a real function-runner co
 
 
 def run(source, inputs=None, **limits):
-    response = httpx.post(f"{URL}/run", json={"source": source, "inputs": inputs or {}, **limits}, timeout=60)
+    token = os.environ.get("FUNCTION_RUNNER_TOKEN", "")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    response = httpx.post(f"{URL}/run", headers=headers, json={"source": source, "inputs": inputs or {}, **limits}, timeout=60)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_runner_requires_its_service_token():
+    if not os.environ.get("FUNCTION_RUNNER_TOKEN"):
+        pytest.fail("isolation acceptance requires FUNCTION_RUNNER_TOKEN")
+    response = httpx.post(f"{URL}/run", json={"source": "def run(inputs): return 1"}, timeout=10)
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
 
 
 def test_function_runs_and_is_deterministic():
@@ -65,3 +75,10 @@ def test_bad_functions_report_stable_codes():
     assert run("x = 1")["error"]["code"] == "function_entrypoint_missing"
     assert run("def run(inputs):\n    return {'v': float('nan')}")["error"]["code"] == "function_output_not_json"
     assert run("def run(inputs:\n")["error"]["code"] == "function_load_failed"
+
+
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_output_flood_is_stopped_and_next_request_still_works(stream):
+    source = f"import sys\ndef run(inputs):\n    while True:\n        sys.{stream}.write('x' * 65536)\n        sys.{stream}.flush()"
+    assert run(source, timeout_seconds=5)["error"]["code"] == "function_output_too_large"
+    assert run("def run(inputs):\n    return {'healthy': True}")["output"] == {"healthy": True}

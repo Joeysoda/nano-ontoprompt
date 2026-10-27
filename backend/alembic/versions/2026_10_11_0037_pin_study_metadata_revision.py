@@ -10,8 +10,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("v2_study_versions", sa.Column("ontology_metadata_revision_id", sa.String(), nullable=True))
-    op.add_column("v2_scenario_run_plans", sa.Column("ontology_metadata_revision_id", sa.String(), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    for table in ("v2_study_versions", "v2_scenario_run_plans"):
+        columns = {column["name"] for column in inspector.get_columns(table)}
+        if "ontology_metadata_revision_id" not in columns:
+            op.add_column(table, sa.Column("ontology_metadata_revision_id", sa.String(), nullable=True))
 
 
 def downgrade() -> None:

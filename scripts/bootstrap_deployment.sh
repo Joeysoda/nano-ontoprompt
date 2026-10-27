@@ -10,14 +10,17 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 SEED_DEMO=false
+SEED_DECISION_DEMO=false
 case "${1:-}" in
   ""|--no-seed) ;;
   --seed-demo) SEED_DEMO=true ;;
+  --seed-decision-demo) SEED_DECISION_DEMO=true ;;
   --help|-h)
     cat <<'USAGE'
 用法：
   ./scripts/bootstrap_deployment.sh             生成本机密钥并启动工作台
   ./scripts/bootstrap_deployment.sh --seed-demo  启动并导入公开 frePPLe 演示数据
+  ./scripts/bootstrap_deployment.sh --seed-decision-demo  JWT 双账号缺料决策演示（新建演示数据）
   ./scripts/bootstrap_deployment.sh --no-seed    只启动服务，不导入演示数据
 
 脚本只在当前服务器的 .env 和 Docker 数据卷中保存运行时密钥；仓库不含
@@ -128,6 +131,15 @@ fi
 set_if_empty ENVIRONMENT development
 set_if_empty BACKEND_AUTH_MODE local_single_user
 set_if_empty FRONTEND_AUTH_MODE local_single_user
+if [[ "$SEED_DECISION_DEMO" == true ]]; then
+  # This explicitly selected demo needs real identities for second-person
+  # review. Persist the mode so subsequent Compose commands keep using JWT.
+  demo_env_tmp="$(mktemp "${ENV_FILE}.XXXXXX")"
+  awk '/^BACKEND_AUTH_MODE=/ {$0="BACKEND_AUTH_MODE=jwt"} /^FRONTEND_AUTH_MODE=/ {$0="FRONTEND_AUTH_MODE=jwt"} {print}' "$ENV_FILE" > "$demo_env_tmp"
+  chmod 600 "$demo_env_tmp"
+  mv "$demo_env_tmp" "$ENV_FILE"
+  export BACKEND_AUTH_MODE=jwt FRONTEND_AUTH_MODE=jwt
+fi
 set_if_empty POSTGRES_DB ontoprompt
 set_if_empty POSTGRES_USER ontoprompt
 set_if_empty POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
@@ -135,6 +147,7 @@ set_if_empty DATABASE_URL "postgresql://$(read_env POSTGRES_USER):$POSTGRES_PASS
 set_if_empty REDIS_URL redis://redis:6379/0
 set_if_empty SECRET_KEY "$(random_hex)"
 set_if_empty ENCRYPTION_KEY "$(random_fernet)"
+set_if_empty FUNCTION_RUNNER_TOKEN "$(random_hex)"
 set_if_empty FIRST_ADMIN_USER admin
 set_if_empty FIRST_ADMIN_PASSWORD "$(random_hex)"
 set_if_empty UPLOADS_DIR /uploads
@@ -203,6 +216,19 @@ if [[ "$SEED_DEMO" == true ]]; then
   "${COMPOSE[@]}" exec -T -e PYTHONPATH=/app backend python /tmp/import_frepple_demo.py /tmp/manufacturing_demo.json
   "${COMPOSE[@]}" cp scripts/verify_frepple_demo.py backend:/tmp/verify_frepple_demo.py
   "${COMPOSE[@]}" exec -T -e PYTHONPATH=/app backend python /tmp/verify_frepple_demo.py /tmp/manufacturing_demo.json
+fi
+
+if [[ "$SEED_DECISION_DEMO" == true ]]; then
+  echo "准备缺料决策演示并等待基线计算；账号仅写入本机私有文件……"
+  demo_result_tmp="$(mktemp "$ROOT_DIR/.decision-demo.XXXXXX")"
+  chmod 600 "$demo_result_tmp"
+  if ! "${COMPOSE[@]}" exec -T backend python scripts/seed_material_shortage_demo.py --api http://127.0.0.1:8000 --two-user-demo > "$demo_result_tmp"; then
+    rm -f -- "$demo_result_tmp"
+    echo "缺料演示准备失败；未发布账号文件。检查 backend/celery_worker 日志。" >&2
+    exit 1
+  fi
+  mv "$demo_result_tmp" "$ROOT_DIR/.decision-demo.json"
+  echo "演示已就绪。用本地编辑器打开 .decision-demo.json 获取链接及两个账号；不要分享或提交该文件。"
 fi
 
 echo

@@ -1622,28 +1622,15 @@ class NLQueryRequest(BaseModel):
 
 @router.post("/{ontology_id}/graph/ask")
 def nl_query(ontology_id: str, body: NLQueryRequest):
-    """自然语言 → Cypher → 图数据"""
-    from app.services.v2.graph.nl2cypher import NL2CypherService
-    nl_svc = NL2CypherService()
-    plan = nl_svc.translate(body.question, body.schema)
+    """Retired: model-generated Cypher cannot enforce the Object Query policy.
 
-    svc = get_neo4j()
-    if not svc.available:
-        return {"results": [], "cypher": plan.cypher, "explanation": plan.explanation, "neo4j_available": False}
-
-    try:
-        results = svc.run_cypher(plan.cypher, {"ontology_id": ontology_id})
-        svc.close()
-        return {
-            "results": results,
-            "cypher": plan.cypher,
-            "explanation": plan.explanation,
-            "confidence": plan.confidence,
-            "neo4j_available": True,
-        }
-    except Exception as e:
-        svc.close()
-        return {"results": [], "cypher": plan.cypher, "error": str(e), "neo4j_available": True}
+    Keep an explicit tombstone for existing clients. Never translate or open
+    a graph connection here, including in local single-user mode.
+    """
+    raise HTTPException(status_code=410, detail={
+        "code": "legacy_nl_query_retired",
+        "message": "Natural-language Cypher execution is retired. Use the authorized Object Query API.",
+    })
 
 
 # ── 高级图分析 ─────────────────────────────────────────────────────────

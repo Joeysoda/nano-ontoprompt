@@ -1,7 +1,7 @@
 """PRD v1.1 Ontology Action Type & Action Run 模型"""
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, JSON, Text, Boolean, Integer, ForeignKey
+from sqlalchemy import String, DateTime, JSON, Text, Boolean, Integer, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -22,6 +22,8 @@ class OntologyActionType(Base):
     side_effects: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     permission_rules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     backed_by_function: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    state_machine_id: Mapped[str | None] = mapped_column(String, ForeignKey("v2_ontology_state_machines.id", ondelete="SET NULL"), nullable=True)
+    transition_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     status: Mapped[str] = mapped_column(String(20), default="draft")
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -29,6 +31,8 @@ class OntologyActionType(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                                                  onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (UniqueConstraint("state_machine_id", "transition_key", name="uq_action_state_transition"),)
 
 
 class OntologyActionRun(Base):

@@ -34,6 +34,7 @@
 | 笔记 | 等级 | 一句话要点 | 影响模块 |
 |---|---|---|---|
 | [OntoFlow 孪生应用搭建器截图](unofficial/ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md) | 第三方产品截图 + 本项目推断 | 分区模板 + 组件库 + 一键绑定数据；地图、环形图、排行条、告警列表；按任务划分的一级导航 | Workshop、全局导航 |
+| [OntoFlow 行业落地与交付模式](unofficial/ONTOFLOW_DELIVERY_MODEL_2026_10_23.md) | 第三方厂商自述 + 本项目推断 | 通用底座 + 厂商按项目建本体（函数、行动），不内置行业模板，客户员工只当使用者；报价全是项目制；唯一的供应链案例是推演沙盘截图（供应商断供→工厂→订单传播） | 本体建模、场景搭建、产品定位 |
 | [可复用查询（Functions）与 Ontology MCP](official/PALANTIR_FUNCTIONS_REUSE_AND_ONTOLOGY_MCP_2026_10_23.md) | 官方文档 | 函数语义化版本、按版本范围引用；组件按结果形状绑定、输入可接页面变量；MCP 按“应用范围 ∩ 用户权限”开放 | 本体查询、Workshop 绑定、MCP |
 | [Workshop 时间筛选与汇总指标建模](official/PALANTIR_WORKSHOP_TIME_FILTERING_2026_10_23.md) | 官方文档 | 时间筛选作用在事件粒度的对象集上，维度指标查询时聚合（Search Around / 派生属性），不预存“维度×日期”汇总对象 | Workshop 数据源、时间范围、本体建模 |
 | [Palantir NHS 供应链视频](official/PALANTIR_NHS_SUPPLY_CHAIN_VIDEO_SCENARIO_REVIEW_2026_10_18.md) | 官方视频 | 本体支撑的情景推理界面和用例，以及和本项目的差距 | 情景研究、决策 |
@@ -48,6 +49,7 @@
 | [本体工程参考（二）：可编程数字孪生](unofficial/Palantir本体工程参考(二)-可编程数字孪生.md) | 第三方分析 | 语义层、动力层、动态层；Action 让 AI 建议变成受治理的变更 | Action、决策 |
 | [本体第一人称视角与 Ontology Action](unofficial/本体第一人称视角与Ontology_Action辨析.md) | 第三方分析（OntoFlow 作者） | 建模视角：第一人称本体与第三人称本体的区别 | 本体建模 |
 | [动态本体 + 本体 MCP：ADIZ 空情研判](unofficial/动态本体+本体MCP-OpenClaw接入东海ADIZ空情研判MVP实战.md) | 第三方分析 | 智能体通过 MCP 接入本体、做态势研判的 MVP | 智能体、MCP |
+| [Semantica 成熟度与可用性对比](unofficial/SEMANTICA_MATURITY_COMPARISON_2026_10_24.md) | 开源项目源码（实测统计） | 对方成熟在工程外壳：11 个 CI、语义化版本 + CHANGELOG、pip 安装 + doctor 自检、文档与教程；代码本身有超大文件和失效命令；我们缺 CI、版本、一键启动 | 全仓库工程化、推理工作台（依赖落后 308 次提交） |
 | [Semantica README](unofficial/semantica_README.md) | 开源项目 | 图原生的上下文与可解释推理（项目已集成） | 推理工作台 |
 
-**原件**：全部原件及来源见 [`ORIGINALS.md`](ORIGINALS.md)。其中标着“未被任何笔记引用”的，是已经收进来但还没分析过的原件，等需要时再整理成笔记。OntoFlow 白皮书只检索过一次，没有找到应用搭建器的内容。
+**原件**：全部原件及来源见 [`ORIGINALS.md`](ORIGINALS.md)。其中标着“未被任何笔记引用”的，是已经收进来但还没分析过的原件，等需要时再整理成笔记。OntoFlow 白皮书（文字层乱码，需逐页渲染成图片读）已整读一遍，没有应用搭建器细节；交付模式见上表。

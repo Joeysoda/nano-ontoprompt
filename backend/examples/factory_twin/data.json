@@ -1,0 +1,37 @@
+{
+  "schema": "factory-twin-demo/v1",
+  "provenance": {
+    "asset_source": "NASA C-MAPSS FD001 train_FD001.txt",
+    "asset_source_url": "https://phm-datasets.s3.amazonaws.com/NASA/6.+Turbofan+Engine+Degradation+Simulation+Data+Set.zip",
+    "asset_subset_manifest": "data/cmapss_fd001_demo/manifest.json",
+    "schedule_source": "Deterministic demonstration fixture; not represented as real factory history"
+  },
+  "resources": [
+    {"id": "cell-cut", "label": "Cutting Cell", "capability": "cut"},
+    {"id": "cell-cnc", "label": "CNC Cell", "capability": "machine"},
+    {"id": "cell-assembly", "label": "Assembly Cell", "capability": "assemble"},
+    {"id": "cell-quality", "label": "Quality Lab", "capability": "inspect"}
+  ],
+  "assets": [
+    {"id": "EQ001", "name": "Turbofan EQ001", "resource_id": "cell-cut", "risk_level": "Medium", "health_score": 78, "latest_cycle": 20, "sensor_4": 1403.83, "sensor_11": 47.24, "maintenance_status": "Monitor", "source_unit": 1},
+    {"id": "EQ002", "name": "Turbofan EQ002", "resource_id": "cell-cnc", "risk_level": "High", "health_score": 58, "latest_cycle": 20, "sensor_4": 1416.49, "sensor_11": 47.62, "maintenance_status": "Planned", "source_unit": 2},
+    {"id": "EQ003", "name": "Turbofan EQ003", "resource_id": "cell-assembly", "risk_level": "Low", "health_score": 91, "latest_cycle": 20, "sensor_4": 1398.14, "sensor_11": 47.11, "maintenance_status": "Normal", "source_unit": 3},
+    {"id": "EQ004", "name": "Turbofan EQ004", "resource_id": "cell-quality", "risk_level": "Medium", "health_score": 74, "latest_cycle": 20, "sensor_4": 1408.31, "sensor_11": 47.35, "maintenance_status": "Monitor", "source_unit": 4},
+    {"id": "EQ005", "name": "Turbofan EQ005", "resource_id": "cell-cnc", "risk_level": "High", "health_score": 52, "latest_cycle": 20, "sensor_4": 1420.22, "sensor_11": 47.74, "maintenance_status": "Planned", "source_unit": 5}
+  ],
+  "schedule_items": [
+    {"id": "constraint-cut", "name": "Cutting shift availability", "resource": "cell-cut", "start": "2026-10-26T06:00:00Z", "end": "2026-10-26T18:00:00Z", "layer": "constraint", "predecessors": [], "compatible_resources": ["cell-cut"], "material_ready": true, "order_id": "SHIFT-A", "status": "Available", "priority": 0},
+    {"id": "constraint-cnc", "name": "CNC shift availability", "resource": "cell-cnc", "start": "2026-10-26T06:00:00Z", "end": "2026-10-26T18:00:00Z", "layer": "constraint", "predecessors": [], "compatible_resources": ["cell-cnc"], "material_ready": true, "order_id": "SHIFT-B", "status": "Available", "priority": 0},
+    {"id": "constraint-assembly", "name": "Assembly shift availability", "resource": "cell-assembly", "start": "2026-10-26T06:00:00Z", "end": "2026-10-26T18:00:00Z", "layer": "constraint", "predecessors": [], "compatible_resources": ["cell-assembly"], "material_ready": true, "order_id": "SHIFT-C", "status": "Available", "priority": 0},
+    {"id": "constraint-quality", "name": "Quality lab availability", "resource": "cell-quality", "start": "2026-10-26T06:00:00Z", "end": "2026-10-26T18:00:00Z", "layer": "constraint", "predecessors": [], "compatible_resources": ["cell-quality"], "material_ready": true, "order_id": "SHIFT-Q", "status": "Available", "priority": 0},
+    {"id": "maint-EQ002", "name": "Predictive inspection · EQ002", "resource": "cell-cnc", "start": "2026-10-26T06:15:00Z", "end": "2026-10-26T07:00:00Z", "layer": "maintenance", "predecessors": [], "compatible_resources": ["cell-cnc"], "material_ready": true, "order_id": "M-EQ002", "status": "Planned", "priority": 1},
+    {"id": "wo-100-cut", "name": "WO-100 · Cut housing", "resource": "cell-cut", "start": "2026-10-26T07:00:00Z", "end": "2026-10-26T08:30:00Z", "layer": "production", "predecessors": [], "compatible_resources": ["cell-cut"], "material_ready": true, "order_id": "WO-100", "status": "Released", "priority": 1},
+    {"id": "wo-100-machine", "name": "WO-100 · CNC housing", "resource": "cell-cnc", "start": "2026-10-26T08:30:00Z", "end": "2026-10-26T10:30:00Z", "layer": "production", "predecessors": ["wo-100-cut"], "compatible_resources": ["cell-cnc"], "material_ready": true, "order_id": "WO-100", "status": "Released", "priority": 1},
+    {"id": "wo-100-assemble", "name": "WO-100 · Final assembly", "resource": ["cell-cnc", "cell-assembly"], "start": "2026-10-26T10:30:00Z", "end": "2026-10-26T12:30:00Z", "layer": "production", "predecessors": ["wo-100-machine"], "compatible_resources": ["cell-cnc", "cell-assembly"], "material_ready": true, "order_id": "WO-100", "status": "Released", "priority": 1},
+    {"id": "wo-100-qa", "name": "WO-100 · Quality release", "resource": "cell-quality", "start": "2026-10-26T12:30:00Z", "end": "2026-10-26T13:15:00Z", "layer": "production", "predecessors": ["wo-100-assemble"], "compatible_resources": ["cell-quality"], "material_ready": true, "order_id": "WO-100", "status": "Released", "priority": 1},
+    {"id": "wo-200-cut", "name": "WO-200 · Cut bracket", "resource": "cell-cut", "start": "2026-10-26T09:00:00Z", "end": "2026-10-26T10:00:00Z", "layer": "production", "predecessors": [], "compatible_resources": ["cell-cut"], "material_ready": true, "order_id": "WO-200", "status": "Released", "priority": 2},
+    {"id": "wo-200-machine", "name": "WO-200 · Machine bracket", "resource": "cell-cnc", "start": "2026-10-26T12:30:00Z", "end": "2026-10-26T14:00:00Z", "layer": "production", "predecessors": ["wo-200-cut"], "compatible_resources": ["cell-cnc"], "material_ready": true, "order_id": "WO-200", "status": "Released", "priority": 2},
+    {"id": "wo-200-qa", "name": "WO-200 · Inspection", "resource": "cell-quality", "start": "2026-10-26T14:00:00Z", "end": "2026-10-26T14:45:00Z", "layer": "production", "predecessors": ["wo-200-machine"], "compatible_resources": ["cell-quality"], "material_ready": true, "order_id": "WO-200", "status": "Released", "priority": 2},
+    {"id": "wo-300-machine", "name": "WO-300 · Expedite machining", "resource": "", "start": null, "end": null, "layer": "production", "predecessors": [], "compatible_resources": ["cell-cnc"], "material_ready": true, "order_id": "WO-300", "status": "Unscheduled", "priority": 1}
+  ]
+}

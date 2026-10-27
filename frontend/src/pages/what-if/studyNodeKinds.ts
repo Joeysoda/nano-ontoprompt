@@ -1,4 +1,5 @@
 export const nodeKinds: Record<string, { label: string; description: string; logic: boolean }> = {
+  row_mapping: { label: '字段映射', description: '将已读取的数据映射为领域函数输入，显式校验类型和单位；保留来源身份，不修改本体对象。', logic: false },
   object_query: { label: '对象查询', description: '从本体读取对象与属性，例如设备、订单和库存。使用内置查询，无需 Logic Asset。', logic: false },
   function: { label: '函数模型', description: '运行已发布的 Logic Asset，例如缺料分析或节拍计算。必须指定逻辑及版本。', logic: true },
   aggregate_metric: { label: '指标汇总', description: '对输入计数、求和、求平均或取最大最小值。使用内置计算，无需 Logic Asset。', logic: false },

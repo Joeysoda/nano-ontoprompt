@@ -36,6 +36,7 @@ WIDGETS: dict[str, set[str]] = {
     "facet_list": {"field"}, "select": {"value_field", "label_field", "variable"}, "stat_row": {"items"}, "banner": {"template"},
     "action_list": {"label_field"}, "action_detail": {"variable"}, "rerun_button": {"steps"},
     "donut_chart": {"category_field"}, "rank_bars": {"label_field"}, "alert_list": {"title"}, "geo_map": {"lat_field", "lng_field"},
+    "schedule_gantt": {"id_field", "label_field", "resource_field", "start_field", "end_field"},
 }
 # Page template -> region id -> columns it spans (of 24).  Kept in sync with the frontend templates.
 TEMPLATES: dict[str, dict[str, int]] = {
@@ -235,13 +236,48 @@ class AppDefinition(Strict):
                     raise ValueError(f"{where}: unknown widget type {widget.type}")
                 if missing := WIDGETS[widget.type] - set(widget.props):
                     raise ValueError(f"{where}: missing {sorted(missing)}")
+                if widget.type == "schedule_gantt":
+                    snap = widget.props.get("snap_minutes", 15)
+                    start = widget.props.get("operating_start_minute", 0)
+                    end = widget.props.get("operating_end_minute", 1440)
+                    if not isinstance(snap, (int, float)) or isinstance(snap, bool) or not 1 <= snap <= 1440:
+                        raise ValueError(f"{where}: snap_minutes must be between 1 and 1440")
+                    if any(not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 1440 for value in (start, end)):
+                        raise ValueError(f"{where}: operating minutes must be between 0 and 1440")
+                    behavior = widget.props.get("allocation_behavior", "allocate")
+                    if behavior not in {"allocate", "no_overlaps", "time_only", "resource_only"}:
+                        raise ValueError(f"{where}: unknown allocation_behavior {behavior}")
+                    if widget.props.get("resource_cardinality", "one") not in {"one", "many"}:
+                        raise ValueError(f"{where}: resource_cardinality must be one or many")
+                    if widget.props.get("resource_drop_behavior", "replace") not in {"replace", "append"}:
+                        raise ValueError(f"{where}: resource_drop_behavior must be replace or append")
+                    resources = widget.props.get("resources", [])
+                    if not isinstance(resources, list) or len(resources) > 200:
+                        raise ValueError(f"{where}: resources must be a list of at most 200 entries")
+                    resource_ids = [row.get("id") for row in resources if isinstance(row, dict)]
+                    if len(resource_ids) != len(resources) or any(not value for value in resource_ids) or len(resource_ids) != len(set(resource_ids)):
+                        raise ValueError(f"{where}: resource ids must be present and unique")
+                    layers = widget.props.get("layers", [])
+                    if not isinstance(layers, list) or len(layers) > 20:
+                        raise ValueError(f"{where}: layers must be a list of at most 20 entries")
+                    layer_ids = [row.get("id") for row in layers if isinstance(row, dict)]
+                    if len(layer_ids) != len(layers) or any(not value for value in layer_ids) or len(layer_ids) != len(set(layer_ids)) or any(row.get("style", "standard") not in {"standard", "background", "event"} for row in layers):
+                        raise ValueError(f"{where}: layer ids must be unique and styles must be standard, background, or event")
+                    if widget.props.get("create_action_type_id") and any(not widget.props.get(key) for key in ("create_start_parameter", "create_end_parameter", "create_resource_parameter")):
+                        raise ValueError(f"{where}: drag-create requires start, end, and resource parameter names")
+                    recommendation = widget.props.get("recommendation_asset_id")
+                    if recommendation is not None and (not isinstance(recommendation, str) or not recommendation.strip() or len(recommendation) > 200):
+                        raise ValueError(f"{where}: recommendation_asset_id must be a non-empty string of at most 200 characters")
+                    validation = widget.props.get("validation_asset_id")
+                    if validation is not None and (not isinstance(validation, str) or not validation.strip() or len(validation) > 200):
+                        raise ValueError(f"{where}: validation_asset_id must be a non-empty string of at most 200 characters")
                 if regions and widget.region not in regions:
                     raise ValueError(f"{where}: region must be one of {sorted(regions)}")
                 if not regions and widget.region:
                     raise ValueError(f"{where}: a free page has no regions")
                 if widget.source and widget.source not in sources:
                     raise ValueError(f"{where}: unknown data source {widget.source}")
-                used = {widget.props.get(key) for key in ("variable", "filter_variable")} - {None}
+                used = {widget.props.get(key) for key in ("variable", "filter_variable", "scenario_variable")} - {None}
                 if widget.on_select:
                     used |= {widget.on_select.set_variable} - {None}
                     if widget.on_select.navigate and widget.on_select.navigate not in pages:

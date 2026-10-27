@@ -12,6 +12,7 @@ import { nextId, specOf, WIDGETS, type AppDefinition, type DataSource, type Fiel
 
 type Study = { id: string; name: string }
 type StudyDetail = { versions: Array<{ version: number; spec: { nodes: Array<{ key: string; kind: string }> } }> }
+type LogicAssetChoice = { id: string; asset_key: string; name: string; version: string; status: string; side_effect: boolean; output_schema: Record<string, unknown> }
 
 /** Three-panel builder: widget palette, live grid canvas, property inspector. Publishing saves an immutable version. */
 export default function WorkshopEditor() {
@@ -36,6 +37,7 @@ export default function WorkshopEditor() {
   const [notice, setNotice] = useState('')
   const pageId = chosenPage || draft?.pages[0]?.id || ''
   const sources = useSources(ontologyId, appId, draft ?? undefined, {}, undefined, (draft?.settings ?? DEFAULT_SETTINGS).time_range, true, vars)
+  const logicAssets = useQuery({ queryKey: ['workshop-logic-assets', ontologyId], queryFn: () => apiClientV2.get<{ assets: LogicAssetChoice[] }>(`/ontologies/${ontologyId}/logic-assets`), enabled: !!ontologyId })
   const publish = useMutation({
     mutationFn: () => apiClientV2.post<{ head_version: number; unchanged: boolean }>(`${appsUrl(ontologyId)}/${appId}/versions`, { expected_version: baseVersion, definition: draft, comment }),
     onSuccess: async () => { setComment(''); await queryClient.invalidateQueries({ queryKey: ['workshop-app', ontologyId, appId] }); sources.refresh() },
@@ -130,7 +132,7 @@ export default function WorkshopEditor() {
           activeRegion={activeRegion} onActiveRegion={setRegion} onAddToRegion={setRegion} />
       </main>
       <aside className="overflow-auto border-l bg-white p-3" aria-label="属性">
-        {widget ? <WidgetInspector widget={widget} draft={draft} page={page} schema={schemaOf(widget.source)} onRegion={region => updatePage(moveToRegion(page, widget.id, region))} source={widget.source ? sources.resolved[widget.source]?.outputs : undefined} onChange={updateWidget}
+        {widget ? <WidgetInspector widget={widget} draft={draft} page={page} schema={schemaOf(widget.source)} onRegion={region => updatePage(moveToRegion(page, widget.id, region))} source={widget.source ? sources.resolved[widget.source]?.outputs : undefined} logicAssets={logicAssets.data?.assets ?? []} onChange={updateWidget}
           layout={page.layout.find(item => item.i === widget.id)} onLayout={item => updatePage({ layout: [...page.layout.filter(row => row.i !== widget.id), item] })}
           onDuplicate={() => { const copy = duplicateWidget(page, widget, draft.pages.flatMap(row => row.widgets.map(item => item.id))); const withCopy = { ...page, widgets: [...page.widgets, copy.widget] }
             updatePage({ widgets: withCopy.widgets, layout: [...page.layout, placeBox(withCopy, copy.widget.region ?? null, copy.layout.w, copy.layout.h, copy.widget.id)] }); setSelected(copy.widget.id) }}
@@ -280,15 +282,15 @@ function Variables({ draft, update, onBlocked }: { draft: AppDefinition; update:
       <button className="rounded border px-2 text-sm disabled:opacity-50" disabled={!valid} onClick={() => { update({ ...draft, variables: [...draft.variables, { id: name, label: name }] }); setName('') }}>添加</button></div></section>
 }
 
-function WidgetInspector({ widget, draft, page, schema, onRegion, source, onChange, onDelete, onDuplicate, layout, onLayout }: { widget: Widget; draft: AppDefinition; page: Page; schema?: OutputSchema; onRegion: (region: string) => void
-  source: unknown; onChange: (patch: Partial<Widget>) => void; onDelete: () => void; onDuplicate: () => void; layout?: LayoutItem; onLayout: (item: LayoutItem) => void }) {
+function WidgetInspector({ widget, draft, page, schema, onRegion, source, logicAssets, onChange, onDelete, onDuplicate, layout, onLayout }: { widget: Widget; draft: AppDefinition; page: Page; schema?: OutputSchema; onRegion: (region: string) => void
+  source: unknown; logicAssets: LogicAssetChoice[]; onChange: (patch: Partial<Widget>) => void; onDelete: () => void; onDuplicate: () => void; layout?: LayoutItem; onLayout: (item: LayoutItem) => void }) {
   const regions = regionsOf(page)
   const spec = specOf(widget.type)!
   const paths = discoverPaths(source)
   const rows = asRows(getPath(source, widget.path))
   const fields = discoverFields(rows)
   const setProp = (key: string, value: unknown) => onChange({ props: { ...widget.props, [key]: value } })
-  const ctx = { paths: paths.filter(row => row.kind !== 'object').map(row => row.path), fields, variables: draft.variables.map(row => row.id), pages: draft.pages.map(row => row.id) }
+  const ctx = { paths: paths.filter(row => row.kind !== 'object').map(row => row.path), fields, variables: draft.variables.map(row => row.id), pages: draft.pages.map(row => row.id), logicAssets }
   return <div className="space-y-3" data-testid="widget-inspector">
     <div className="flex items-center"><h2 className="text-sm font-semibold">{spec.label}</h2><span className="ml-2 text-xs text-slate-400">{widget.id}</span><button className="ml-auto text-xs text-blue-700" onClick={onDuplicate}>复制</button><button className="ml-3 text-xs text-rose-700" onClick={onDelete}>删除</button></div>
     <p className="text-xs text-slate-500">{spec.description}</p>
@@ -310,7 +312,14 @@ function WidgetInspector({ widget, draft, page, schema, onRegion, source, onChan
   </div>
 }
 
-type Ctx = { paths: string[]; fields: string[]; variables: string[]; pages: string[] }
+type Ctx = { paths: string[]; fields: string[]; variables: string[]; pages: string[]; logicAssets: LogicAssetChoice[] }
+
+function supportsContract(asset: LogicAssetChoice, contract?: string) {
+  if (!contract) return true
+  const properties = asset.output_schema?.properties as Record<string, unknown> | undefined
+  const marker = properties?.schema as { const?: unknown; enum?: unknown[] } | undefined
+  return asset.output_schema?.$id === contract || marker?.const === contract || marker?.enum?.includes(contract) === true
+}
 
 function FieldInput({ field, value, ctx, onChange, prefix = '' }: { field: FieldSpec; value: unknown; ctx: Ctx; onChange: (value: unknown) => void; prefix?: string }) {
   const label = `${prefix}${field.label}`
@@ -323,6 +332,9 @@ function FieldInput({ field, value, ctx, onChange, prefix = '' }: { field: Field
     case 'field': return <Choice label={label} value={text} options={['', ...ctx.fields]} onChange={onChange} />
     case 'variable': return <Choice label={label} value={text} options={['', ...ctx.variables]} onChange={onChange} />
     case 'page': return <Choice label={label} value={text} options={['', ...ctx.pages]} onChange={onChange} />
+    case 'logic_asset': { const assets = ctx.logicAssets.filter(asset => asset.status === 'published' && !asset.side_effect && supportsContract(asset, field.contract))
+      return <label className="block text-xs text-slate-500">{field.label}<select className="wb-input mt-0.5 w-full" aria-label={label} value={text} onChange={event => onChange(event.target.value)}><option value="">— 不启用 —</option>
+        {!assets.some(asset => asset.id === text) && text && <option value={text}>当前配置（不可用或契约不兼容）</option>}{assets.map(asset => <option key={asset.id} value={asset.id}>{asset.name} · {asset.asset_key}@{asset.version}</option>)}</select>{field.help && <span className="mt-1 block text-[11px] text-slate-400">{field.help}</span>}{!assets.length && <span className="mt-1 block text-[11px] text-amber-700">暂无兼容的已发布能力，请先发布声明该输出契约的 Logic Asset。</span>}</label> }
     case 'color': return <Text label={label} value={text} type="color" onChange={onChange} />
     case 'list': { const items = Array.isArray(value) ? value as Record<string, unknown>[] : []
       return <fieldset className="space-y-2 rounded border p-2"><legend className="px-1 text-xs text-slate-500">{field.label}（{items.length}）</legend>

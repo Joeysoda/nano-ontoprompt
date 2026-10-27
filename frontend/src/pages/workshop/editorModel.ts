@@ -8,6 +8,7 @@ const REQUIRED_PROPS: Record<string, string[]> = {
   facet_list: ['field'], select: ['value_field', 'label_field', 'variable'], stat_row: ['items'], banner: ['template'],
   action_list: ['label_field'], action_detail: ['variable'], rerun_button: ['steps'],
   donut_chart: ['category_field'], rank_bars: ['label_field'], alert_list: ['title'], geo_map: ['lat_field', 'lng_field'],
+  schedule_gantt: ['id_field', 'label_field', 'resource_field', 'start_field', 'end_field'],
 }
 
 /** References that make deleting a builder resource unsafe. */
@@ -17,7 +18,7 @@ export function resourceReferences(definition: AppDefinition, kind: 'source' | '
     const where = `${page.title} / ${widget.title || widget.id}`
     if (kind === 'source' && widget.source === id) found.push(where)
     if (kind === 'page' && (widget.on_select?.navigate === id || widget.props.navigate === id)) found.push(where)
-    if (kind === 'variable' && (widget.on_select?.set_variable === id || widget.props.variable === id || widget.props.filter_variable === id)) found.push(where)
+    if (kind === 'variable' && (widget.on_select?.set_variable === id || widget.props.variable === id || widget.props.filter_variable === id || widget.props.scenario_variable === id)) found.push(where)
   }
   if (kind === 'variable') for (const source of definition.data_sources) {
     if (source.kind === 'query' && Object.values(source.params ?? {}).some(value => (value as { variable?: string } | null)?.variable === id)) found.push(`数据源 ${source.label || source.id} 的参数`)
@@ -44,8 +45,13 @@ export function validateDefinition(definition: AppDefinition): DefinitionIssue[]
       if (regions.length && !regions.some(row => row.id === widget.region)) issues.push({ location, message: '组件不在本页模板的任何区域里' })
       const item = page.layout.find(row => row.i === widget.id)
       if (item && item.x + item.w > spanOf(page, widget.region)) issues.push({ location, message: `宽度超出所在区域（${spanOf(page, widget.region)} 列）` })
-      const usedVariables = [widget.props.variable, widget.props.filter_variable, widget.on_select?.set_variable].filter(Boolean) as string[]
+      const usedVariables = [widget.props.variable, widget.props.filter_variable, widget.props.scenario_variable, widget.on_select?.set_variable].filter(Boolean) as string[]
       for (const id of usedVariables) if (!variables.has(id)) issues.push({ location, message: `变量 ${id} 不存在` })
+      if (widget.type === 'schedule_gantt') {
+        const snap = Number(widget.props.snap_minutes ?? 15), start = Number(widget.props.operating_start_minute ?? 0), end = Number(widget.props.operating_end_minute ?? 1440)
+        if (!Number.isFinite(snap) || snap < 1 || snap > 1440) issues.push({ location, message: '时间吸附必须在 1–1440 分钟之间' })
+        if (!Number.isFinite(start) || start < 0 || start > 1440 || !Number.isFinite(end) || end < 0 || end > 1440) issues.push({ location, message: '运行时段必须在 UTC 当日 0–1440 分钟之间' })
+      }
       for (const id of [widget.props.navigate, widget.on_select?.navigate].filter(Boolean) as string[]) if (!pages.has(id)) issues.push({ location, message: `目标页面 ${id} 不存在` })
     }
   }

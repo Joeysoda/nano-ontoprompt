@@ -31,13 +31,13 @@ class NL2CypherService:
     def translate(self, question: str, ontology_schema: dict | None = None) -> CypherPlan:
         """
         将自然语言问题转为 Cypher。
-        先尝试 LLM，失败时用规则模板兜底。
+        仅生成候选查询供检查，不可直接执行。模型失败时显式报错。
         """
         try:
             return self._llm_translate(question, ontology_schema or {})
         except Exception as e:
-            logger.info(f"LLM 翻译失败，使用规则模板: {e}")
-            return self._rule_translate(question)
+            logger.warning("NL query translation failed: %s", type(e).__name__)
+            raise RuntimeError("Natural-language query translation is unavailable") from e
 
     def _llm_translate(self, question: str, schema: dict) -> CypherPlan:
         schema_str = json.dumps(schema, ensure_ascii=False, indent=2) if schema else "（未知模式）"
@@ -92,17 +92,23 @@ class NL2CypherService:
                     explanation=f"规则匹配：包含关键词「{keyword}」",
                     confidence=0.5,
                 )
-        # 默认：返回所有节点
-        return CypherPlan(
-            cypher="MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n LIMIT 50",
-            explanation="默认查询：返回所有节点",
-            confidence=0.3,
-        )
+        raise ValueError("Unsupported question; specify an Object Query instead")
 
     @staticmethod
     def _validate_read_only(cypher: str):
-        """阻断写操作"""
+        """Reject obvious unsafe drafts; this is NOT an authorization boundary.
+
+        The execution endpoint is retired. Even a passing draft must never be
+        executed on behalf of a user without a policy-aware compiler.
+        """
         upper = cypher.upper().strip()
         for kw in ("CREATE", "MERGE", "DELETE", "DETACH", "SET ", "REMOVE", "DROP"):
             if kw in upper:
                 raise ValueError(f"Cypher 包含写操作关键词 {kw}，已阻断")
+        if any(token in cypher for token in (";", "//", "/*", "*/")) or re.search(r"\b(CALL|LOAD|UNION|FOREACH)\b", upper):
+            raise ValueError("Unsupported query construct")
+        if not re.search(r"\b\w+\.ontology_id\s*=\s*\$ontology_id\b", cypher, re.IGNORECASE):
+            raise ValueError("Query must declare an ontology scope")
+        limit = re.search(r"\bLIMIT\s+(\d+)\s*$", cypher, re.IGNORECASE)
+        if not limit or not 1 <= int(limit.group(1)) <= 200:
+            raise ValueError("Query must end with a literal LIMIT between 1 and 200")

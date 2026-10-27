@@ -72,6 +72,8 @@ from app.routers.v2 import semantic_core as semantic_core_v2
 from app.routers.v2 import security as security_v2
 from app.routers.v2 import data_plane as data_plane_v2
 from app.routers.v2 import schema_migrations as schema_migrations_v2
+from app.routers.v2 import derived_projections as derived_projections_v2
+from app.routers.v2 import process_models as process_models_v2
 
 def _run_schema_migration():
     """统一 schema 迁移入口。
@@ -159,6 +161,7 @@ def _seed_db():
             SchemaMigrationRun,
         )
         from app.models.v2.time_series import TimeSeriesSync  # noqa: F401
+        from app.models.v2.derived_projection import DerivedProjection, DerivedProjectionRun  # noqa: F401
         _run_schema_migration()
 
         seed_admin(db)
@@ -465,6 +468,8 @@ app.include_router(semantic_core_v2.router, prefix="/api/v2/ontologies", tags=["
 app.include_router(security_v2.router, prefix="/api/v2/ontologies", tags=["v2-security"])
 app.include_router(data_plane_v2.router, prefix="/api/v2", tags=["v2-data-plane"])
 app.include_router(schema_migrations_v2.router, prefix="/api/v2", tags=["v2-schema-migrations"])
+app.include_router(derived_projections_v2.router, prefix="/api/v2/ontologies", tags=["v2-derived-projections"])
+app.include_router(process_models_v2.router, prefix="/api/v2/ontologies", tags=["v2-process-models"])
 
 def get_db():
     db = SessionLocal()

@@ -9,6 +9,9 @@ depends_on = None
 
 
 def upgrade():
+    legacy_tables = {"v2_ontology_queries", "v2_ontology_query_versions", "v2_mcp_scopes"}
+    if legacy_tables.issubset(set(sa.inspect(op.get_bind()).get_table_names())):
+        return
     op.create_table("v2_ontology_queries",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("ontology_id", sa.String(), sa.ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False),

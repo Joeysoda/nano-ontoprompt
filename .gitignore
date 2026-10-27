@@ -11,6 +11,7 @@ build/
 
 # Environment
 .env
+.decision-demo.*
 *.db
 *.db-shm
 *.db-wal
@@ -22,6 +23,7 @@ uploads/
 # Node
 node_modules/
 frontend/dist/
+frontend/.cache/
 frontend/.env.local
 .runtime_backups/
 .runtime-backups/
@@ -43,6 +45,9 @@ celerybeat-schedule
 
 # Test artifacts
 test-results/
+/output/
+/tmp/
+/backend/.factory-twin-demo.json
 
 # Internal / agent-only files (不进行 git 同步)
 AGENTS.md
@@ -51,6 +56,8 @@ nano-ontoprompt-requirements.md
 prompt-harness-rules-for-coding-agent.md
 docs/*
 !docs/README.md
+!docs/showcase/
+!docs/showcase/**
 !docs/adr/
 docs/adr/*
 !docs/adr/0019-semantic-core-security-data-plane.md
@@ -64,6 +71,8 @@ docs/plans/*
 !docs/plans/PLAN_MANUFACTURING_SCENARIO_REASONING_FULL_CHAIN.md
 !docs/plans/PLAN_ONTOLOGY_PLATFORM_FOUNDATION_GOVERNANCE_RUNTIME.md
 !docs/plans/PLAN_PERSON_B_OPERATIONAL_RUNTIME_UX.md
+!docs/plans/PROJECT4_PLAN_A_2_0_BASELINE_MASTER_ROADMAP_AND_PRD.md
+!docs/plans/PROJECT4_PLAN_READING_GUIDE_2026_10_24.md
 !docs/guides/
 docs/guides/*
 # （当前无共享的 guides；新增时在此放行）
@@ -84,6 +93,8 @@ docs/research/official/*
 docs/research/unofficial/*
 !docs/research/unofficial/OPEN_SOURCE_AND_BENCHMARKS_FROM_ARCHIVED_PLANS.md
 !docs/research/unofficial/ONTOFLOW_TWIN_APP_BUILDER_2026_10_22.md
+!docs/research/unofficial/ONTOFLOW_DELIVERY_MODEL_2026_10_23.md
+!docs/research/unofficial/SEMANTICA_MATURITY_COMPARISON_2026_10_24.md
 !docs/research/official/PALANTIR_OFFICIAL_INDUSTRIAL_USE_CASE_VIDEO_REVIEW_2026_10_18.md
 # docs/archive/ 下的文件已被 git 跟踪，无需白名单；新归档文件用 git mv 移入即可
 pipeline-builder-redesign-plan.md

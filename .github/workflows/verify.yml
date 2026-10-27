@@ -1,0 +1,108 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - run: python -m pytest unit_tests ../function_runner/tests -q --junitxml=unit-results.xml
+        working-directory: backend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-results
+          path: backend/unit-results.xml
+
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint:src
+      - run: npm run build
+
+  decision-integration:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ontoact
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: ontoact_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ontoact -d ontoact_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      falkordb:
+        image: falkordb/falkordb:v4.12.0
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://ontoact:ci-only-password@127.0.0.1:5432/ontoact_test
+      DATABASE_URL: sqlite:///./ci-app.db
+      FALKORDB_HOST: 127.0.0.1
+      FALKORDB_PORT: '6381'
+      SECRET_KEY: ci-only-signing-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt scipy==1.14.1 networkx==3.4.2
+      - name: Start restricted runner
+        run: |
+          docker build -t ontoact-function-runner function_runner
+          docker network create --internal ontoact-functions
+          docker run -d --name ontoact-runner --network ontoact-functions --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 3g -e FUNCTION_RUNNER_TOKEN=ci-only-runner-token ontoact-function-runner
+      - name: Run runner isolation checks inside the private network
+        run: |
+          docker build -t ontoact-backend-ci backend
+          docker run --rm --network ontoact-functions --mount "type=bind,source=${GITHUB_WORKSPACE}/backend,target=/workspace,readonly" -w /workspace -e FUNCTION_RUNNER_URL=http://ontoact-runner:8100 -e FUNCTION_RUNNER_TOKEN=ci-only-runner-token ontoact-backend-ci python -m pytest tests/v2/test_function_runner_isolation.py -q --confcutdir=tests/v2 -p no:cacheprovider
+      - name: Run real-service decision checks
+        working-directory: backend
+        run: >-
+          python -m pytest
+          tests/test_material_decision_package_flow.py
+          tests/v2/test_material_decision_apply_real_falkor.py
+          tests/v2/graph/test_retired_nl_query.py
+          -q --junitxml=integration-results.xml
+      - name: Require integration tests to execute
+        run: |
+          python -c "import xml.etree.ElementTree as E; root=E.parse('backend/integration-results.xml').getroot(); cases=root.findall('.//testcase'); assert cases and not root.findall('.//skipped'), 'Integration acceptance must not skip tests'"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: decision-integration-results
+          path: backend/integration-results.xml
+      - name: Runner diagnostics
+        if: failure()
+        run: docker logs --tail 80 ontoact-runner

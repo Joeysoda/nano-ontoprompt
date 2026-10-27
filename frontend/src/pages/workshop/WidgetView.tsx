@@ -6,6 +6,7 @@ import { aggregate, asRows, categoryColor, coordinate, formatCell, getPath, grou
 import DecisionPackagePanel from '@/pages/what-if/DecisionPackagePanel'
 import type { DecisionRunContext } from '@/pages/what-if/decisionPackage'
 import type { ResolvedSource, ResolvedStudyRun, Widget } from './spec'
+import ScheduleGanttWidget from './ScheduleGanttWidget'
 
 export type Runtime = {
   ontologyId: string
@@ -66,6 +67,7 @@ export default function WidgetView({ widget, rt }: { widget: Widget; rt: Runtime
     case 'rank_bars': return <RankWidget rows={rows} p={p} rt={rt} title={widget.title} />
     case 'alert_list': return <AlertWidget rows={rows} p={p} rt={rt} title={widget.title} />
     case 'geo_map': return <MapWidget rows={rows} p={p} rt={rt} title={widget.title} />
+    case 'schedule_gantt': return <ScheduleGanttWidget rows={rows} p={p} rt={rt} title={widget.title} />
     case 'rerun_button': return source?.kind === 'study_run' ? <RerunButton p={p} rt={rt} source={source} /> : <Empty text="请绑定 Study 运行结果数据源" />
     default: return <Empty text={`未知组件 ${widget.type}`} />
   }
@@ -173,7 +175,7 @@ function ActionList({ rows, p, rt }: { rows: Row[]; p: P; rt: Runtime }) {
     <span>{plainId(str(getPath(row, str(p.label_field))))}{p.subtitle ? <span className="block text-xs text-slate-500">{template(str(p.subtitle), row)}</span> : null}</span><span>→</span></button>)}</div>
 }
 
-type Explanation = { candidate_id: string; model: string; verified: boolean; issues: Array<{ where: string; problem: string; value?: number }>; evidence: Array<{ id: string; label: string; value: unknown }>; answer: { summary: string; reasoning: Array<{ claim: string; evidence_ids: string[] }>; risks: Array<{ claim: string; evidence_ids: string[] }> } }
+type Explanation = { candidate_id: string; model: string; verified: boolean; checks_passed?: boolean; issues: Array<{ where: string; problem: string; value?: number }>; evidence: Array<{ id: string; label: string; value: unknown }>; answer: { summary: string; reasoning: Array<{ claim: string; evidence_ids: string[] }>; risks: Array<{ claim: string; evidence_ids: string[] }> } }
 
 function ActionDetail({ rows, p, rt, source }: { rows: Row[]; p: P; rt: Runtime; source: ResolvedStudyRun }) {
   const candidate = rows.find(row => str(row.id) === rt.vars[str(p.variable)])
@@ -192,12 +194,12 @@ function ActionDetail({ rows, p, rt, source }: { rows: Row[]; p: P; rt: Runtime;
     {Array.isArray(candidate.protected_orders) && <p className="text-sm">获益 {list(candidate.protected_orders).length} · 受损 <span className={list(candidate.harmed_orders).length ? 'text-rose-700' : ''}>{list(candidate.harmed_orders).length}</span></p>}
     <ul className="max-h-32 space-y-1 overflow-auto text-xs">{actions.map((row, index) => <li key={index} className="rounded border px-2 py-1"><strong>{str(row.action_type)}</strong> · {Object.entries(row).filter(([key]) => key !== 'action_type').map(([key, value]) => `${key}=${plainId(str(value))}`).join(' · ')}</li>)}</ul>
     {!!p.explain && <div className="rounded border border-violet-200 bg-violet-50/50 p-3" data-testid="aip-explanation">
-      <div className="flex items-center gap-2"><span className="rounded bg-violet-600 px-2 py-0.5 text-xs text-white">⚡ AIP Explanation</span>
-        {explanation && <span className={`rounded px-2 py-0.5 text-xs ${explanation.verified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{explanation.verified ? '数字与引用已核验' : `未通过核验（${explanation.issues.length} 处）`}</span>}
+      <div className="flex items-center gap-2"><span className="rounded bg-violet-600 px-2 py-0.5 text-xs text-white">AI 辅助解释</span>
+        {explanation && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">模型解释 · 语义未核验</span>}
         {explanation && <span className="text-xs text-slate-500">{explanation.model}</span>}
         <button className="wb-button-secondary ml-auto" disabled={!context || explain.isPending || rt.editing} onClick={() => explain.mutate()}>{explain.isPending ? '模型推理中…' : explanation ? '重新生成' : '生成解释'}</button></div>
       {explain.error && <p role="alert" className="mt-2 text-xs text-rose-700">{formatApiError(explain.error)}</p>}
-      {explanation && <div className="mt-2 space-y-1 text-sm"><p>{explanation.answer.summary}</p><ol className="list-decimal pl-5">{explanation.answer.reasoning.map((row, index) => <li key={index}>{row.claim} <span className="text-xs text-violet-700">[{row.evidence_ids.join(', ')}]</span></li>)}</ol>
+      {explanation && <div className="mt-2 space-y-1 text-sm"><p className="text-xs text-amber-800">{explanation.checks_passed === true ? '引用存在性与原始数值匹配检查通过；不验证指标含义、单位或因果关系，摘要未经核验。' : explanation.checks_passed === false ? `机械检查发现 ${explanation.issues.length} 处问题，请核对原始证据。` : '历史解释未记录限定范围的检查结果，请核对原始证据。'}</p><p>{explanation.answer.summary}</p><ol className="list-decimal pl-5">{explanation.answer.reasoning.map((row, index) => <li key={index}>{row.claim} <span className="text-xs text-violet-700">[{row.evidence_ids.join(', ')}]</span></li>)}</ol>
         {explanation.answer.risks.length > 0 && <ul className="list-disc pl-5 text-amber-800">{explanation.answer.risks.map((row, index) => <li key={index}>{row.claim} <span className="text-xs text-violet-700">[{row.evidence_ids.join(', ')}]</span></li>)}</ul>}
         <details className="text-xs"><summary className="cursor-pointer text-slate-500">证据（{explanation.evidence.length} 条）</summary><ul>{explanation.evidence.map(row => <li key={row.id}><strong>{row.id}</strong> {row.label}：{typeof row.value === 'object' ? JSON.stringify(row.value) : str(row.value)}</li>)}</ul></details></div>}
     </div>}

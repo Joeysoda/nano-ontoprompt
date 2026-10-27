@@ -48,6 +48,24 @@ class ScenarioSettings(StrictBody):
 class ExternalEffect(StrictBody):
     kind: str = Field(min_length=1, max_length=80, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(default="", max_length=500)
+    connection_id: str | None = Field(default=None, min_length=1, max_length=100)
+    resource: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+def _validate_external_effect(db, user, effect: ExternalEffect | None):
+    if not effect:
+        return
+    if bool(effect.connection_id) != bool(effect.resource):
+        raise ScenarioError("invalid_external_effect", "connection_id and resource must be configured together", 422)
+    if not effect.connection_id:
+        return
+    from app.models.v2.connection import Connection
+    from app.routers.v2.connections import _connection_config
+    connection = db.get(Connection, effect.connection_id)
+    if not connection or connection.kind != "rest" or connection.status != "active":
+        raise ScenarioError("writeback_connection_unavailable", "Select an active REST connection", 422)
+    if effect.resource not in (_connection_config(connection).get("endpoints") or []):
+        raise ScenarioError("writeback_resource_unavailable", "The endpoint is not declared by this connection", 422)
 
 
 class ActionDefinition(StrictBody):
@@ -188,6 +206,7 @@ def create_action_type(ontology_id: str, body: ActionDefinition, db=Depends(get_
     try:
         _service(ontology_id, db, user)
         _validate_action(body.parameters, body.rules, body.backed_by_function)
+        _validate_external_effect(db, user, body.external_effect)
         row = OntologyActionType(ontology_id=ontology_id, name=body.name.strip(),
                                  description=body.description, action_category="scenario",
                                  parameters=body.parameters, effects=body.rules, created_by=user.id,
@@ -211,6 +230,7 @@ def update_action_type(ontology_id: str, action_type_id: str, body: ActionDefini
         if user.role != "admin" and row.created_by != user.id:
             raise ScenarioError("forbidden", "Only the Action type author may edit it", 403)
         _validate_action(body.parameters, body.rules, body.backed_by_function)
+        _validate_external_effect(db, user, body.external_effect)
         row.name, row.description = body.name.strip(), body.description
         row.parameters, row.effects, row.backed_by_function = body.parameters, body.rules, body.backed_by_function
         row.side_effects = {"external": body.external_effect.model_dump()} if body.external_effect else None
@@ -235,6 +255,8 @@ def publish_action_type(ontology_id: str, action_type_id: str,
         if user.role != "admin" and row.created_by != user.id:
             raise ScenarioError("forbidden", "Only the Action type author may publish it", 403)
         _validate_action(row.parameters, row.effects, row.backed_by_function)
+        external = (row.side_effects or {}).get("external")
+        _validate_external_effect(db, user, ExternalEffect.model_validate(external) if external else None)
         row.status = "published"
         row.updated_at = datetime.now(timezone.utc)
         db.commit()

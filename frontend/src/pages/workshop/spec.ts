@@ -42,10 +42,10 @@ export type ResolvedOntologySource = { source_id: string; kind: 'object_set' | '
   outputs: Record<string, unknown> & { count: number; truncated?: boolean; time?: TimeWindow } }
 export type ResolvedSource = ResolvedStudyRun | ResolvedOntologySource
 
-export type FieldKind = 'text' | 'number' | 'boolean' | 'select' | 'scalar_path' | 'field' | 'variable' | 'page' | 'list' | 'color'
-export type FieldSpec = { key: string; label: string; kind: FieldKind; options?: string[]; item?: FieldSpec[]; help?: string }
+export type FieldKind = 'text' | 'number' | 'boolean' | 'select' | 'scalar_path' | 'field' | 'variable' | 'page' | 'list' | 'color' | 'logic_asset'
+export type FieldSpec = { key: string; label: string; kind: FieldKind; options?: string[]; item?: FieldSpec[]; help?: string; contract?: string }
 export type WidgetType = 'kpi_strip' | 'table' | 'bar_chart' | 'coverage_grid' | 'facet_list' | 'select' | 'stat_row' | 'banner' | 'action_list' | 'action_detail' | 'rerun_button'
-  | 'donut_chart' | 'rank_bars' | 'alert_list' | 'geo_map'
+  | 'donut_chart' | 'rank_bars' | 'alert_list' | 'geo_map' | 'schedule_gantt'
 export type WidgetSpec = { type: WidgetType; label: string; description: string; w: number; h: number; usesArray: boolean; selectable: boolean; props: FieldSpec[]; defaults: Record<string, unknown> }
 
 const FORMAT = ['text', 'number', 'money', 'percent', 'date']
@@ -111,6 +111,25 @@ export const WIDGETS: WidgetSpec[] = [
       { key: 'size_field', label: '大小字段（空=一样大）', kind: 'field' }, { key: 'color_field', label: '颜色分组字段', kind: 'field' }, { key: 'key_field', label: '点击写入的字段', kind: 'field' },
       { key: 'variable', label: '点击写入变量', kind: 'variable' }, { key: 'to_lat_field', label: '连线终点纬度字段', kind: 'field' }, { key: 'to_lng_field', label: '连线终点经度字段', kind: 'field' }, ...FILTER],
     defaults: { key_field: 'id' } },
+  { type: 'schedule_gantt', label: '交互式排程', description: '把任意任务字段绑定为任务、资源、开始和结束时间；拖拽形成 Scenario Action，不直接写主本体。', w: 24, h: 14, usesArray: true, selectable: false,
+    props: [{ key: 'id_field', label: '任务标识字段', kind: 'field' }, { key: 'label_field', label: '任务名称字段', kind: 'field' }, { key: 'resource_field', label: '资源字段', kind: 'field' },
+      { key: 'start_field', label: '开始时间字段', kind: 'field' }, { key: 'end_field', label: '结束时间字段', kind: 'field' }, { key: 'duration_field', label: '时长分钟字段（可选）', kind: 'field' },
+      { key: 'dependency_field', label: '前置任务 ID 数组字段（可选）', kind: 'field' }, { key: 'hide_dependency_arrows', label: '默认隐藏依赖箭头', kind: 'boolean' },
+      { key: 'layer_field', label: '排程层字段（可选）', kind: 'field' }, { key: 'layers', label: '排程层', kind: 'list', item: [{ key: 'id', label: '层 ID', kind: 'text' }, { key: 'label', label: '显示名称', kind: 'text' }, { key: 'style', label: '样式', kind: 'select', options: ['standard', 'background', 'event'] }, { key: 'color', label: '颜色', kind: 'color' }] },
+      { key: 'default_duration_minutes', label: '未排任务默认时长（分钟）', kind: 'number' }, { key: 'snap_minutes', label: '拖拽吸附（分钟）', kind: 'number' },
+      { key: 'allocation_behavior', label: '拖拽行为', kind: 'select', options: ['allocate', 'no_overlaps', 'time_only', 'resource_only'] }, { key: 'enforce_rules', label: '有校验问题时禁止提交', kind: 'boolean' },
+      { key: 'resource_cardinality', label: '资源关系', kind: 'select', options: ['one', 'many'] }, { key: 'resource_drop_behavior', label: '多资源拖放', kind: 'select', options: ['replace', 'append'] },
+      { key: 'operating_start_minute', label: 'UTC 每日运行开始（0–1440）', kind: 'number' }, { key: 'operating_end_minute', label: 'UTC 每日运行结束（0–1440）', kind: 'number' },
+      { key: 'resources', label: '额外资源', kind: 'list', item: [{ key: 'id', label: '资源 ID', kind: 'text' }, { key: 'label', label: '显示名称', kind: 'text' }] },
+      { key: 'scenario_variable', label: 'Scenario ID 变量', kind: 'variable' }, { key: 'action_type_id', label: '保存 Action Type ID', kind: 'text' },
+      { key: 'recommendation_asset_id', label: '推荐推理能力', kind: 'logic_asset', contract: 'schedule-search/v1', help: '只列出已发布、无副作用且输出声明兼容 schedule-search/v1 的 Logic Asset。' },
+      { key: 'validation_asset_id', label: '业务校验能力', kind: 'logic_asset', contract: 'schedule-validation/v1', help: '只列出已发布、无副作用且输出声明兼容 schedule-validation/v1 的 Logic Asset。' }, { key: 'enforce_business_rules', label: '业务校验错误禁止提交', kind: 'boolean' },
+      { key: 'target_parameter', label: '目标对象参数名（可选）', kind: 'text' }, { key: 'start_parameter', label: '开始时间参数名', kind: 'text' }, { key: 'end_parameter', label: '结束时间参数名', kind: 'text' },
+      { key: 'resource_parameter', label: '资源参数名', kind: 'text' }, { key: 'object_type_field', label: '对象类型字段', kind: 'field' }, { key: 'object_id_field', label: '对象 ID 字段', kind: 'field' },
+      { key: 'create_action_type_id', label: 'Shift+拖拽创建 Action Type ID', kind: 'text' }, { key: 'create_id_parameter', label: '创建对象 ID 参数名（可选）', kind: 'text' }, { key: 'create_label_parameter', label: '创建名称参数名（可选）', kind: 'text' },
+      { key: 'create_start_parameter', label: '创建开始时间参数名', kind: 'text' }, { key: 'create_end_parameter', label: '创建结束时间参数名', kind: 'text' }, { key: 'create_resource_parameter', label: '创建资源参数名', kind: 'text' }, { key: 'create_default_label', label: '新任务默认名称', kind: 'text' }, { key: 'create_layer', label: '新任务排程层', kind: 'text' }, ...FILTER],
+    defaults: { id_field: 'object_id', label_field: 'name', resource_field: 'resource', start_field: 'start', end_field: 'end', default_duration_minutes: 60, snap_minutes: 15,
+      allocation_behavior: 'no_overlaps', resource_cardinality: 'one', resource_drop_behavior: 'replace', enforce_rules: true, enforce_business_rules: true, operating_start_minute: 0, operating_end_minute: 1440, resources: [], layers: [], target_parameter: 'task', start_parameter: 'start', end_parameter: 'end', resource_parameter: 'resource', object_type_field: 'object_type', object_id_field: 'object_id', create_start_parameter: 'start', create_end_parameter: 'end', create_resource_parameter: 'resource', create_default_label: '新任务', create_layer: 'default' } },
 ]
 
 export const specOf = (type: string) => WIDGETS.find(row => row.type === type)

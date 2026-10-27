@@ -35,10 +35,16 @@ class OntologyStateMachine(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     ontology_id: Mapped[str] = mapped_column(String, ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="Process")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     entity_type_name: Mapped[str] = mapped_column(String(200), nullable=False)
     state_property: Mapped[str] = mapped_column(String(100), nullable=False)
     states: Mapped[dict] = mapped_column(JSON, nullable=False, default=list)
     transitions: Mapped[dict] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    etag: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                                                  onupdate=lambda: datetime.now(timezone.utc))

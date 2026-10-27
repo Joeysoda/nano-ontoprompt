@@ -2,7 +2,7 @@
 
 Synthetic data, not a real customer dataset.  Every number is chosen so the
 expected outcome can be recomputed by hand (see
-tests/test_l3harris_known_answer.py).  Times are day offsets from scenario_time.
+unit_tests/test_l3harris_known_answer.py).  Times are day offsets from scenario_time.
 
 Story:
 * CHIP-X is shared by all three products (2 per unit) and is the bottleneck.

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 import pytest
-from app.services.v2.decision_packages import DecisionPackageError, package_digest, transition
+from app.services.v2.decision_packages import DecisionPackageError, execution_plan_digest, package_digest, transition
 
 
 def package(**changes):
@@ -42,3 +42,12 @@ def test_apply_failure_requires_reason_and_can_retry_then_revert():
     transition(item, "apply_succeeded", "operator", expected_etag=4)
     transition(item, "revert", "operator", expected_etag=5)
     assert item.status == "reverted"
+
+
+def test_reviewed_execution_plan_freezes_external_delivery_routing():
+    action = {"action_type_id": "release_order", "invocation": {"parameters": {}, "_external_delivery": {
+        "connection_id": "rest-1", "resource": "/orders", "kind": "erp_writeback"}},
+        "expected_edits": [{"op": "set_property"}], "external_effect_class": "irreversible"}
+    reviewed = execution_plan_digest([action])
+    action["invocation"]["_external_delivery"]["resource"] = "/different"
+    assert execution_plan_digest([action]) != reviewed

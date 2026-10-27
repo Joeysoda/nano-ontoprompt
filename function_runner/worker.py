@@ -17,6 +17,15 @@ def _fail(code, message):
 
 
 def main():
+    # Apply limits inside the fresh interpreter. preexec_fn is unsafe in the
+    # parent's threaded HTTP server; no user code runs before these limits.
+    import resource
+    timeout_seconds, memory_mb = int(sys.argv[1]), int(sys.argv[2])
+    resource.setrlimit(resource.RLIMIT_CPU, (timeout_seconds, timeout_seconds + 1))
+    resource.setrlimit(resource.RLIMIT_AS, (memory_mb * 1024 * 1024,) * 2)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
+    resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     try:
         payload = json.loads(sys.stdin.read())
     except Exception:

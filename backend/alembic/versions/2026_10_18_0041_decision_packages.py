@@ -9,6 +9,13 @@ depends_on = None
 
 
 def upgrade():
+    legacy_tables = {
+        "v2_decision_packages", "v2_decision_package_actions",
+        "v2_decision_package_evidence", "v2_decision_package_events",
+        "v2_decision_outbox",
+    }
+    if legacy_tables.issubset(set(sa.inspect(op.get_bind()).get_table_names())):
+        return
     op.create_table("v2_decision_packages",
         sa.Column("id", sa.String(36), primary_key=True), sa.Column("ontology_id", sa.String(), sa.ForeignKey("ontology_projects.id", ondelete="CASCADE"), nullable=False),
         sa.Column("scenario_id", sa.String(36), sa.ForeignKey("v2_scenarios.id", ondelete="CASCADE"), nullable=False), sa.Column("scenario_revision", sa.Integer(), nullable=False),
